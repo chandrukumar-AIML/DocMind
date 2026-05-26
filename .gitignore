@@ -6,6 +6,8 @@
 .env.staging
 .env.production
 !.env.example
+!.env.*.example
+!**/.env.*.example
 
 # Python
 __pycache__/
@@ -85,6 +87,10 @@ backend/check_schema.py
 # Temp uploaded files
 backend/tmp/
 docmind_uploads/
+
+# Cache files (generated at runtime)
+backend/.cache/
+backend/data/
 
 # Claude Code session files
 .claude/

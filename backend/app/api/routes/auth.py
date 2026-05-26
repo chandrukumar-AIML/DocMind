@@ -32,8 +32,9 @@ from app.cache import get_cache
 logger = logging.getLogger(__name__)
 
 # -- Constants --------------------------------------------------------------
-ACCESS_TOKEN_TTL_MINUTES: Final = 15
-ACCESS_TOKEN_TTL_REMEMBER_MINUTES: Final = 60
+# Read from settings so JWT_ACCESS_TOKEN_EXPIRE_MINUTES env var is respected
+ACCESS_TOKEN_TTL_MINUTES: int = getattr(settings, "jwt_access_token_expire_minutes", 60)
+ACCESS_TOKEN_TTL_REMEMBER_MINUTES: int = max(ACCESS_TOKEN_TTL_MINUTES, 60)
 REFRESH_TOKEN_TTL_DAYS: Final = 30
 PASSWORD_MIN_LENGTH: Final = 12
 BCRYPT_MAX_LENGTH: Final = 72
