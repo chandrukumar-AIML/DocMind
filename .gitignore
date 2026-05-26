@@ -1,0 +1,94 @@
+# Secrets
+.env
+.env.*
+.env.local
+.env.development
+.env.staging
+.env.production
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Data (mounted as volumes — never commit)
+data/
+*.bin
+mlflow.db
+mlruns/
+
+# Frontend
+node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Notebooks
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# Docker
+docker-compose.override.yml.bak
+
+# Test outputs & debug scripts (dev-only helpers)
+batch_test_output.txt
+backend_run.log
+backend_stdout.log
+backend_stderr.log
+uvicorn_stdout.log
+uvicorn_stderr.log
+vite_stdout.log
+vite_stderr.log
+vite.log
+frontend/frontend_dev.log
+*.output
+
+# One-off fix scripts (not part of the app)
+fix_jsonb_casts.py
+fix_admin_role.py
+fix_schema.py
+clear_rate_limit.py
+create_missing_tables.py
+create_usage_logs.py
+check_tables.py
+check_schema.py
+test_endpoints.py
+backend/fix_schema.py
+backend/check_schema.py
+
+# Temp uploaded files
+backend/tmp/
+docmind_uploads/
+
+# Claude Code session files
+.claude/
+
+# IDE
+.vscode/
+.idea/

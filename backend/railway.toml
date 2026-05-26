@@ -1,0 +1,34 @@
+# backend/railway.toml
+# DVMELTSS-FIX: S - Security, M - Modular, E - Error handling
+# ASCALE-FIX: S - Separation, C - Coupling
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+buildTarget = "runtime"
+
+[deploy]
+# Health check for auto-restart
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+
+# Restart policy for resilience
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+# CRITICAL: Single replica for FAISS consistency
+# FAISS index is in-memory and not shared between replicas.
+# Multiple replicas = split-brain vector states = incorrect retrieval.
+# For horizontal scaling: migrate FAISS to Redis/PostgreSQL first.
+numReplicas = 1
+
+# Port handling: Railway sets $PORT, fallback to 8000
+startCommand = "bash -c 'echo Starting on port ${PORT:-8000} && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --loop uvloop --timeout-keep-alive 300 --timeout-graceful-shutdown 30'"
+
+# Environment variables (override via Railway UI)
+[deploy.envs]
+PYTHONUNBUFFERED = "1"
+OCR_USE_GPU = "false"
+CHROMA_PERSIST_DIR = "/data/chroma"
+FAISS_INDEX_PATH = "/data/faiss/index.bin"
+MLFLOW_TRACKING_URI = "file:///data/mlflow"

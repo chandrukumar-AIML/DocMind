@@ -1,0 +1,138 @@
+# backend/Dockerfile
+# DVMELTSS-FIX: S - Security, M - Modular, E - Error handling
+# ASCALE-FIX: L - Layered, S - Separation
+# BATMAN-FIX: M - Memory safety, A - Async-ready
+
+# ════════════════════════════════════════════════════════════════
+# Stage 1: Builder — Install deps + pre-download models
+# ════════════════════════════════════════════════════════════════
+FROM python:3.11-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PADDLEOCR_HOME=/opt/paddle_models \
+    HF_HOME=/opt/hf_models \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install build deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential gcc g++ cmake \
+    libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgl1-mesa-glx \
+    poppler-utils curl git wget \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy requirements first for better layer caching
+COPY requirements.txt .
+
+# Create virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN pip install --upgrade pip setuptools wheel
+
+# Install PaddlePaddle with --no-deps to avoid dependency conflicts
+RUN pip install paddlepaddle==2.6.2 \
+    -f https://www.paddlepaddle.org.cn/whl/linux/mkl/avx/stable.html \
+    --no-cache-dir --no-deps
+
+# Install Python requirements
+RUN pip install -r requirements.txt
+
+# ✅ FIXED: Pre-download PaddleOCR models using heredoc syntax
+RUN mkdir -p /opt/paddle_models && python3 <<'PYEOF'
+import os, sys
+model_dir = os.environ.get('PADDLEOCR_HOME', '/opt/paddle_models')
+det_path = f'{model_dir}/whl/det/en/en_PP-OCRv4_det_infer'
+if not os.path.exists(det_path):
+    print('Downloading PaddleOCR models...', file=sys.stderr)
+    from paddleocr import PaddleOCR
+    _ = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False, show_log=False)
+    print('PaddleOCR models cached.', file=sys.stderr)
+else:
+    print('PaddleOCR models already cached.', file=sys.stderr)
+PYEOF
+
+# ✅ FIXED: Pre-download cross-encoder with retry using heredoc syntax
+RUN mkdir -p /opt/hf_models && python3 <<'PYEOF'
+import os, sys, time
+os.environ['HF_HOME'] = '/opt/hf_models'
+for attempt in range(3):
+    try:
+        from sentence_transformers import CrossEncoder
+        CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+        print('Cross-encoder cached.', file=sys.stderr)
+        sys.exit(0)
+    except Exception as e:
+        print(f'Attempt {attempt+1}/3 failed: {e}', file=sys.stderr)
+        if attempt < 2:
+            time.sleep(10)
+        else:
+            print('WARNING: Cross-encoder will download at runtime.', file=sys.stderr)
+            sys.exit(0)
+PYEOF
+
+# ════════════════════════════════════════════════════════════════
+# Stage 2: Runtime — Minimal, secure, non-root
+# ════════════════════════════════════════════════════════════════
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    PADDLEOCR_HOME=/opt/paddle_models \
+    HF_HOME=/opt/hf_models \
+    PORT=8000 \
+    API_HOST=0.0.0.0 \
+    API_PORT=8000 \
+    OCR_USE_GPU=false \
+    CHROMA_PERSIST_DIR=/data/chroma \
+    FAISS_INDEX_PATH=/data/faiss/index.bin \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Install runtime deps only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgl1-mesa-glx \
+    poppler-utils curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy venv and models from builder
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /opt/paddle_models /opt/paddle_models
+COPY --from=builder /opt/hf_models /opt/hf_models
+
+WORKDIR /app
+
+# Copy application code
+COPY app/ ./app/
+COPY __init__.py ./__init__.py
+
+# Create data directories with proper permissions
+RUN mkdir -p /data/{chroma,faiss,uploads,sample_docs} /tmp/documind && \
+    useradd -m -u 1000 documind && \
+    chown -R documind:documind /app /data /tmp/documind /opt/paddle_models /opt/hf_models
+
+# Switch to non-root user (security best practice)
+USER documind
+
+EXPOSE 8000
+
+# Health check for orchestration
+HEALTHCHECK \
+    --interval=30s \
+    --timeout=10s \
+    --start-period=60s \
+    --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Production uvicorn command with SSE support
+CMD ["uvicorn", "app.main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "1", \
+     "--loop", "uvloop", \
+     "--http", "httptools", \
+     "--log-level", "info", \
+     "--timeout-keep-alive", "300", \
+     "--timeout-graceful-shutdown", "30"]

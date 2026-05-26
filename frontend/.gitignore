@@ -1,0 +1,120 @@
+# frontend/.gitignore
+# DVMELTSS-FIX: S - Security, M - Modular
+# ASCALE-FIX: S - Separation
+
+# ════════════════════════════════════════════════════════════════
+# DEPENDENCIES & BUILD OUTPUTS
+# ════════════════════════════════════════════════════════════════
+node_modules/
+dist/
+dist-ssr/
+*.local
+.pnp.*
+.pnp.js
+
+# ════════════════════════════════════════════════════════════════
+# ENVIRONMENT & SECRETS (NEVER COMMIT)
+# ════════════════════════════════════════════════════════════════
+.env
+.env.*
+!.env.example
+.env.local
+.env.development
+.env.staging
+.env.production
+*.pem
+*.key
+*.crt
+
+# ════════════════════════════════════════════════════════════════
+# LOGS & DEBUG
+# ════════════════════════════════════════════════════════════════
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.report.log
+*.trace.log
+
+# ════════════════════════════════════════════════════════════════
+# EDITOR & IDE
+# ════════════════════════════════════════════════════════════════
+.vscode/*
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*.swn
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sublime-*
+*.code-workspace
+
+# ════════════════════════════════════════════════════════════════
+# OS & SYSTEM FILES
+# ════════════════════════════════════════════════════════════════
+.DS_Store
+Thumbs.db
+*.tmp
+*.temp
+*.bak
+*.sw?
+*.lock
+
+# ════════════════════════════════════════════════════════════════
+# TESTING & COVERAGE
+# ════════════════════════════════════════════════════════════════
+coverage/
+.nyc_output/
+*.lcov
+*.coveralls
+jest.config.js
+vitest.config.js
+
+# ════════════════════════════════════════════════════════════════
+# DOCKER & DEPLOYMENT (managed at repo root)
+# ════════════════════════════════════════════════════════════════
+# Docker files are at repo root, not in frontend/
+# If you need frontend-specific Docker ignores:
+# *.dockerignore
+# docker-compose*.yml
+
+# ════════════════════════════════════════════════════════════════
+# CACHE & TEMP
+# ════════════════════════════════════════════════════════════════
+.cache/
+.tmp/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+.prettierignore
+
+# ════════════════════════════════════════════════════════════════
+# TYPE GENERATION (if using tsc --emitDeclarationOnly)
+# ════════════════════════════════════════════════════════════════
+*.d.ts.map
+*.d.cts.map
+*.d.mts.map
+
+# ════════════════════════════════════════════════════════════════
+# PWA & SERVICE WORKER (generated at build)
+# ════════════════════════════════════════════════════════════════
+public/sw.js
+public/workbox-*.js
+public/manifest.webmanifest
+
+# ════════════════════════════════════════════════════════════════
+# DOCUMENTATION (optional - keep if needed)
+# ════════════════════════════════════════════════════════════════
+# *.md
+# docs/
+# CHANGELOG.md
+# README.md

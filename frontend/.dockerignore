@@ -1,0 +1,81 @@
+# frontend/.dockerignore
+# DVMELTSS-FIX: S - Security, M - Modular
+# ASCALE-FIX: S - Separation
+
+# ════════════════════════════════════════════════════════════════
+# DEPENDENCIES & BUILD OUTPUTS
+# ════════════════════════════════════════════════════════════════
+node_modules
+dist
+dist-ssr
+*.local
+.pnp.*
+.pnp.js
+
+# ════════════════════════════════════════════════════════════════
+# ENVIRONMENT & SECRETS (never copy to image)
+# ════════════════════════════════════════════════════════════════
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# ════════════════════════════════════════════════════════════════
+# LOGS & DEBUG
+# ════════════════════════════════════════════════════════════════
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ════════════════════════════════════════════════════════════════
+# EDITOR & IDE
+# ════════════════════════════════════════════════════════════════
+.vscode
+.idea
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+.DS_Store
+Thumbs.db
+
+# ════════════════════════════════════════════════════════════════
+# TESTING & COVERAGE
+# ════════════════════════════════════════════════════════════════
+coverage
+.nyc_output
+*.lcov
+jest.config.js
+vitest.config.js
+
+# ════════════════════════════════════════════════════════════════
+# DOCKER FILES (avoid copying Dockerfiles into image)
+# ════════════════════════════════════════════════════════════════
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+nginx.conf
+entrypoint.sh
+
+# ════════════════════════════════════════════════════════════════
+# DOCUMENTATION & MARKDOWN (optional)
+# ════════════════════════════════════════════════════════════════
+*.md
+docs/
+CHANGELOG.md
+README.md
+
+# ════════════════════════════════════════════════════════════════
+# GIT & CI/CD
+# ════════════════════════════════════════════════════════════════
+.git
+.github
+.gitlab-ci.yml
+.travis.yml

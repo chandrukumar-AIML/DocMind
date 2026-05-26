@@ -1,0 +1,134 @@
+# ═══════════════════════════════════════════════════════════════
+# DOCUMIND AI — WINDOWS-SAFE + CONFLICT-FREE + PRODUCTION READY
+# Generated: April 2026 — Fresh Start Edition
+# ═══════════════════════════════════════════════════════════════
+#
+# RESOLVES:
+#   • protobuf conflict: paddlepaddle 2.6.2 (Windows) requires <=3.20.2
+#   • googleapis-common-protos downgraded to 1.63.0 for protobuf 3.x compat
+#   • mlflow pinned to 2.12.1 (last version supporting protobuf 3.20.2)
+#   • numpy<2.0 preserved for PaddleOCR compatibility
+#   • Added langchain-ollama for local LLM support
+#   • Flexible ranges for fast-moving LLM/graph packages
+
+# ── Core FastAPI ──────────────────────────────────────────────
+fastapi>=0.111.0,<0.112.0
+uvicorn[standard]>=0.29.0,<0.30.0
+python-multipart>=0.0.9,<0.1.0
+pydantic>=2.7.0,<3.0.0
+pydantic-settings>=2.2.0,<3.0.0
+python-json-logger>=2.0.7,<3.0.0
+
+# ── OCR (Windows-safe PaddleOCR) ─────────────────────────────
+paddlepaddle==2.6.2
+paddleocr>=2.8.0,<3.0.0
+opencv-python-headless>=4.9.0,<5.0.0
+Pillow>=10.3.0,<11.0.0
+pdf2image>=1.17.0,<2.0.0
+pypdfium2>=4.29.0,<5.0.0
+albumentations>=1.4.0,<2.0.0
+
+# ── LangChain 0.3.x Ecosystem ────────────────────────────────
+langchain>=0.3.0,<0.4.0
+langchain-community>=0.3.0,<0.4.0
+langchain-openai>=0.2.0,<0.4.0
+langchain-ollama>=0.1.0,<0.3.0          # ✅ ADDED: Local Ollama support
+langchain-chroma>=0.1.0,<2.0.0
+langgraph>=0.2.0,<0.4.0
+langsmith>=0.1.0,<0.4.0
+langchain-neo4j>=0.1.0,<0.3.0
+
+# ── Vector DB & Search ───────────────────────────────────────
+faiss-cpu>=1.8.0,<2.0.0
+chromadb>=0.5.0,<0.6.0
+duckduckgo-search>=6.1.0,<7.0.0
+
+# ── LLM & Tokenizer ──────────────────────────────────────────
+openai>=1.30.0,<2.0.0
+tiktoken>=0.7.0,<1.0.0
+
+# ── ML & Embeddings ──────────────────────────────────────────
+sentence-transformers>=3.0.0,<4.0.0
+torch>=2.2.0,<2.5.0
+# PaddlePaddle/PaddleOCR hard-pin: numpy<2.0
+numpy==1.26.4
+
+# ── Text & NLP ───────────────────────────────────────────────
+rank-bm25>=0.2.2,<0.3.0
+nltk>=3.8.1,<4.0.0
+
+# ── MLflow & Cloud (protobuf 3.x compatible) ─────────────────
+mlflow==2.12.1
+boto3>=1.34.0,<2.0.0
+
+# ── Evaluation ───────────────────────────────────────────────
+ragas>=0.1.0,<1.0.0
+datasets>=2.19.0,<3.0.0
+rouge-score>=0.1.2,<0.2.0
+
+# ── Graph ────────────────────────────────────────────────────
+neo4j>=5.18.0,<6.0.0
+networkx>=3.2.0,<4.0.0
+
+# ── Data Processing ──────────────────────────────────────────
+pandas>=2.2.0,<3.0.0
+tabulate>=0.9.0,<1.0.0
+openpyxl>=3.1.2,<4.0.0
+python-docx>=1.1.0,<2.0.0
+
+# ── Database & Async ─────────────────────────────────────────
+sqlalchemy>=2.0.30,<3.0.0
+asyncpg>=0.29.0,<0.30.0
+alembic>=1.13.0,<2.0.0
+psycopg2-binary>=2.9.9,<3.0.0
+
+# ── Audio ────────────────────────────────────────────────────
+pydub>=0.25.1,<0.26.0
+ffmpeg-python>=0.2.0,<0.3.0
+
+# ── Auth ─────────────────────────────────────────────────────
+python-jose[cryptography]>=3.3.0,<4.0.0
+passlib[bcrypt]>=1.7.4,<2.0.0
+
+# ── Task Queue & WebSockets ──────────────────────────────────
+celery>=5.4.0,<6.0.0
+redis>=5.0.0,<6.0.0
+kombu>=5.3.0,<6.0.0
+flower>=2.0.0,<3.0.0
+websockets>=12.0,<13.0
+
+# ── Monitoring & Testing ─────────────────────────────────────
+evidently>=0.4.30,<0.5.0
+scipy>=1.13.0,<2.0.0
+prometheus-client>=0.20.0,<0.21.0
+pytest>=8.2.0,<9.0.0
+pytest-asyncio>=0.23.0,<1.0.0
+httpx>=0.27.0,<1.0.0
+
+# ── New Feature Dependencies ─────────────────────────────────
+aiosmtplib>=3.0.0,<4.0.0       # Async SMTP for invite emails
+docusign-esign>=3.27.0,<4.0.0  # DocuSign e-signature API
+Jinja2>=3.1.0,<4.0.0           # Email/report templates
+
+# ── Dev Tools ────────────────────────────────────────────────
+ruff>=0.4.0,<0.5.0
+python-dotenv>=1.0.0,<2.0.0
+watchfiles>=0.21.0,<1.0.0
+
+# ── CRITICAL WINDOWS PINS (DO NOT CHANGE) ────────────────────
+# PaddlePaddle 2.6.2 Windows wheel HARD-REQUIRES protobuf<=3.20.2
+protobuf==3.20.2
+
+# Last googleapis-common-protos compatible with protobuf 3.x
+googleapis-common-protos==1.63.0
+
+# Last mlflow version compatible with protobuf 3.20.2
+# (mlflow>=2.13 requires protobuf>=4.21.6)
+mlflow==2.12.1
+
+# PaddleOCR hard requirement
+numpy==1.26.4
+
+# Stability pins
+packaging==24.2
+setuptools>=65.0.0
