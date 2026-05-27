@@ -2,7 +2,7 @@
 // DVMELTSS-FIX: A - Async, E - Error handling, M - Modular
 // ASCALE-FIX: S - Separation, L - Layered
 import { useCallback } from "react";
-import { useIngestProgress } from "./hooks/useIngestProgress";
+import { useIngestProgress } from "../hooks/useIngestProgress";
 import toast from "react-hot-toast";
 import PropTypes from "prop-types";
 

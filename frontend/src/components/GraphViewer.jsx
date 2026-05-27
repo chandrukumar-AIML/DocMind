@@ -123,9 +123,8 @@ export const GraphViewer = memo(function GraphViewer({ nodes = [], edges = [], h
         linkDirectionalArrowRelPos={1}
         linkCurvature={0.1}
         onNodeHover={setHoveredNode}
-        onNodeClick={(node) => {
-          // Optional: handle node click for drill-down
-          console.log("Node clicked:", node);
+        onNodeClick={(_node) => {
+          // Node click — reserved for future drill-down
         }}
         nodeCanvasObject={(node, ctx, globalScale) => {
           const label = node.label;

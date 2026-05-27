@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { CitationCardV2 } from "./CitationCardV2";
 
 // ── Streaming cursor ───────────────────────────────────────
 function StreamCursor() {
@@ -112,38 +113,7 @@ function MarkdownAnswer({ content, streaming }) {
   );
 }
 
-// ── Citation card ──────────────────────────────────────────
-const CitationCard = memo(function CitationCard({ citation, index }) {
-  const ext = (citation.source_file || "").split(".").pop().toLowerCase();
-  const typeColor = {
-    pdf: "#F87171", docx: "#38BDF8", xlsx: "#10B981",
-    mp3: "#F59E0B", wav: "#F59E0B", mp4: "#F59E0B",
-    png: "#A78BFA", jpg: "#A78BFA",
-  }[ext] || "#94A3B8";
-
-  return (
-    <div className="citation-card anim-fade-in">
-      <div className="citation-num">{index + 1}</div>
-      <div className="citation-body">
-        <div className="citation-file" style={{ color: typeColor }}>
-          {(citation.source_file || "").split("/").pop().split("\\").pop() || "Unknown source"}
-        </div>
-        {citation.page_number != null && (
-          <div className="citation-page">
-            Page {citation.page_display || citation.page_number + 1}
-            {citation.block_type && ` · ${citation.block_type}`}
-            {citation.rerank_score > 0 && ` · Score ${citation.rerank_score.toFixed(2)}`}
-          </div>
-        )}
-        {citation.chunk_text && (
-          <div className="citation-text">
-            "{citation.chunk_text.slice(0, 180)}{citation.chunk_text.length > 180 ? "…" : ""}"
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
+// CitationCard is now CitationCardV2 — imported above for confidence-level display
 
 // ── User message ───────────────────────────────────────────
 const UserMessage = memo(function UserMessage({ message }) {
@@ -304,7 +274,7 @@ const AIMessage = memo(function AIMessage({ message, onSuggestion }) {
             <div className="citations-header"><span>Sources</span></div>
             <div className="citations-grid">
               {message.citations.map((c, i) => (
-                <CitationCard
+                <CitationCardV2
                   key={`${c.source_file}-${c.page_number}-${c.block_type}-${i}`}
                   citation={c}
                   index={i}

@@ -14,8 +14,18 @@ import { LoginForm } from "./components/LoginForm";
 import { DomainPanel } from "./components/DomainPanel";
 import { ConversationHistory } from "./components/ConversationHistory";
 import { VersionPanel } from "./components/VersionPanel";
+import { VersionTimeline } from "./components/VersionTimeline";
 import { FineTuningPanel } from "./components/FineTuningPanel";
 import { UrlWatcher } from "./components/UrlWatcher";
+import { IngestProgressPanel } from "./components/IngestProgressPanel";
+import { AgentStepsPanel } from "./components/AgentStepsPanel";
+import { PDFViewer } from "./components/PDFViewer";
+import { AudioUploader } from "./components/AudioUploader";
+import { MonitoringDashboard } from "./components/MonitoringDashboard";
+import { GraphQueryPanel } from "./components/GraphQueryPanel";
+import { RAGAsDashboard } from "./components/RAGAsDashboard";
+import { TableViewer } from "./components/TableViewer";
+import { ChartViewer } from "./components/ChartViewer";
 import { ApiKeyPanel } from "./components/ApiKeyPanel";
 import { DocCompare } from "./components/DocCompare";
 import { WebhookPanel } from "./components/WebhookPanel";
@@ -80,6 +90,10 @@ export default function App() {
   const [docBrief, setDocBrief] = useState(null); // { file, summary, loading }
   const [showCompare, setShowCompare] = useState(false);
   const [featureTab, setFeatureTab] = useState(null); // null = no feature panel open
+  const [agentSteps, setAgentSteps] = useState([]); // agent reasoning steps
+  const [showPdfViewer, setShowPdfViewer] = useState(false); // PDF side panel
+  const [extractionResults, setExtractionResults] = useState(null); // { tables, charts }
+  const [extracting, setExtracting] = useState(false);
 
   const { user, workspaces, loading: authLoading, login, register, getCurrentWorkspace } = useAuth();
   const { messages, isStreaming, submit, cancel, clear, newConversation, loadSession, sessionId } = useStreamQuery();
@@ -239,6 +253,48 @@ ${rows}</body></html>`;
     const msgCount = messages.filter(m => !m.streaming).length;
     addConvHistory(sessionId, firstUser.content, msgCount);
   }, [messages, sessionId, addConvHistory]);
+
+  // ── Agent steps accumulator ────────────────────────────────
+  const lastAssistantMsg = messages.filter(m => m.role === "assistant").pop();
+  const lastStatusStep = lastAssistantMsg?.statusStep;
+
+  useEffect(() => {
+    if (queryMode !== "agent" || !lastStatusStep || !isStreaming) return;
+    setAgentSteps(prev => {
+      if (prev[prev.length - 1]?.node === lastStatusStep) return prev;
+      return [...prev, { node: lastStatusStep, status: "running" }];
+    });
+  }, [lastStatusStep, isStreaming, queryMode]);
+
+  useEffect(() => {
+    if (!isStreaming && agentSteps.length > 0) {
+      setAgentSteps(prev => prev.map(s => ({ ...s, status: "done" })));
+    }
+  }, [isStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { setAgentSteps([]); }, [sessionId]);
+
+  // ── Table / Chart extraction handler ──────────────────────
+  const handleExtract = useCallback(async () => {
+    const wsId = getCurrentWorkspace()?.workspace_id;
+    if (!selectedFile || extracting) return;
+    setExtracting(true);
+    setExtractionResults(null);
+    try {
+      const [tabRes, chartRes] = await Promise.allSettled([
+        api.extractTables(selectedFile, wsId),
+        api.extractCharts(selectedFile, wsId),
+      ]);
+      setExtractionResults({
+        tables: tabRes.status === "fulfilled" ? (tabRes.value?.tables || []) : [],
+        charts: chartRes.status === "fulfilled" ? (chartRes.value?.charts || []) : [],
+      });
+    } catch {
+      toast.error("Extraction failed");
+    } finally {
+      setExtracting(false);
+    }
+  }, [selectedFile, getCurrentWorkspace, extracting]);
 
   // Keyboard shortcut: Ctrl+K → focus chat
   useEffect(() => {
@@ -409,9 +465,61 @@ ${rows}</body></html>`;
               </div>
             </div>
           ) : sidebarTab === "finetune" ? (
-            <FineTuningPanel workspaceId={getCurrentWorkspace()?.workspace_id} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "100%", overflow: "auto" }}>
+              <FineTuningPanel workspaceId={getCurrentWorkspace()?.workspace_id} />
+              <div style={{ padding: "8px 4px 4px" }}>
+                <div className="section-header"><span className="section-label">RAG Evaluation</span></div>
+                <RAGAsDashboard />
+              </div>
+            </div>
           ) : sidebarTab === "analyze" ? (
-            <DomainPanel selectedFile={selectedFile} documents={documents} workspaceId={getCurrentWorkspace()?.workspace_id} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "100%", overflow: "auto" }}>
+              <DomainPanel selectedFile={selectedFile} documents={documents} workspaceId={getCurrentWorkspace()?.workspace_id} />
+
+              {/* Table & Chart extraction */}
+              {selectedFile && (
+                <div style={{ padding: "8px 4px 4px" }}>
+                  <div className="section-header" style={{ justifyContent: "space-between" }}>
+                    <span className="section-label">Tables & Charts</span>
+                    <button
+                      className="sidebar-link-btn"
+                      style={{ fontSize: 10, padding: "2px 8px" }}
+                      onClick={handleExtract}
+                      disabled={extracting}
+                    >
+                      {extracting ? "Extracting…" : "⚡ Extract"}
+                    </button>
+                  </div>
+                  {extractionResults && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {extractionResults.tables?.length > 0 ? (
+                        extractionResults.tables.map((t, i) => (
+                          <TableViewer
+                            key={t.table_id || i}
+                            tableId={t.table_id}
+                            summary={t.summary}
+                            tableType={t.table_type}
+                            rowCount={t.row_count}
+                            colCount={t.col_count}
+                          />
+                        ))
+                      ) : (
+                        <div style={{ fontSize: 11, color: "var(--text-4)", padding: "4px 0" }}>No tables found</div>
+                      )}
+                      {extractionResults.charts?.map((c, i) => (
+                        <ChartViewer key={i} chart={c} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Graph query */}
+              <div style={{ padding: "4px 0" }}>
+                <div className="section-header"><span className="section-label">Graph Query</span></div>
+                <GraphQueryPanel />
+              </div>
+            </div>
           ) : sidebarTab === "history" ? (
             <ConversationHistory
               conversations={conversations}
@@ -422,32 +530,29 @@ ${rows}</body></html>`;
               onNewChat={() => { newConversation(); setSidebarTab("docs"); }}
             />
           ) : sidebarTab === "stats" ? (
-            <div style={{ padding: "4px 0" }}>
-              <div className="section-header"><span className="section-label">Workspace Stats</span></div>
-              {!stats ? (
-                <div style={{ fontSize: 12, color: "var(--text-4)", padding: "16px 4px" }}>Loading…</div>
-              ) : (
-                <div className="stats-grid">
-                  <div className="stat-card">
-                    <div className="stat-value">{documents.length}</div>
-                    <div className="stat-label">Documents</div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-value">
-                      {documents.reduce((s, d) => s + (d.chunk_count || 0), 0)}
-                    </div>
-                    <div className="stat-label">Chunks</div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-value">{stats.stats?.query_count ?? 0}</div>
-                    <div className="stat-label">Queries (24h)</div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-value">{messages.length}</div>
-                    <div className="stat-label">Messages</div>
-                  </div>
+            <div style={{ padding: "4px 0", height: "100%", overflow: "auto" }}>
+              {/* Full monitoring dashboard */}
+              <div className="section-header"><span className="section-label">Monitoring</span></div>
+              <MonitoringDashboard />
+
+              {/* Quick counts */}
+              <div className="stats-grid" style={{ marginTop: 8 }}>
+                <div className="stat-card">
+                  <div className="stat-value">{documents.length}</div>
+                  <div className="stat-label">Documents</div>
                 </div>
-              )}
+                <div className="stat-card">
+                  <div className="stat-value">
+                    {documents.reduce((s, d) => s + (d.chunk_count || 0), 0)}
+                  </div>
+                  <div className="stat-label">Chunks</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-value">{messages.length}</div>
+                  <div className="stat-label">Messages</div>
+                </div>
+              </div>
+
               <div className="section-header" style={{ marginTop: 12 }}><span className="section-label">User</span></div>
               <div style={{ fontSize: 11, color: "var(--text-3)", padding: "6px 4px", lineHeight: 1.8 }}>
                 <div>{user?.email}</div>
@@ -508,10 +613,10 @@ ${rows}</body></html>`;
 
               <div className="section-header" style={{ marginTop: 8 }}><span className="section-label">Links</span></div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "4px 0" }}>
-                <button className="sidebar-link-btn" onClick={() => window.open("http://localhost:8000/docs", "_blank")}>
+                <button className="sidebar-link-btn" onClick={() => window.open(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/docs`, "_blank")}>
                   API Docs ↗
                 </button>
-                <button className="sidebar-link-btn" onClick={() => window.open("http://localhost:8000/health", "_blank")}>
+                <button className="sidebar-link-btn" onClick={() => window.open(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/health`, "_blank")}>
                   Health ↗
                 </button>
               </div>
@@ -543,6 +648,17 @@ ${rows}</body></html>`;
             />
           </div>
 
+          {/* Audio / Office file uploader */}
+          <div>
+            <div className="section-header">
+              <span className="section-label">Audio & Office Files</span>
+            </div>
+            <AudioUploader onSuccess={() => refreshDocuments()} />
+          </div>
+
+          {/* Live ingest progress */}
+          <IngestProgressPanel />
+
           {/* URL Watcher (ingest + watch) */}
           <div>
             <div className="section-header">
@@ -569,14 +685,21 @@ ${rows}</body></html>`;
             </div>
           )}
 
-          {/* Document list */}
-          {/* Version history — shown when a doc is selected */}
+          {/* Version timeline — shown when a doc is selected */}
           {selectedFile && (
             <div>
-              <div className="section-header">
+              <div className="section-header" style={{ justifyContent: "space-between" }}>
                 <span className="section-label">Versions</span>
+                <button
+                  className="sidebar-link-btn"
+                  style={{ fontSize: 10, padding: "2px 8px" }}
+                  onClick={() => setShowPdfViewer(v => !v)}
+                  title={showPdfViewer ? "Hide PDF viewer" : "View PDF"}
+                >
+                  {showPdfViewer ? "✕ PDF" : "📄 PDF"}
+                </button>
               </div>
-              <VersionPanel sourceFile={selectedFile} />
+              <VersionTimeline sourceFile={selectedFile} />
             </div>
           )}
 
@@ -719,6 +842,29 @@ ${rows}</body></html>`;
               )}
             </div>
             <button className="doc-brief-close" onClick={() => setDocBrief(null)} aria-label="Dismiss brief">✕</button>
+          </div>
+        )}
+
+        {/* Agent reasoning steps — visible when Agent mode is active */}
+        {queryMode === "agent" && agentSteps.length > 0 && (
+          <AgentStepsPanel steps={agentSteps} isStreaming={isStreaming} />
+        )}
+
+        {/* PDF side-panel — slides in when user clicks 📄 PDF in sidebar */}
+        {showPdfViewer && selectedFile && (
+          <div className="pdf-panel anim-fade-in">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px", borderBottom: "1px solid var(--border)" }}>
+              <span style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 600 }}>
+                📄 {selectedFile.split("/").pop().split("\\").pop()}
+              </span>
+              <button className="topbar-btn" onClick={() => setShowPdfViewer(false)} aria-label="Close PDF viewer">✕</button>
+            </div>
+            <ErrorBoundary>
+              <PDFViewer
+                sourceFile={selectedFile}
+                citations={messages.flatMap(m => m.citations || [])}
+              />
+            </ErrorBoundary>
           </div>
         )}
 

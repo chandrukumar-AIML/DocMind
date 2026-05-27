@@ -1,9 +1,0 @@
-﻿DocuMind AI Test Document
-
-This is a test document for the DocuMind AI system. It contains information about artificial intelligence and machine learning.
-
-Section 1: Introduction
-Artificial intelligence (AI) is the simulation of human intelligence in machines. Machine learning is a subset of AI that enables systems to learn from data.
-
-Section 2: Applications
-AI is used in natural language processing, computer vision, robotics, and many other fields. DocuMind uses AI for document analysis and question answering.

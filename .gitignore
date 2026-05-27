@@ -71,11 +71,21 @@ vite.log
 frontend/frontend_dev.log
 *.output
 
-# One-off fix scripts (not part of the app)
+# Dev / test scripts at root (not part of the app)
 fix_jsonb_casts.py
 fix_admin_role.py
 fix_schema.py
 clear_rate_limit.py
+batch_test.py
+integration_test.py
+test_endpoints.py
+check_tables.py
+create_missing_tables.py
+create_usage_logs.py
+backend/fix_schema.py
+backend/check_schema.py
+backend/test_doc.pdf
+backend/test_doc.txt
 create_missing_tables.py
 create_usage_logs.py
 check_tables.py

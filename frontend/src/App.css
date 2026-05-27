@@ -33,6 +33,17 @@
   z-index: 0;
 }
 
+/* ── PDF Panel ─────────────────────────────────────────── */
+.pdf-panel {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+  max-height: 420px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
 /* ── Sidebar ───────────────────────────────────────────── */
 .sidebar {
   display: flex;

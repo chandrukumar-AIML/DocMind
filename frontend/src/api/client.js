@@ -442,6 +442,14 @@ export const api = {
   detectSignatures: (sourceFile, workspaceId) =>
     apiClient.post("/api/v1/domains/legal/detect-signatures", { source_file: sourceFile, workspace_id: workspaceId }).then(r => r.data),
 
+  // Table extraction — returns { tables: [{table_id, summary, table_type, row_count, col_count}] }
+  extractTables: (sourceFile, workspaceId) =>
+    apiClient.post("/api/v1/extraction/tables", { source_file: sourceFile, workspace_id: workspaceId }).then(r => r.data),
+
+  // Chart extraction — returns { charts: [{chart_type, title, description, confidence}] }
+  extractCharts: (sourceFile, workspaceId) =>
+    apiClient.post("/api/v1/extraction/charts", { source_file: sourceFile, workspace_id: workspaceId }).then(r => r.data),
+
   // Workspace management
   listWorkspaces: () => {
     if (isDemoMode()) return demoApi.listWorkspaces();
