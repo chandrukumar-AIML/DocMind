@@ -110,3 +110,6 @@ backend/data/
 # IDE
 .vscode/
 .idea/
+
+# Duplicate backend gitignore (root .gitignore covers it)
+backend/.gitignore
