@@ -13,7 +13,6 @@ import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
 import { LoginForm } from "./components/LoginForm";
 import { DomainPanel } from "./components/DomainPanel";
 import { ConversationHistory } from "./components/ConversationHistory";
-import { VersionPanel } from "./components/VersionPanel";
 import { VersionTimeline } from "./components/VersionTimeline";
 import { FineTuningPanel } from "./components/FineTuningPanel";
 import { UrlWatcher } from "./components/UrlWatcher";

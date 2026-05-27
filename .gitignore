@@ -93,6 +93,8 @@ check_schema.py
 test_endpoints.py
 backend/fix_schema.py
 backend/check_schema.py
+backend/scripts/test_auth_flow.py
+backend/scripts/test_e2e_flow.py
 
 # Temp uploaded files
 backend/tmp/
