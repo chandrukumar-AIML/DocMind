@@ -280,6 +280,204 @@ function LogisticsResult({ data }) {
   );
 }
 
+function buildReportHtml(domain, data, sourceFile) {
+  const domainMeta = DOMAIN_TYPES.find(d => d.id === domain) || {};
+  const now = new Date().toLocaleString();
+  const fileName = (sourceFile || "").split("/").pop().split("\\").pop() || "Multiple documents";
+
+  let bodyHtml = "";
+
+  if (domain === "legal") {
+    const { analysis = {} } = data;
+    const risk = analysis.risk || {};
+    const clauses = analysis.clauses?.items || [];
+    const obligations = analysis.obligations || [];
+    bodyHtml = `
+      ${risk.overall_score != null ? `
+        <section>
+          <h2>Overall Risk</h2>
+          <p><strong>Score:</strong> ${(risk.overall_score).toFixed(1)} / 10 &nbsp;
+             <span class="badge ${(risk.risk_level || "").toLowerCase()}">${(risk.risk_level || "UNKNOWN").toUpperCase()}</span></p>
+          ${risk.executive_summary ? `<p>${risk.executive_summary}</p>` : ""}
+        </section>` : ""}
+      ${clauses.length ? `
+        <section>
+          <h2>Clauses (${analysis.clauses?.count ?? clauses.length})</h2>
+          ${analysis.clauses?.missing?.length ? `<p class="warn">⚠ Missing: ${analysis.clauses.missing.join(", ")}</p>` : ""}
+          <table><thead><tr><th>#</th><th>Type</th><th>Text</th><th>Risk</th></tr></thead><tbody>
+          ${clauses.map((c, i) => `
+            <tr>
+              <td>${i + 1}</td>
+              <td>${c.type || c.title || "—"}</td>
+              <td>${(c.text || "").slice(0, 200)}${(c.text || "").length > 200 ? "…" : ""}</td>
+              <td>${c.risk != null ? c.risk : "—"}</td>
+            </tr>`).join("")}
+          </tbody></table>
+        </section>` : ""}
+      ${obligations.length ? `
+        <section>
+          <h2>Obligations (${obligations.length})</h2>
+          <table><thead><tr><th>#</th><th>Party</th><th>Obligation</th><th>Deadline</th></tr></thead><tbody>
+          ${obligations.map((o, i) => `
+            <tr>
+              <td>${i + 1}</td>
+              <td>${o.party || "—"}</td>
+              <td>${(o.obligation || "").slice(0, 200)}</td>
+              <td>${o.deadline || "—"}</td>
+            </tr>`).join("")}
+          </tbody></table>
+        </section>` : ""}`;
+  } else if (domain === "medical") {
+    const { analysis = {} } = data;
+    const codes = analysis.icd10_codes || [];
+    const interactions = analysis.interactions || [];
+    const summary = analysis.interaction_summary || {};
+    bodyHtml = `
+      <section>
+        <p class="warn">🔒 PII redacted — HIPAA compliant report</p>
+        ${summary.total_medications ? `<p><strong>Medications found:</strong> ${summary.total_medications}
+          ${summary.high_risk ? ` &nbsp; <span class="badge critical">${summary.high_risk} HIGH-RISK</span>` : ""}</p>` : ""}
+      </section>
+      ${codes.length ? `
+        <section>
+          <h2>ICD-10 Codes (${codes.length})</h2>
+          <table><thead><tr><th>Code</th><th>Description</th><th>Primary</th><th>Confidence</th></tr></thead><tbody>
+          ${codes.map(c => `
+            <tr>
+              <td><strong>${c.code}</strong></td>
+              <td>${c.description || "—"}</td>
+              <td>${c.is_primary ? "✓" : ""}</td>
+              <td>${c.confidence ? Math.round(c.confidence * 100) + "%" : "—"}</td>
+            </tr>`).join("")}
+          </tbody></table>
+        </section>` : ""}
+      ${interactions.length ? `
+        <section>
+          <h2>Drug Interactions (${interactions.length})</h2>
+          <table><thead><tr><th>Drug 1</th><th>Drug 2</th><th>Severity</th><th>Description</th></tr></thead><tbody>
+          ${interactions.map(i => `
+            <tr>
+              <td>${i.drug_1}</td>
+              <td>${i.drug_2}</td>
+              <td><span class="badge ${(i.severity || "").toLowerCase()}">${(i.severity || "—").toUpperCase()}</span></td>
+              <td>${(i.description || "").slice(0, 150)}</td>
+            </tr>`).join("")}
+          </tbody></table>
+        </section>` : ""}`;
+  } else if (domain === "logistics") {
+    const { results = [], total_anomalies } = data;
+    bodyHtml = `
+      ${total_anomalies ? `<section><p class="warn">⚠ ${total_anomalies} anomalies detected</p></section>` : ""}
+      ${results.map(r => {
+        const inv = r.invoice || {};
+        const anoms = r.anomalies || [];
+        return `<section>
+          <h2>${(r.source_file || "").split("/").pop().split("\\").pop()}</h2>
+          <table><tbody>
+            ${inv.invoice_number ? `<tr><th>Invoice #</th><td>${inv.invoice_number}</td></tr>` : ""}
+            ${inv.vendor_name ? `<tr><th>Vendor</th><td>${inv.vendor_name}</td></tr>` : ""}
+            ${inv.invoice_date ? `<tr><th>Date</th><td>${inv.invoice_date}</td></tr>` : ""}
+            ${inv.total_amount != null ? `<tr><th>Total</th><td>${inv.currency || ""} ${inv.total_amount}</td></tr>` : ""}
+          </tbody></table>
+          ${anoms.length ? `<h3>Anomalies</h3><ul>${anoms.map(a => `<li><span class="badge ${(a.severity||"").toLowerCase()}">${(a.severity||"").toUpperCase()}</span> ${a.description}</li>`).join("")}</ul>` : ""}
+        </section>`;
+      }).join("")}`;
+  } else if (domain === "bills") {
+    const { summary = {}, invoices = [] } = data;
+    bodyHtml = `
+      <section>
+        <h2>Consolidated Summary</h2>
+        <table><tbody>
+          <tr><th>Subtotal</th><td>${data.currency} ${(summary.subtotal || 0).toFixed(2)}</td></tr>
+          <tr><th>Tax</th><td>${data.currency} ${(summary.tax || 0).toFixed(2)}</td></tr>
+          <tr><th>Grand Total</th><td><strong>${data.currency} ${(summary.grand_total || 0).toFixed(2)}</strong></td></tr>
+          <tr><th>Invoices</th><td>${summary.invoice_count || 0}</td></tr>
+          <tr><th>Line Items</th><td>${summary.line_item_count || 0}</td></tr>
+        </tbody></table>
+      </section>
+      ${invoices.map((inv, i) => `
+        <section>
+          <h2>Invoice ${i + 1}: ${inv.source_file?.split("/").pop()?.split("\\").pop() || ""}</h2>
+          <table><tbody>
+            ${inv.invoice_number ? `<tr><th>Invoice #</th><td>${inv.invoice_number}</td></tr>` : ""}
+            ${inv.vendor ? `<tr><th>Vendor</th><td>${inv.vendor}</td></tr>` : ""}
+            ${inv.date ? `<tr><th>Date</th><td>${inv.date}</td></tr>` : ""}
+            <tr><th>Total</th><td>${inv.currency} ${(inv.total || 0).toFixed(2)}</td></tr>
+          </tbody></table>
+        </section>`).join("")}`;
+  } else if (domain === "forms") {
+    const { fields = [], field_count } = data;
+    bodyHtml = `
+      <section>
+        <p><strong>Fields Found:</strong> ${field_count} &nbsp; <strong>Filled:</strong> ${fields.filter(f => f.value != null).length}</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Value</th></tr></thead><tbody>
+          ${fields.map(f => `
+            <tr>
+              <td>${f.field}</td>
+              <td>${f.field_type || "—"}</td>
+              <td>${f.value != null ? String(f.value) : "<em>blank</em>"}</td>
+            </tr>`).join("")}
+        </tbody></table>
+      </section>`;
+  } else if (domain === "signature") {
+    const { signatures = [], signatures_detected } = data;
+    bodyHtml = `
+      <section>
+        <p><strong>Signatures Detected:</strong> ${signatures_detected}</p>
+        ${signatures.length ? `
+          <table><thead><tr><th>Page</th><th>Confidence</th><th>Description</th></tr></thead><tbody>
+          ${signatures.map(s => `
+            <tr>
+              <td>Page ${s.page}</td>
+              <td>${s.confidence ? Math.round(s.confidence * 100) + "%" : "—"}</td>
+              <td>${(s.description || "").slice(0, 200)}</td>
+            </tr>`).join("")}
+          </tbody></table>` : `<p>${data.note || "No signatures found."}</p>`}
+      </section>`;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>DocuMind Analysis Report — ${domainMeta.label}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 13px; color: #0f172a; margin: 0; padding: 24px 32px; }
+  h1 { font-size: 20px; margin: 0 0 4px; color: #1e293b; }
+  .meta { font-size: 12px; color: #64748b; margin-bottom: 20px; }
+  h2 { font-size: 14px; font-weight: 700; margin: 20px 0 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+  h3 { font-size: 12px; font-weight: 600; margin: 12px 0 6px; color: #334155; }
+  section { margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0; }
+  th, td { border: 1px solid #e2e8f0; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; font-weight: 600; }
+  p { margin: 4px 0 8px; line-height: 1.5; }
+  ul { margin: 4px 0; padding-left: 18px; }
+  li { margin-bottom: 4px; }
+  .warn { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 4px; padding: 6px 10px; color: #92400e; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; }
+  .badge.low, .badge.green { background: #d1fae5; color: #065f46; }
+  .badge.medium { background: #fef3c7; color: #92400e; }
+  .badge.high { background: #fee2e2; color: #991b1b; }
+  .badge.critical { background: #fecaca; color: #7f1d1d; }
+  .badge.unknown { background: #e2e8f0; color: #475569; }
+  .footer { margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 10px; font-size: 11px; color: #94a3b8; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+  <h1>${domainMeta.icon || ""} ${domainMeta.label || domain} Analysis Report</h1>
+  <div class="meta">
+    <strong>Document:</strong> ${fileName} &nbsp;&nbsp;
+    <strong>Generated:</strong> ${now} &nbsp;&nbsp;
+    <strong>Platform:</strong> DocuMind AI
+  </div>
+  ${bodyHtml}
+  <div class="footer">Generated by DocuMind AI &mdash; Confidential. Do not distribute without authorization.</div>
+</body>
+</html>`;
+}
+
 export function DomainPanel({ selectedFile, documents, workspaceId }) {
   const [activeDomain, setActiveDomain] = useState("legal");
   const [loading, setLoading] = useState(false);
@@ -328,6 +526,19 @@ export function DomainPanel({ selectedFile, documents, workspaceId }) {
       setLoading(false);
     }
   }, [selectedFile, activeDomain, loading, billFiles, billCurrency, workspaceId]);
+
+  const exportReport = useCallback(() => {
+    if (!result || !resultDomain) return;
+    const sf = resultDomain === "bills" ? null : selectedFile;
+    const html = buildReportHtml(resultDomain, result, sf);
+    const win = window.open("", "_blank");
+    if (!win) { toast.error("Pop-up blocked — allow pop-ups and retry"); return; }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { try { win.print(); } catch {} }, 400);
+  }, [result, resultDomain, selectedFile]);
 
   const noDoc = !selectedFile;
   const shortName = selectedFile ? selectedFile.split("/").pop().split("\\").pop() : null;
@@ -430,6 +641,26 @@ export function DomainPanel({ selectedFile, documents, workspaceId }) {
       )}
 
       {/* Results */}
+      {result && (
+        <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 0 0" }}>
+          <button
+            className="doc-action-btn"
+            onClick={exportReport}
+            title="Download analysis report (print/PDF)"
+            style={{
+              fontSize: 11,
+              padding: "3px 10px",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              color: "var(--accent)",
+              borderColor: "var(--accent)",
+            }}
+          >
+            📥 Download Report
+          </button>
+        </div>
+      )}
       {result && resultDomain === "legal" && <LegalResult data={result} />}
       {result && resultDomain === "medical" && <MedicalResult data={result} />}
       {result && resultDomain === "logistics" && <LogisticsResult data={result} />}

@@ -90,6 +90,9 @@ export default function App() {
   const [docBrief, setDocBrief] = useState(null); // { file, summary, loading }
   const [showCompare, setShowCompare] = useState(false);
   const [featureTab, setFeatureTab] = useState(null); // null = no feature panel open
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem("dm_theme") || "dark"; } catch { return "dark"; }
+  });
   const [agentSteps, setAgentSteps] = useState([]); // agent reasoning steps
   const [showPdfViewer, setShowPdfViewer] = useState(false); // PDF side panel
   const [extractionResults, setExtractionResults] = useState(null); // { tables, charts }
@@ -104,6 +107,13 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem("dm_vision", String(visionEnabled)); } catch {}
   }, [visionEnabled]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("dm_theme", theme);
+      document.documentElement.className = theme === "light" ? "theme-light" : "";
+    } catch {}
+  }, [theme]);
 
   const refreshDocuments = useCallback(async (workspaceId = null) => {
     setLoadingDocs(true);
@@ -821,6 +831,15 @@ ${rows}</body></html>`;
                 </button>
               </>
             )}
+            <button
+              className="topbar-btn"
+              onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              title={theme === "dark" ? "Light mode" : "Dark mode"}
+              style={{ fontSize: 14 }}
+            >
+              {theme === "dark" ? "☀️" : "🌙"}
+            </button>
             <span className="badge badge-violet" style={{ fontSize: 10, padding: "3px 8px" }}>
               <IconSpark /> {queryMode.toUpperCase()}
             </span>

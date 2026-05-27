@@ -149,6 +149,7 @@ export function DocumentList({ documents, onDeleted, selectedFile, onSelect, wor
   const [confirmingDelete, setConfirmingDelete] = useState(null);
   const [reindexingId, setReindexingId] = useState(null);
   const [viewingChunksId, setViewingChunksId] = useState(null);
+  const [search, setSearch] = useState("");
 
   const handleDownload = useCallback((sourceFile, e) => {
     e.stopPropagation();
@@ -205,9 +206,42 @@ export function DocumentList({ documents, onDeleted, selectedFile, onSelect, wor
     );
   }
 
+  const filtered = search.trim()
+    ? documents.filter(d =>
+        d.source_file.toLowerCase().includes(search.toLowerCase())
+      )
+    : documents;
+
   return (
     <div className="doc-list">
-      {documents.map((doc) => {
+      {/* Search box — appears when 4+ documents */}
+      {documents.length >= 4 && (
+        <div style={{ padding: "0 0 6px" }}>
+          <input
+            type="search"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search documents…"
+            aria-label="Filter documents"
+            style={{
+              width: "100%",
+              background: "var(--bg-3)",
+              border: "1px solid var(--border-2)",
+              borderRadius: "var(--r-sm)",
+              color: "var(--text-1)",
+              fontSize: 12,
+              padding: "5px 10px",
+              outline: "none",
+            }}
+          />
+        </div>
+      )}
+      {filtered.length === 0 && search && (
+        <div style={{ fontSize: 12, color: "var(--text-4)", padding: "12px 4px", textAlign: "center" }}>
+          No documents match "{search}"
+        </div>
+      )}
+      {filtered.map((doc) => {
         const isSelected    = selectedFile === doc.source_file;
         const isDeleting    = deletingId   === doc.source_file;
         const isConfirming  = confirmingDelete === doc.source_file;
