@@ -87,7 +87,7 @@ async function* streamText(text, delayMs = 18) {
 export const demoApi = {
   health: async () => ({ status: "demo", version: "2.0.0-demo" }),
 
-  login: async (email, _password) => {
+  login: async (email) => {
     await new Promise(r => setTimeout(r, 600));
     if (!email.includes("@")) throw new Error("Invalid email");
     return {
@@ -151,7 +151,7 @@ export const demoApi = {
     };
   },
 
-  queryStream: async function* (request, _signal) {
+  queryStream: async function* (request) {
     const answer = getDemoAnswer(typeof request === "string" ? request : request.question);
     yield* streamText(answer);
   },

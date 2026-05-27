@@ -362,10 +362,10 @@ export const api = {
     }).then(r => r.data);
   },
 
-  // API Key management
-  listApiKeys: () => apiClient.get("/api/v1/auth/api-keys").then(r => r.data),
-  createApiKey: (name, expires_days = 365) => apiClient.post("/api/v1/auth/api-keys", { name, expires_days }).then(r => r.data),
-  deleteApiKey: (keyId) => apiClient.delete(`/api/v1/auth/api-keys/${keyId}`).then(r => r.data),
+  // Auth-scoped API Key management (used by ApiKeyPanel sidebar widget)
+  authListApiKeys: () => apiClient.get("/api/v1/auth/api-keys").then(r => r.data),
+  authCreateApiKey: (name, expires_days = 365) => apiClient.post("/api/v1/auth/api-keys", { name, expires_days }).then(r => r.data),
+  authDeleteApiKey: (keyId) => apiClient.delete(`/api/v1/auth/api-keys/${keyId}`).then(r => r.data),
 
   // Fine-tuning
   generateDataset: (workspaceId) =>

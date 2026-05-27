@@ -15,7 +15,7 @@ function loadHistory() {
 function saveHistory(hist) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(hist.slice(0, MAX_HISTORY)));
-  } catch {}
+  } catch { /* storage unavailable — history in-memory only */ }
 }
 
 export function useConversationHistory() {
@@ -44,7 +44,7 @@ export function useConversationHistory() {
 
   const clearAll = useCallback(() => {
     setConversations([]);
-    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    try { localStorage.removeItem(STORAGE_KEY); } catch { /* storage unavailable */ }
   }, []);
 
   return { conversations, addOrUpdate, remove, clearAll };

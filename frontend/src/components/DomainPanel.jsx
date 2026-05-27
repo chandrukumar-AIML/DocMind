@@ -537,7 +537,7 @@ export function DomainPanel({ selectedFile, documents, workspaceId }) {
     win.document.write(html);
     win.document.close();
     win.focus();
-    setTimeout(() => { try { win.print(); } catch {} }, 400);
+    setTimeout(() => { try { win.print(); } catch { /* print dialog blocked — user can print manually */ } }, 400);
   }, [result, resultDomain, selectedFile]);
 
   const noDoc = !selectedFile;

@@ -336,18 +336,18 @@ export function DocumentList({ documents, onDeleted, selectedFile, onSelect, wor
                   <button
                     className="doc-action-btn"
                     onClick={(e) => handleReindex(doc.source_file, e)}
-                    disabled={reindexingId === doc.source_file || isDeleting}
+                    disabled={isReindexing || isDeleting}
                     aria-label={`Re-index ${shortName}`}
                     title="Re-process document"
                   >
-                    {reindexingId === doc.source_file
+                    {isReindexing
                       ? <span style={{ animation: "spin 0.7s linear infinite", display: "inline-block" }}>↻</span>
                       : <ReindexIcon />}
                   </button>
                   <button
                     className="doc-action-btn"
                     onClick={() => setConfirmingDelete(doc.source_file)}
-                    disabled={isDeleting || reindexingId === doc.source_file}
+                    disabled={isDeleting || isReindexing}
                     aria-label={`Delete ${shortName}`}
                     title="Remove document"
                   >

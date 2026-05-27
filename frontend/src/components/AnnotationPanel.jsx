@@ -61,7 +61,7 @@ export function AnnotationPanel({ sourceFile, workspaceId }) {
         } else if (msg.event === "annotation_resolved") {
           setAnnotations(prev => prev.map(a => a.id === msg.annotation_id ? { ...a, resolved: true } : a));
         }
-      } catch {}
+      } catch { /* malformed WS message — skip */ }
     };
     return () => { ws.close(); };
   }, [sourceFile, workspaceId]);

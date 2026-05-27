@@ -104,14 +104,14 @@ export default function App() {
   const abortRef = useRef(null);
 
   useEffect(() => {
-    try { localStorage.setItem("dm_vision", String(visionEnabled)); } catch {}
+    try { localStorage.setItem("dm_vision", String(visionEnabled)); } catch { /* storage unavailable */ }
   }, [visionEnabled]);
 
   useEffect(() => {
     try {
       localStorage.setItem("dm_theme", theme);
       document.documentElement.className = theme === "light" ? "theme-light" : "";
-    } catch {}
+    } catch { /* storage unavailable */ }
   }, [theme]);
 
   const refreshDocuments = useCallback(async (workspaceId = null) => {

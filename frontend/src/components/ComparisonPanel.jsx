@@ -79,7 +79,7 @@ export function ComparisonPanel({ documents }) {
     try {
       const data = await api.listComparisons();
       setJobs(data.jobs || []);
-    } catch {}
+    } catch { /* comparison history unavailable */ }
   }, []);
 
   useEffect(() => { loadJobs(); }, [loadJobs]);

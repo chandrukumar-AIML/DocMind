@@ -1,5 +1,5 @@
 // frontend/src/components/CompliancePanel.jsx
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../api/client";
 import toast from "react-hot-toast";
 import PropTypes from "prop-types";

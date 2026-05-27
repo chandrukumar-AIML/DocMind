@@ -10,7 +10,7 @@ function loadWatched() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
 }
 function saveWatched(list) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch {}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch { /* storage unavailable */ }
 }
 function timeAgo(ts) {
   if (!ts) return "never";

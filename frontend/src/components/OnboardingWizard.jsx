@@ -22,13 +22,11 @@ export function OnboardingWizard() {
   const [domain, setDomain] = useState("");
   const [apiKey, setApiKey] = useState(null);
   const [keyCopied, setKeyCopied] = useState(false);
-  const [progress, setProgress] = useState(null);
-
   useEffect(() => {
     if (user?.workspace_id) {
       api.getOnboardingProgress(user.workspace_id)
-        .then(p => setProgress(p))
-        .catch(() => {});
+        .then(p => { if (p?.current_step > 1) setStep(p.current_step); })
+        .catch(() => { /* onboarding progress unavailable — start from step 1 */ });
     }
   }, [user]);
 

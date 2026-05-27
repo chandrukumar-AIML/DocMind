@@ -30,7 +30,7 @@ export function ApiKeyPanel() {
   const [copied, setCopied] = useState(null);
 
   const load = useCallback(() => {
-    api.listApiKeys().then(d => setKeys(d.keys || [])).catch(() => {});
+    api.authListApiKeys().then(d => setKeys(d.keys || [])).catch(() => { /* key fetch failed */ });
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -40,7 +40,7 @@ export function ApiKeyPanel() {
     if (!n || creating) return;
     setCreating(true);
     try {
-      const result = await api.createApiKey(n, 365);
+      const result = await api.authCreateApiKey(n, 365);
       setNewKey(result);
       setName("");
       load();
@@ -54,7 +54,7 @@ export function ApiKeyPanel() {
 
   const revoke = useCallback(async (keyId) => {
     try {
-      await api.deleteApiKey(keyId);
+      await api.authDeleteApiKey(keyId);
       setKeys(prev => prev.filter(k => k.key_id !== keyId));
       toast.success("API key revoked");
     } catch {
