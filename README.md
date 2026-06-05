@@ -15,17 +15,29 @@
   <img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&logo=postgresql"/>
   <img src="https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square"/>
-  <img src="https://img.shields.io/badge/tests-142%20passing-brightgreen?style=flat-square"/>
+  <img src="https://img.shields.io/badge/tests-passing-brightgreen?style=flat-square"/>
   <img src="https://img.shields.io/github/last-commit/chandrukumar-AIML/DocMind?style=flat-square"/>
+</p>
+
+<p align="center">
+  <a href="https://doc-mind-peach.vercel.app"><strong>🚀 Live Demo</strong></a> ·
+  <a href="DEPLOY.md">Deploy Guide</a> ·
+  <a href="#-quick-start">Quick Start</a>
 </p>
 
 ---
 
 ## 🎬 Demo
 
-> _Add a GIF or screenshot here — record with OBS or Loom after deploy_
->
-> Live demo: **[coming soon — link after Vercel deploy]**
+**▶️ Live:** https://doc-mind-peach.vercel.app
+
+The live demo runs in **demo mode** with realistic sample data (no API key
+required) so you can explore every feature instantly — RAG/Agent/Graph chat,
+document library, domain analysis, and all collaboration panels. To run with a
+real LLM backend, set `VITE_DEMO_MODE=false` and add an `OPENAI_API_KEY`
+(see [DEPLOY.md](DEPLOY.md)).
+
+> _Tip: add a GIF/screenshot here — record the walkthrough with OBS or Loom._
 
 ---
 
@@ -217,11 +229,15 @@ See [.env.example](.env.example) for the complete list of 50+ variables.
 ## 🧪 Test Results
 
 ```
-Integration tests:   24 / 24  passing ✅
-Batch API tests:   118 / 126  passing ✅   (8 skipped — data-dependent)
-ESLint:              0 errors  ✅           (5 warnings — intentional ref patterns)
-Production build:    ✅  15.7s — zero errors
+Backend  · Integration tests:   24 / 24  passing ✅
+Backend  · Batch API tests:    118 / 126  passing ✅   (8 skipped — data-dependent)
+Frontend · Vitest suite:         12 / 12  passing ✅   (constants, demo API, components)
+ESLint:                           0 errors ✅            (5 warnings — intentional ref patterns)
+Production build:                 ✅ zero errors
+CI/CD (GitHub Actions):           ruff + pytest + eslint + vitest + build ✅
 ```
+
+> Run locally: `cd backend && pytest app/tests/` · `cd frontend && npm test`
 
 ---
 
