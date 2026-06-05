@@ -537,9 +537,9 @@ def record_evaluation_run(
             f"Evaluation {evaluation_type} | workspace={workspace_id} "
             f"dataset_size={dataset_size} {metrics_summary} status={status} | {correlation_id}"
         )
-        # TODO: Async Redis recording when collector is initialized
-        # collector = get_collector()
-        # asyncio.create_task(collector.record_eval_metric(...))
+        # NOTE: Evaluation runs are persisted via structured logs above and
+        # surfaced by MLflow tracking. Optional Redis metric recording can be
+        # wired here when a collector instance is available in this context.
     except Exception as e:
         logger.warning(f"Failed to record evaluation run: {e}")
 

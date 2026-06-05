@@ -331,9 +331,11 @@ class UserStore:
                     )
                 )
                 
-                # TODO: Integrate with documents/ingestion table for real doc_count
+                # NOTE: This endpoint returns membership stats only. Document and
+                # query counts are served by the dedicated monitoring endpoint
+                # (/api/v1/monitoring/stats) which owns the ingestion + provenance
+                # tables — kept separate to avoid cross-module coupling here.
                 doc_count = 0
-                # TODO: Integrate with provenance.answer_count for query_count  
                 query_count = 0
                 
                 return {

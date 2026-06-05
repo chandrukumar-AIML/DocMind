@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import PropTypes from "prop-types";
 
 const NODE_ICONS = {
   query_analyzer:        "🔍",
@@ -70,3 +71,11 @@ export function AgentStepsPanel({ steps = [], isStreaming = false }) {
     </div>
   );
 }
+
+AgentStepsPanel.propTypes = {
+  steps: PropTypes.arrayOf(PropTypes.shape({
+    node: PropTypes.string,
+    content: PropTypes.string,
+  })),
+  isStreaming: PropTypes.bool,
+};

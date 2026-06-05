@@ -1,4 +1,5 @@
 // frontend/src/components/RoleGuard.jsx
+import PropTypes from "prop-types";
 import { Navigate } from "react-router-dom";
 import { usePermissions } from "../hooks/usePermissions";
 import { useAuth } from "../hooks/useAuth";
@@ -39,3 +40,9 @@ export function RoleGuard({ requiredRole, children, fallback = "/unauthorized" }
 
   return children;
 }
+
+RoleGuard.propTypes = {
+  requiredRole: PropTypes.string.isRequired,
+  children: PropTypes.node,
+  fallback: PropTypes.string,
+};

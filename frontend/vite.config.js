@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  esbuild: { jsx: 'automatic' },
   build: {
     chunkSizeWarningLimit: 800,
     rollupOptions: {
@@ -23,5 +24,11 @@ export default defineConfig({
   },
   server: {
     port: 5175,
+  },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.js',
+    css: false,
   },
 })
