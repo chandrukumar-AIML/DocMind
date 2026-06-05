@@ -1,0 +1,60 @@
+services:
+  - type: web
+    name: docmind-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health
+
+    disk:
+      name: docmind-data
+      mountPath: /data
+      sizeGB: 1
+
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: API_RELOAD
+        value: "false"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: OCR_USE_GPU
+        value: "false"
+      - key: CHROMA_PERSIST_DIR
+        value: /data/chroma
+      - key: FAISS_INDEX_PATH
+        value: /data/faiss/index.bin
+      - key: TMP_DIR
+        value: /tmp/documind
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "50"
+      - key: AUTH_ENABLED
+        value: "true"
+      - key: ALLOW_SELF_REGISTRATION
+        value: "false"
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      - key: JWT_REFRESH_TOKEN_EXPIRE_DAYS
+        value: "30"
+      - key: DEFAULT_WORKSPACE_ID
+        value: default
+      - key: LLM_PROVIDER
+        value: openai
+      - key: OPENAI_EMBEDDING_MODEL
+        value: text-embedding-3-large
+      - key: OPENAI_CHAT_MODEL
+        value: gpt-4o
+      - key: CHROMA_COLLECTION_NAME
+        value: documind_docs
+      # ── Set these in Render Dashboard → Environment (keep secret) ──
+      # JWT_SECRET_KEY        → your 128-char random secret
+      # OPENAI_API_KEY        → sk-...
+      # DATABASE_URL          → postgresql+asyncpg://... (from Supabase)
+      # REDIS_URL             → rediss://... (from Upstash)
+      # CORS_ORIGINS          → ["https://your-app.vercel.app"]
+      # FRONTEND_URL          → https://your-app.vercel.app

@@ -69,14 +69,21 @@ git push -u origin main
 ### 3b. Create the Web Service
 
 1. Go to [render.com](https://render.com) → **New → Web Service**
-2. Connect your GitHub repo → select `docmind-ai`
+2. Connect your GitHub repo → select `DocMind`
 3. Set:
    - **Name**: `docmind-backend`
-   - **Root Directory**: `backend`
-   - **Runtime**: `Python 3`
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+   - **Root Directory**: *(leave blank — render.yaml handles it)*
+   - **Runtime**: **Docker** ← important, NOT Python
+   - **Dockerfile Path**: `./backend/Dockerfile`
+   - **Docker Context**: `./backend`
    - **Plan**: Free
+
+> ⚠️ **Why Docker, not Python runtime?**
+> PaddleOCR + paddlepaddle = 500 MB+. `pip install` on Render free tier
+> will timeout (20 min limit). The Dockerfile uses multi-stage build with
+> cached model layers — much faster and reliable.
+>
+> A `render.yaml` is already in the repo root — Render will auto-detect it.
 
 ### 3c. Add Persistent Disk
 
@@ -101,6 +108,8 @@ API_RELOAD=false
 AUTH_ENABLED=true
 ALLOW_SELF_REGISTRATION=false
 JWT_SECRET_KEY=<paste the 128-char secret from pre-deploy step>
+# ⚠️  IMPORTANT: The variable name MUST be JWT_SECRET_KEY (not DOCUMIND_JWT_SECRET_KEY)
+#     The app config only reads JWT_SECRET_KEY — wrong name = auth broken
 JWT_ALGORITHM=HS256
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
 JWT_REFRESH_TOKEN_EXPIRE_DAYS=30
