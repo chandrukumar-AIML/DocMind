@@ -127,6 +127,14 @@ class Settings(BaseSettings):
     rag_chunk_overlap_parent: int = Field(default=200, ge=0)
     rag_top_k_retrieval: int = Field(default=20, ge=1)
     rag_top_k_rerank: int = Field(default=3, ge=1)
+    # Cross-encoder reranking. Disable on low-RAM hosts (e.g. Render free 512MB)
+    # to avoid loading PyTorch + sentence-transformers (~1GB). When disabled,
+    # retrieval (vector + BM25 RRF) scores are used directly — slightly lower
+    # precision but the full RAG/Agent/Graph pipeline still works.
+    rerank_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("RERANK_ENABLED", "rerank_enabled"),
+    )
 
     # -- Observability ------------------------------------------
     langchain_api_key: Optional[str] = Field(default=None)

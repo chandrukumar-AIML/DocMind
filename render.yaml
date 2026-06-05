@@ -51,6 +51,11 @@ services:
         value: gpt-4o
       - key: CHROMA_COLLECTION_NAME
         value: documind_docs
+      # Disable cross-encoder reranking on free tier (512MB) — avoids loading
+      # PyTorch model weights (~1GB) that cause OOM. Set to true after upgrading
+      # to a paid instance (2GB+) to re-enable best-precision reranking.
+      - key: RERANK_ENABLED
+        value: "false"
       # ── Set these in Render Dashboard → Environment (keep secret) ──
       # JWT_SECRET_KEY        → your 128-char random secret
       # OPENAI_API_KEY        → sk-...

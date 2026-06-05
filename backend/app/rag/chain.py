@@ -156,7 +156,10 @@ class AdvancedRAGChain:
         self.store = store_manager or VectorStoreManager()
         self.hyde = HyDEExpander(model=settings.openai_chat_model)
         self.searcher = HybridSearcher(store_manager=self.store)
-        self.reranker = get_reranker()  # Singleton — loaded once, reused across requests
+        # Reranking toggle — when disabled (low-RAM hosts), skip the cross-encoder
+        # entirely so PyTorch model weights never load. Retrieval RRF scores are used.
+        self.rerank_enabled = settings.rerank_enabled
+        self._reranker = None  # Lazy — only instantiated when first needed
         self._bm25_ready = False
         # ✅ FIXED: Safe fallback if import fails
         try:
@@ -174,6 +177,13 @@ class AdvancedRAGChain:
         )
         
         logger.info(f"AdvancedRAGChain initialized | corr_id={self.correlation_id}")
+
+    @property
+    def reranker(self):
+        """Lazy reranker — only instantiated on first access (when rerank is enabled)."""
+        if self._reranker is None:
+            self._reranker = get_reranker()
+        return self._reranker
 
     async def initialize(self) -> None:
         """
@@ -404,18 +414,27 @@ class AdvancedRAGChain:
         candidate_docs = [doc for doc, _ in candidates]
         expanded_docs = await loop.run_in_executor(None, self._expand_to_parents, candidate_docs)
 
-        # Stage 4: Reranking
+        # Stage 4: Reranking (toggle-gated — skipped on low-RAM hosts)
         t3 = time.perf_counter()
-        reranked = await loop.run_in_executor(
-            None,
-            partial(
-                self.reranker.rerank,
-                query=standalone_q,
-                documents=expanded_docs,
-                top_k=top_k_rerank,
-                correlation_id=correlation_id,
-            ),
-        )
+        if self.rerank_enabled:
+            reranked = await loop.run_in_executor(
+                None,
+                partial(
+                    self.reranker.rerank,
+                    query=standalone_q,
+                    documents=expanded_docs,
+                    top_k=top_k_rerank,
+                    correlation_id=correlation_id,
+                ),
+            )
+        else:
+            # Reranker disabled — keep retrieval order, pair with descending
+            # placeholder scores so downstream code that expects (doc, score) works.
+            n = len(expanded_docs[:top_k_rerank])
+            reranked = [
+                (doc, 1.0 - (i / max(n, 1)))
+                for i, doc in enumerate(expanded_docs[:top_k_rerank])
+            ]
         timings["rerank_ms"] = round((time.perf_counter() - t3) * 1000)
 
         logger.info(
@@ -546,7 +565,12 @@ class AdvancedRAGChain:
         """Return pipeline configuration for monitoring."""
         return {
             "bm25_ready": self._bm25_ready,
-            "reranker_info": self.reranker.get_model_info() if hasattr(self.reranker, "get_model_info") else "unknown",
+            # Avoid touching self.reranker when disabled — that would force a lazy load
+            "reranker_info": (
+                self.reranker.get_model_info()
+                if self.rerank_enabled and hasattr(self.reranker, "get_model_info")
+                else "disabled"
+            ),
             "llm_model": getattr(self.llm, 'model_name', 'unknown'),
             "correlation_id": self.correlation_id,
         }
