@@ -40,19 +40,10 @@ RUN pip install paddlepaddle==2.6.2 \
 # Install Python requirements
 RUN pip install -r requirements.txt
 
-# ✅ FIXED: Pre-download PaddleOCR models using heredoc syntax
-RUN mkdir -p /opt/paddle_models && python3 <<'PYEOF'
-import os, sys
-model_dir = os.environ.get('PADDLEOCR_HOME', '/opt/paddle_models')
-det_path = f'{model_dir}/whl/det/en/en_PP-OCRv4_det_infer'
-if not os.path.exists(det_path):
-    print('Downloading PaddleOCR models...', file=sys.stderr)
-    from paddleocr import PaddleOCR
-    _ = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False, show_log=False)
-    print('PaddleOCR models cached.', file=sys.stderr)
-else:
-    print('PaddleOCR models already cached.', file=sys.stderr)
-PYEOF
+# Skip PaddleOCR model pre-download at build time — Render's build servers
+# lack AVX2 support required by PaddlePaddle 2.6.2, causing a SIGSEGV (exit 139).
+# Models are downloaded on first OCR request at runtime from /data (persistent disk).
+RUN mkdir -p /opt/paddle_models && echo "PaddleOCR models will download at runtime"
 
 # ✅ FIXED: Pre-download cross-encoder with retry using heredoc syntax
 RUN mkdir -p /opt/hf_models && python3 <<'PYEOF'
