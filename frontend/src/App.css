@@ -120,12 +120,13 @@
 /* ── Sidebar Nav Tabs ──────────────────────────────────── */
 .sidebar-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 10px 12px 0;
   flex-shrink: 0;
 }
 .nav-tab {
-  flex: 1;
+  flex: 1 1 28%;
   padding: 7px 8px;
   border-radius: var(--r);
   font-size: 11px;

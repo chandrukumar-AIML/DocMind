@@ -170,6 +170,67 @@ export const demoApi = {
   }),
 
   logout: async () => {},
+
+  // ── Domain analysis (sample results) ──────────────────────
+  analyzeLegal: async () => ({
+    document_type: "Service Agreement",
+    risk_score: 6,
+    clauses: [
+      { type: "Liability", text: "Liability capped at total contract value (Section 7.2).", risk: "medium" },
+      { type: "Termination", text: "Either party may terminate with 30 days written notice.", risk: "low" },
+      { type: "Confidentiality", text: "Mutual NDA covering all shared materials for 3 years.", risk: "low" },
+      { type: "Indemnification", text: "Vendor indemnifies client against third-party IP claims.", risk: "high" },
+    ],
+    obligations: ["99.9% uptime SLA", "4-hour critical incident response", "Quarterly business reviews"],
+    summary: "Standard B2B service agreement with balanced terms. One high-risk indemnification clause to review.",
+  }),
+  analyzeMedical: async () => ({
+    document_type: "Clinical Note",
+    diagnoses: [{ code: "E11.9", desc: "Type 2 diabetes mellitus without complications" }],
+    medications: [{ name: "Metformin", dose: "500mg", frequency: "twice daily" }],
+    summary: "Demo medical analysis — sample extracted entities.",
+  }),
+  analyzeLogistics: async () => ({
+    invoices: [{ vendor: "Acme Logistics", total: 12400, currency: "USD", line_items: 8 }],
+    summary: "Demo logistics analysis — 1 invoice parsed.",
+  }),
+  calculateBills: async () => ({
+    currency: "INR",
+    total: 48750,
+    breakdown: [
+      { category: "Freight", amount: 32000 },
+      { category: "Handling", amount: 9750 },
+      { category: "Taxes (GST 18%)", amount: 7000 },
+    ],
+    summary: "Demo bill calculation — total ₹48,750.",
+  }),
+  extractFormFields: async () => ({
+    fields: [
+      { name: "Full Name", value: "Chandru Kumar", confidence: 0.97 },
+      { name: "Date", value: "2026-06-05", confidence: 0.95 },
+      { name: "Invoice No", value: "INV-2024-0042", confidence: 0.92 },
+    ],
+    summary: "Demo form extraction — 3 fields detected.",
+  }),
+  detectSignatures: async () => ({
+    signatures: [
+      { page: 12, location: "bottom-right", confidence: 0.94, signed: true },
+      { page: 12, location: "bottom-left", confidence: 0.89, signed: false },
+    ],
+    summary: "Demo signature detection — 1 signed, 1 pending.",
+  }),
+  graphQuery: async () => ({
+    answer: "Demo graph result: Acme Corp ──[party_to]──> Service Agreement v3 ──[references]──> Q4 Financial Data. 3 entities, 2 relationships found.",
+    nodes: [
+      { id: "acme", label: "Acme Corp", type: "Organization" },
+      { id: "sa3", label: "Service Agreement v3", type: "Document" },
+      { id: "q4", label: "Q4 Financial Data", type: "Document" },
+    ],
+    edges: [
+      { source: "acme", target: "sa3", label: "party_to" },
+      { source: "sa3", target: "q4", label: "references" },
+    ],
+  }),
 };
 
 // Check if demo mode should be active

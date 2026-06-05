@@ -391,11 +391,14 @@ export const api = {
 
   // Domain analysis
   analyzeLegal: (sourceFile) =>
-    apiClient.post("/api/v1/domains/legal/analyze", { source_file: sourceFile }).then(r => r.data),
+    isDemoMode() ? demoApi.analyzeLegal(sourceFile)
+      : apiClient.post("/api/v1/domains/legal/analyze", { source_file: sourceFile }).then(r => r.data),
   analyzeMedical: (sourceFile) =>
-    apiClient.post("/api/v1/domains/medical/analyze", null, { params: { source_file: sourceFile } }).then(r => r.data),
+    isDemoMode() ? demoApi.analyzeMedical(sourceFile)
+      : apiClient.post("/api/v1/domains/medical/analyze", null, { params: { source_file: sourceFile } }).then(r => r.data),
   analyzeLogistics: (sourceFiles) =>
-    apiClient.post("/api/v1/domains/logistics/analyze-invoices", { source_files: sourceFiles }).then(r => r.data),
+    isDemoMode() ? demoApi.analyzeLogistics(sourceFiles)
+      : apiClient.post("/api/v1/domains/logistics/analyze-invoices", { source_files: sourceFiles }).then(r => r.data),
 
   // Document download
   downloadDocument: (sourceFile, workspaceId) => {
@@ -417,7 +420,8 @@ export const api = {
 
   // Bill calculator
   calculateBills: (sourceFiles, currency, workspaceId) =>
-    apiClient.post("/api/v1/domains/logistics/calculate-bills", {
+    isDemoMode() ? demoApi.calculateBills(sourceFiles, currency, workspaceId)
+      : apiClient.post("/api/v1/domains/logistics/calculate-bills", {
       source_files: sourceFiles,
       currency: currency || "INR",
       workspace_id: workspaceId,
@@ -425,7 +429,8 @@ export const api = {
 
   // Form field extraction
   extractFormFields: (sourceFile, workspaceId) =>
-    apiClient.post("/api/v1/extraction/form-fields", { source_file: sourceFile, workspace_id: workspaceId }).then(r => r.data),
+    isDemoMode() ? demoApi.extractFormFields(sourceFile, workspaceId)
+      : apiClient.post("/api/v1/extraction/form-fields", { source_file: sourceFile, workspace_id: workspaceId }).then(r => r.data),
 
   // Cross-document aggregation
   aggregateData: (sourceFiles, operation, column, filterCol, filterValue, workspaceId) =>
@@ -440,7 +445,8 @@ export const api = {
 
   // Signature detection
   detectSignatures: (sourceFile, workspaceId) =>
-    apiClient.post("/api/v1/domains/legal/detect-signatures", { source_file: sourceFile, workspace_id: workspaceId }).then(r => r.data),
+    isDemoMode() ? demoApi.detectSignatures(sourceFile, workspaceId)
+      : apiClient.post("/api/v1/domains/legal/detect-signatures", { source_file: sourceFile, workspace_id: workspaceId }).then(r => r.data),
 
   // Table extraction — returns { tables: [{table_id, summary, table_type, row_count, col_count}] }
   extractTables: (sourceFile, workspaceId) =>
