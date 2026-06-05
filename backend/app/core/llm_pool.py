@@ -88,19 +88,18 @@ def get_llm(
     
     logger.debug(f"Initializing LLM: provider={provider}, model={model}, streaming={streaming}, temp={temperature}")
     
-    # -- 1. Try Ollama (local, free) -----------------------------
+    # -- 1. Try Ollama (local, free, primary) --------------------
     if provider == "ollama":
         try:
             from langchain_ollama import ChatOllama
-            ollama_model = model_override or getattr(_settings, 'ollama_model', 'llama3.2')
+            ollama_model = model_override or getattr(_settings, 'ollama_model', 'llama3.2:7b')
             base_url = getattr(_settings, 'ollama_base_url', 'http://localhost:11434')
             try:
                 with urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=1.0):
                     pass
             except (OSError, URLError, TimeoutError) as e:
-                logger.warning(f"Ollama is not reachable at {base_url}: {e}. Falling back to mock LLM.")
-                raise RuntimeError(f"Ollama unavailable: {e}") from e
-            
+                raise RuntimeError(f"Ollama unavailable at {base_url}: {e}") from e
+
             llm = ChatOllama(
                 model=ollama_model,
                 base_url=base_url,
@@ -110,14 +109,33 @@ def get_llm(
             logger.info(f"Using Ollama LLM: {ollama_model} @ {base_url}")
             return llm
         except ImportError:
-            logger.warning("langchain-ollama not installed. Falling back to mock LLM.")
-            return _get_mock_llm()
+            logger.warning("langchain-ollama not installed. Falling back to OpenAI.")
         except Exception as e:
-            logger.warning(f"Ollama connection failed: {e}. Falling back to mock LLM.")
-            return _get_mock_llm()
+            logger.warning(f"Ollama unavailable: {e}. Falling back to OpenAI.")
+
+        # Ollama failed → try OpenAI as fallback
+        api_key = getattr(_settings, 'openai_api_key', None)
+        if api_key and api_key.startswith("sk-"):
+            try:
+                from langchain_openai import ChatOpenAI
+                llm = ChatOpenAI(
+                    model=getattr(_settings, 'openai_chat_model', 'gpt-4o'),
+                    api_key=api_key,
+                    temperature=temperature,
+                    streaming=streaming,
+                    max_retries=3,
+                    request_timeout=getattr(_settings, 'llm_request_timeout', 30),
+                    max_tokens=getattr(_settings, 'llm_max_tokens', 4096),
+                )
+                logger.info(f"Ollama unavailable — using OpenAI fallback: {llm.model_name}")
+                return llm
+            except Exception as e:
+                logger.error(f"OpenAI fallback also failed: {e}. Using mock LLM.")
+        else:
+            logger.warning("Ollama unavailable and no OPENAI_API_KEY set. Using mock LLM.")
+        return _get_mock_llm()
 
     # -- 2. Try OpenAI (production, requires API key) ------------
-    # FIXED: Removed dead `or provider == "ollama"` — ollama path always returns above
     if provider == "openai":
         api_key = getattr(_settings, 'openai_api_key', None)
         

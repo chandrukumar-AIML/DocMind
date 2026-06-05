@@ -17,7 +17,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Install build deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gcc g++ cmake \
-    libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgl1-mesa-glx \
+    libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgl1 \
     poppler-utils curl git wget \
     && rm -rf /var/lib/apt/lists/*
 
@@ -92,7 +92,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install runtime deps only
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgl1-mesa-glx \
+    libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libgl1 \
     poppler-utils curl \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean

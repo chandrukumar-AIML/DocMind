@@ -44,7 +44,7 @@ services:
       - key: DEFAULT_WORKSPACE_ID
         value: default
       - key: LLM_PROVIDER
-        value: openai
+        value: ollama
       - key: OPENAI_EMBEDDING_MODEL
         value: text-embedding-3-large
       - key: OPENAI_CHAT_MODEL
