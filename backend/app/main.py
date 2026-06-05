@@ -225,14 +225,19 @@ async def lifespan(app: FastAPI):
 
         # Pre-warm CrossEncoder and check OpenAI status in background (don't block startup)
         async def _prewarm():
-            try:
-                await asyncio.wait_for(
-                    loop.run_in_executor(None, lambda: __import__("app.rag.reranker", fromlist=["get_reranker"]).get_reranker().model),
-                    timeout=60.0,
-                )
-                logger.info("CrossEncoder pre-warmed ✅")
-            except Exception as e:
-                logger.warning(f"CrossEncoder pre-warm failed (will load on first query): {e}")
+            # Skip reranker pre-warm when disabled (low-RAM hosts) — loading the
+            # PyTorch model here is what pushes free-tier instances over 512MB.
+            if getattr(settings, "rerank_enabled", True):
+                try:
+                    await asyncio.wait_for(
+                        loop.run_in_executor(None, lambda: __import__("app.rag.reranker", fromlist=["get_reranker"]).get_reranker().model),
+                        timeout=60.0,
+                    )
+                    logger.info("CrossEncoder pre-warmed ✅")
+                except Exception as e:
+                    logger.warning(f"CrossEncoder pre-warm failed (will load on first query): {e}")
+            else:
+                logger.info("CrossEncoder pre-warm skipped (RERANK_ENABLED=false)")
             try:
                 from app.vectorstore.embeddings import CachedOpenAIEmbeddings
                 from app.config import get_settings as _gs
