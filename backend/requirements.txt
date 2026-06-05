@@ -107,7 +107,7 @@ httpx>=0.27.0,<1.0.0
 
 # ── New Feature Dependencies ─────────────────────────────────
 aiosmtplib>=3.0.0,<4.0.0       # Async SMTP for invite emails
-docusign-esign>=3.27.0,<4.0.0  # DocuSign e-signature API
+docusign-esign>=3.26.0,<4.0.0  # DocuSign e-signature API (3.26.0 is last 3.x release)
 Jinja2>=3.1.0,<4.0.0           # Email/report templates
 
 # ── Dev Tools ────────────────────────────────────────────────
