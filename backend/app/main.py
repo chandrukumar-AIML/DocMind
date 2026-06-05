@@ -105,6 +105,20 @@ async def lifespan(app: FastAPI):
         from app.core.invite_manager import ensure_invite_schema
         from app.core.superadmin_utils import ensure_superadmin_schema
         try:
+            # Create base tables first (idempotent — only creates missing tables,
+            # never drops). Required on fresh DBs (e.g. Supabase) so the
+            # ensure_*_schema repair helpers below have tables to alter.
+            async def _create_base_tables() -> None:
+                from app.database.base import Base
+                from app.database.engine import async_engine
+                # Import model modules so they register on Base.metadata
+                import app.auth.models  # noqa: F401
+                import app.provenance.models  # noqa: F401
+                async with async_engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                logger.info("Base tables ensured (create_all)")
+            await asyncio.wait_for(_create_base_tables(), timeout=_STARTUP_TIMEOUT)
+
             await asyncio.wait_for(ensure_auth_schema(), timeout=_STARTUP_TIMEOUT)
             await asyncio.wait_for(ensure_provenance_schema(), timeout=_STARTUP_TIMEOUT)
             await asyncio.wait_for(ensure_webhook_schema(), timeout=_STARTUP_TIMEOUT)
