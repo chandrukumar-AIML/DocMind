@@ -38,7 +38,11 @@ RUN pip install paddlepaddle==2.6.2 \
     --no-cache-dir --no-deps
 
 # Install Python requirements
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt && \
+    # litestar (transitive dep) installs 'multipart' which conflicts with
+    # FastAPI's 'python-multipart'. Uninstall the bad one and keep the right one.
+    pip uninstall -y multipart || true && \
+    pip install "python-multipart>=0.0.9,<0.1.0" --force-reinstall
 
 # Skip PaddleOCR model pre-download at build time — Render's build servers
 # lack AVX2 support required by PaddlePaddle 2.6.2, causing a SIGSEGV (exit 139).
