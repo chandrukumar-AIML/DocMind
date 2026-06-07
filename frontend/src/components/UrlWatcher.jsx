@@ -42,11 +42,11 @@ export function UrlWatcher({ workspaceId, onRefreshed }) {
 
   const refresh = useCallback(async (url) => {
     setRefreshing(prev => ({ ...prev, [url]: true }));
-    const toastId = toast.loading("Re-indexing URL…");
+    const toastId = toast.loading("Refreshing…");
     try {
       const result = await api.ingestUrl(url, workspaceId);
       const chunks = result.child_chunks ?? 0;
-      toast.success(`Re-indexed: ${chunks} chunks`, { id: toastId });
+      toast.success(`Refreshed — ${chunks} sections`, { id: toastId });
       setWatched(prev => {
         const next = prev.map(w => w.url === url ? { ...w, lastChecked: Date.now(), chunks } : w);
         saveWatched(next);
@@ -54,7 +54,7 @@ export function UrlWatcher({ workspaceId, onRefreshed }) {
       });
       onRefreshed?.();
     } catch {
-      toast.error("Re-index failed", { id: toastId });
+      toast.error("Refresh failed", { id: toastId });
     } finally {
       setRefreshing(prev => ({ ...prev, [url]: false }));
     }
@@ -96,7 +96,7 @@ export function UrlWatcher({ workspaceId, onRefreshed }) {
                 className="url-watch-refresh"
                 onClick={() => refresh(w.url)}
                 disabled={refreshing[w.url]}
-                title="Re-ingest now"
+                title="Refresh now"
               >
                 {refreshing[w.url]
                   ? <span style={{ animation: "spin 0.8s linear infinite", display: "inline-block" }}>↻</span>

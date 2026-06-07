@@ -22,18 +22,23 @@
   --bg-glass: rgba(17, 24, 41, 0.72);
   --bg-glass2: rgba(26, 34, 53, 0.55);
 
-  /* Brand — Violet */
-  --violet: #7C3AED;
-  --violet-2: #8B5CF6;
-  --violet-3: #A78BFA;
-  --violet-4: #C4B5FD;
-  --violet-dim: rgba(124, 58, 237, 0.18);
-  --violet-glow: rgba(124, 58, 237, 0.35);
+  /* Brand — Teal/Emerald (primary brand tokens; names kept for compatibility) */
+  --violet: #0D9488;
+  --violet-2: #14B8A6;
+  --violet-3: #2DD4BF;
+  --violet-4: #5EEAD4;
+  --violet-dim: rgba(13, 148, 136, 0.18);
+  --violet-glow: rgba(13, 148, 136, 0.35);
 
-  /* Brand — Cyan */
+  /* Brand — Cyan (secondary, for gradients) */
   --cyan: #0EA5E9;
   --cyan-2: #38BDF8;
   --cyan-dim: rgba(14, 165, 233, 0.15);
+
+  /* Accent — primary brand fill (teal). Used by buttons, logos, active chips. */
+  --accent: #0D9488;
+  --accent-2: #14B8A6;
+  --accent-dim: rgba(13, 148, 136, 0.18);
 
   /* Semantic */
   --green: #10B981;
@@ -55,15 +60,15 @@
   --border-3: rgba(148, 163, 184, 0.28);
 
   /* Gradients */
-  --grad-brand: linear-gradient(135deg, #7C3AED 0%, #0EA5E9 100%);
+  --grad-brand: linear-gradient(135deg, #0D9488 0%, #0EA5E9 100%);
   --grad-surface: linear-gradient(135deg, #111829 0%, #0C1120 100%);
-  --grad-glow: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(124,58,237,0.22) 0%, transparent 70%);
+  --grad-glow: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(13,148,136,0.22) 0%, transparent 70%);
 
   /* Shadows */
   --shadow-sm: 0 1px 8px rgba(0,0,0,0.3);
   --shadow: 0 4px 24px rgba(0,0,0,0.4);
   --shadow-lg: 0 12px 48px rgba(0,0,0,0.5);
-  --shadow-violet: 0 0 32px rgba(124,58,237,0.25);
+  --shadow-violet: 0 0 32px rgba(13,148,136,0.25);
 
   /* Radius */
   --r-sm: 6px;
@@ -152,8 +157,8 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 12px rgba(124,58,237,0.3); }
-  50%       { box-shadow: 0 0 24px rgba(124,58,237,0.55); }
+  0%, 100% { box-shadow: 0 0 12px rgba(13,148,136,0.3); }
+  50%       { box-shadow: 0 0 24px rgba(13,148,136,0.55); }
 }
 @keyframes dot-bounce {
   0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
@@ -189,7 +194,7 @@ body {
   padding: 2px 8px; border-radius: 99px;
   font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
 }
-.badge-violet { background: var(--violet-dim); color: var(--violet-3); border: 1px solid rgba(124,58,237,0.25); }
+.badge-violet { background: var(--violet-dim); color: var(--violet-3); border: 1px solid rgba(13,148,136,0.25); }
 .badge-cyan   { background: var(--cyan-dim);   color: var(--cyan-2);   border: 1px solid rgba(14,165,233,0.25); }
 .badge-green  { background: var(--green-dim);  color: var(--green);    border: 1px solid rgba(16,185,129,0.25); }
 .badge-amber  { background: var(--amber-dim);  color: var(--amber);    border: 1px solid rgba(245,158,11,0.25); }
@@ -215,9 +220,9 @@ code {
 
 .btn-primary {
   background: var(--grad-brand); color: #fff;
-  box-shadow: 0 4px 16px rgba(124,58,237,0.35);
+  box-shadow: 0 4px 16px rgba(13,148,136,0.35);
 }
-.btn-primary:hover { filter: brightness(1.12); box-shadow: 0 6px 24px rgba(124,58,237,0.5); transform: translateY(-1px); }
+.btn-primary:hover { filter: brightness(1.12); box-shadow: 0 6px 24px rgba(13,148,136,0.5); transform: translateY(-1px); }
 
 .btn-ghost {
   background: transparent; color: var(--text-2);
@@ -296,7 +301,7 @@ code {
 
 /* ── Tag chips & mode chips ────────────────────────────── */
 .tag-chip {
-  background: var(--violet-dim); color: var(--violet-3); border: 1px solid rgba(124,58,237,0.2);
+  background: var(--violet-dim); color: var(--violet-3); border: 1px solid rgba(13,148,136,0.2);
   border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: 600;
 }
 .mode-chip {
@@ -305,7 +310,7 @@ code {
   transition: all var(--t-fast);
 }
 .mode-chip:hover { background: var(--bg-4); color: var(--text-1); }
-.mode-chip.active { background: var(--violet-dim); color: var(--violet-3); border-color: rgba(124,58,237,0.3); }
+.mode-chip.active { background: var(--violet-dim); color: var(--violet-3); border-color: rgba(13,148,136,0.3); }
 
 /* ── Status chips & dots ───────────────────────────────── */
 .status-chip {
@@ -422,7 +427,7 @@ code {
   transition: all var(--t-fast);
 }
 .sidebar-feature-tab:hover { color: var(--text-2); background: var(--bg-4); }
-.sidebar-feature-tab.active { color: var(--violet-3); background: var(--violet-dim); border-color: rgba(124,58,237,0.3); }
+.sidebar-feature-tab.active { color: var(--violet-3); background: var(--violet-dim); border-color: rgba(13,148,136,0.3); }
 
 /* ── Full-page layouts (invite, onboarding, superadmin) ─────── */
 .invite-page {

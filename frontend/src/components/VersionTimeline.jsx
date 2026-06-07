@@ -4,6 +4,23 @@
 import { useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import PropTypes from "prop-types";
+import { isDemoMode } from "../api/demo";
+
+const DEMO_VERSIONS = [
+  { version_id: "v3", version_number: 3, version_label: "v3", is_current: true, change_type: "moderate", uploaded_at: "2026-06-05", chunk_count: 96, page_count: 12, change_summary: "Updated liability cap and added auto-renewal clause." },
+  { version_id: "v2", version_number: 2, version_label: "v2", is_current: false, change_type: "minor", uploaded_at: "2026-05-20", chunk_count: 91, page_count: 12, change_summary: "Corrected payment terms to Net-30." },
+  { version_id: "v1", version_number: 1, version_label: "v1", is_current: false, change_type: "none", uploaded_at: "2026-05-02", chunk_count: 88, page_count: 11, change_summary: "Initial upload." },
+];
+const DEMO_DIFF = {
+  version_1: 2, version_2: 3, change_magnitude: "moderate", overall_similarity: 0.84,
+  chunks_added: 6, chunks_removed: 1, chunks_modified: 4, chunks_unchanged: 86,
+  summary: "Section 7.2 liability cap raised from 6 to 12 months of fees. A new auto-renewal clause (Section 11) was added. Payment terms unchanged.",
+  modified_sections: [
+    { v1_text: "Total liability shall not exceed the fees paid in the six (6) months preceding the claim.", v2_text: "Total liability shall not exceed the fees paid in the twelve (12) months preceding the claim.", similarity: 0.91 },
+  ],
+  added_sections: [{ text: "Section 11 — This agreement renews automatically for successive 12-month terms unless cancelled 60 days prior." }],
+  removed_sections: [],
+};
 
 const MAGNITUDE_STYLES = {
   none:     { badge: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",     dot: "bg-gray-400",   label: "No change" },
@@ -145,6 +162,10 @@ export function VersionTimeline({ sourceFile, API_URL = import.meta.env?.VITE_AP
   useEffect(() => {
     if (!sourceFile) return;
     setLoading(true);
+    if (isDemoMode()) {
+      const t = setTimeout(() => { setVersions(DEMO_VERSIONS); setLoading(false); }, 300);
+      return () => clearTimeout(t);
+    }
     const token = localStorage.getItem("documind_access_token");
     fetch(
       `${API_URL}/api/v1/versioning/history/${encodeURIComponent(sourceFile)}`,
@@ -159,6 +180,12 @@ export function VersionTimeline({ sourceFile, API_URL = import.meta.env?.VITE_AP
   const loadDiff = useCallback(async (v1, v2) => {
     const key = `${v1}-${v2}`;
     setLoadingDiff(key);
+    if (isDemoMode()) {
+      await new Promise(r => setTimeout(r, 500));
+      setActiveDiff({ ...DEMO_DIFF, version_1: v1, version_2: v2 });
+      setLoadingDiff(null);
+      return;
+    }
     try {
       const token = localStorage.getItem("documind_access_token");
       const res = await fetch(

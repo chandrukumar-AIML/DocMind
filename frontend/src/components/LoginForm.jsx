@@ -69,7 +69,7 @@ export function LoginForm({ onLogin, onRegister }) {
       {/* Ambient glow */}
       <div style={{
         position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0,
-        background: "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(124,58,237,0.2) 0%, transparent 70%)",
+        background: "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(13,148,136,0.2) 0%, transparent 70%)",
       }} aria-hidden="true" />
 
       <div className="auth-card anim-fade-in">

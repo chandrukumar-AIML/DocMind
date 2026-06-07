@@ -5,6 +5,8 @@ import { useState, useCallback } from "react";
 import { GraphViewer } from "./GraphViewer";
 import toast from "react-hot-toast";
 import PropTypes from "prop-types";
+import { api } from "../api/client";
+import { isDemoMode } from "../api/demo";
 
 const MODE_OPTIONS = [
   { value: "auto",   label: "Auto",   desc: "Smart routing" },
@@ -26,6 +28,18 @@ export function GraphQueryPanel({ API_URL = import.meta.env?.VITE_API_URL || "" 
     setLoading(true);
     setResult(null);
     setError(null);
+
+    if (isDemoMode()) {
+      try {
+        const data = await api.graphQuery({ question, mode });
+        setResult(data);
+      } catch (err) {
+        setError(err.message || "Graph query failed");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     try {
       const token = localStorage.getItem("documind_access_token");
@@ -86,7 +100,7 @@ export function GraphQueryPanel({ API_URL = import.meta.env?.VITE_API_URL || "" 
           rows={2}
           disabled={loading}
           aria-label="Enter your graph query"
-          className="resize-none rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
+          className="resize-none rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50"
         />
       </div>
 
@@ -99,9 +113,9 @@ export function GraphQueryPanel({ API_URL = import.meta.env?.VITE_API_URL || "" 
             role="radio"
             aria-checked={mode === opt.value}
             className={`
-              flex-1 text-xs py-1.5 px-2 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500
+              flex-1 text-xs py-1.5 px-2 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500
               ${mode === opt.value
-                ? "border-purple-500 bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-300"
+                ? "border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-300"
                 : "border-gray-200 dark:border-gray-700 text-gray-500 hover:border-gray-300"
               }
             `}
@@ -117,7 +131,7 @@ export function GraphQueryPanel({ API_URL = import.meta.env?.VITE_API_URL || "" 
         onClick={handleSubmit}
         disabled={loading || !question.trim()}
         aria-label={loading ? "Querying graph" : "Run graph query"}
-        className="w-full py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="w-full py-2 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500"
       >
         {loading ? "Querying graph..." : "Run Graph Query"}
       </button>
@@ -134,7 +148,7 @@ export function GraphQueryPanel({ API_URL = import.meta.env?.VITE_API_URL || "" 
         <div className="flex flex-col gap-4" aria-live="polite">
           {/* Mode badge */}
           <div className="flex items-center gap-2">
-            <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/40 text-purple-600 dark:text-purple-300 font-medium">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-950/40 text-teal-600 dark:text-teal-300 font-medium">
               {result.retrieval_mode} retrieval
             </span>
             <span className="text-xs text-gray-400">

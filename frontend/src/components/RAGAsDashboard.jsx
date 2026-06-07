@@ -4,9 +4,10 @@
 import { useState, useCallback } from "react";
 import toast from "react-hot-toast";
 import PropTypes from "prop-types";
+import { isDemoMode } from "../api/demo";
 
 const METRIC_CONFIG = {
-  faithfulness:      { label: "Faithfulness",       color: "#7F77DD", threshold: 0.75 },
+  faithfulness:      { label: "Faithfulness",       color: "#14B8A6", threshold: 0.75 },
   answer_relevancy:  { label: "Answer Relevancy",   color: "#378ADD", threshold: 0.65 },
   context_precision: { label: "Context Precision",  color: "#1D9E75", threshold: 0.60 },
   context_recall:    { label: "Context Recall",     color: "#EF9F27", threshold: 0.55 },
@@ -57,6 +58,12 @@ function SingleEvalPanel({ API_URL = import.meta.env?.VITE_API_URL || "" }) {
     }
     setLoading(true);
     setResult(null);
+    if (isDemoMode()) {
+      await new Promise(r => setTimeout(r, 800));
+      setResult({ faithfulness: 0.88, answer_relevancy: 0.82, context_precision: 0.76, context_recall: 0.69, composite_score: 0.79 });
+      setLoading(false);
+      return;
+    }
     try {
       const token = localStorage.getItem("documind_access_token");
       const res = await fetch(`${API_URL}/api/v1/evaluation/sample`, {
@@ -92,7 +99,7 @@ function SingleEvalPanel({ API_URL = import.meta.env?.VITE_API_URL || "" }) {
         onChange={(e) => setQuestion(e.target.value)}
         placeholder="Question..." 
         rows={2}
-        className="w-full text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-500"
+        className="w-full text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-teal-500"
         aria-label="Enter question to evaluate"
       />
       <textarea 
@@ -100,7 +107,7 @@ function SingleEvalPanel({ API_URL = import.meta.env?.VITE_API_URL || "" }) {
         onChange={(e) => setAnswer(e.target.value)}
         placeholder="Generated answer..." 
         rows={3}
-        className="w-full text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-500"
+        className="w-full text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-teal-500"
         aria-label="Enter generated answer"
       />
       <textarea 
@@ -108,13 +115,13 @@ function SingleEvalPanel({ API_URL = import.meta.env?.VITE_API_URL || "" }) {
         onChange={(e) => setContext(e.target.value)}
         placeholder="Context chunks (separate multiple with ---)" 
         rows={3}
-        className="w-full text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-500"
+        className="w-full text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-teal-500"
         aria-label="Enter context chunks"
       />
       <button 
         onClick={handleEval} 
         disabled={loading}
-        className="w-full py-2 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="w-full py-2 rounded-lg bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500"
         aria-label={loading ? "Evaluating" : "Run RAGAs evaluation"}
       >
         {loading ? "Evaluating..." : "Run RAGAs Evaluation"}
@@ -151,6 +158,17 @@ function PipelinePanel({ API_URL = import.meta.env?.VITE_API_URL || "" }) {
 
   const handleRun = useCallback(async () => {
     setRunning(true);
+    if (isDemoMode()) {
+      await new Promise(r => setTimeout(r, 1200));
+      setLastRun({
+        n_samples: 24, mean_faithfulness: 0.86, mean_answer_relevancy: 0.81,
+        mean_context_precision: 0.75, mean_context_recall: 0.68,
+        faithfulness_alert: false, alerts: [], mlflow_run_id: "demo-run-8f2a", duration_seconds: 12.4,
+      });
+      toast.success("Evaluation complete. Results logged to MLflow.");
+      setRunning(false);
+      return;
+    }
     try {
       const token = localStorage.getItem("documind_access_token");
       const res = await fetch(`${API_URL}/api/v1/evaluation/run`, {
@@ -184,7 +202,7 @@ function PipelinePanel({ API_URL = import.meta.env?.VITE_API_URL || "" }) {
       <select 
         value={domain} 
         onChange={(e) => setDomain(e.target.value)}
-        className="w-full text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="w-full text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
         aria-label="Select evaluation domain"
       >
         {["general", "legal", "invoice", "medical"].map(d => (
@@ -249,7 +267,7 @@ export function RAGAsDashboard({ API_URL = import.meta.env?.VITE_API_URL || "" }
             aria-selected={activeTab === tab.id}
             aria-controls={`${tab.id}-panel`}
             className={`
-              flex-1 text-xs py-1.5 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500
+              flex-1 text-xs py-1.5 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500
               ${activeTab === tab.id
                 ? "bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 shadow-sm"
                 : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"

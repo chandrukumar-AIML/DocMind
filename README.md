@@ -43,12 +43,18 @@ real LLM backend, set `VITE_DEMO_MODE=false` and add an `OPENAI_API_KEY`
 
 ## What is DocuMind AI?
 
-DocuMind AI is a production-grade, full-stack AI document intelligence platform.
-Upload PDFs, Word docs, Excel sheets, audio files, or web URLs — then query them in
-natural language, extract legal clauses, run compliance checks, annotate collaboratively,
-compare documents, and automate document workflows.
+DocuMind AI is a full-stack AI document intelligence platform — **29 API route modules,
+156 REST endpoints, ~69k lines of backend Python, and a 59-file React 19 SPA** with a
+built-in demo mode. Upload PDFs, Word docs, Excel sheets, audio files, or web URLs — then
+query them in natural language, extract legal clauses, run compliance checks, annotate
+collaboratively, compare documents, and automate document workflows.
 
 Built for legal teams, enterprises, freelancers, and anyone who works with large volumes of documents.
+
+> **Project status:** feature-complete and demo-ready. Try every feature instantly via the
+> [live demo](https://doc-mind-peach.vercel.app) (no API key needed). Backend services
+> (Postgres, Redis, ChromaDB, Neo4j) and an `OPENAI_API_KEY` are required for the full,
+> non-mocked stack — see [DEPLOY.md](DEPLOY.md).
 
 ---
 
@@ -99,7 +105,7 @@ Built for legal teams, enterprises, freelancers, and anyone who works with large
 DocMind/
 ├── backend/
 │   ├── app/
-│   │   ├── api/routes/       # 31 FastAPI route modules (query, ingest, domains, auth…)
+│   │   ├── api/routes/       # 29 FastAPI route modules (query, ingest, domains, auth…)
 │   │   ├── auth/             # JWT + RBAC + rate limiting + API keys
 │   │   ├── core/             # RAG chain, chunking, prompts, exceptions
 │   │   ├── domains/          # Legal, medical, logistics, bills, forms, signature
@@ -204,7 +210,7 @@ npm run dev
 | `GET`  | `/api/v1/monitoring/stats` | Usage metrics dashboard |
 | `POST` | `/api/v1/auth/login` | JWT authentication |
 | `GET`  | `/health` | Health check |
-| `GET`  | `/docs` | Interactive Swagger UI (all 31 route modules) |
+| `GET`  | `/docs` | Interactive Swagger UI (all 29 route modules, 156 endpoints) |
 
 ---
 
@@ -229,15 +235,19 @@ See [.env.example](.env.example) for the complete list of 50+ variables.
 ## 🧪 Test Results
 
 ```
-Backend  · Integration tests:   24 / 24  passing ✅
-Backend  · Batch API tests:    118 / 126  passing ✅   (8 skipped — data-dependent)
-Frontend · Vitest suite:         12 / 12  passing ✅   (constants, demo API, components)
-ESLint:                           0 errors ✅            (5 warnings — intentional ref patterns)
-Production build:                 ✅ zero errors
-CI/CD (GitHub Actions):           ruff + pytest + eslint + vitest + build ✅
+Backend  · pytest suite (app/tests):   67 test fns / 14 modules ✅   (regional + validators: 57 cases, pure-unit)
+Backend  · E2E scripts (live API):     integration_test.py · batch_test.py · test_endpoints.py
+Frontend · Vitest suite:               24 / 24 passing ✅   (demo proxy, isDemoMode, panels, components)
+ESLint:                                0 errors ✅          (5 warnings — intentional ref patterns)
+Production build:                      ✅ zero errors
+CI/CD (GitHub Actions):                ruff + pytest + eslint + vitest + build ✅
 ```
 
 > Run locally: `cd backend && pytest app/tests/` · `cd frontend && npm test`
+>
+> _Test coverage is actively being expanded; the `app/tests` unit suite and frontend
+> Vitest suite are the source of truth for CI. The root `*_test.py` files are standalone
+> end-to-end scripts that exercise a running backend._
 
 ---
 

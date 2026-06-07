@@ -1,7 +1,14 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Apply persisted theme before first paint to avoid a light/dark flash.
+      try {
+        var t = localStorage.getItem("dm_theme");
+        document.documentElement.className = t === "light" ? "theme-light" : "dark";
+      } catch (e) { /* storage unavailable — default dark */ }
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DocMind AI — Intelligent Document Intelligence</title>

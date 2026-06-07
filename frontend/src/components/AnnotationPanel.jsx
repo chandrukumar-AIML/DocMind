@@ -1,6 +1,7 @@
 // frontend/src/components/AnnotationPanel.jsx
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "../api/client";
+import { isDemoMode } from "../api/demo";
 import toast from "react-hot-toast";
 import PropTypes from "prop-types";
 
@@ -44,9 +45,9 @@ export function AnnotationPanel({ sourceFile, workspaceId }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // WebSocket for real-time sync
+  // WebSocket for real-time sync (skipped in demo — no live backend)
   useEffect(() => {
-    if (!sourceFile || !workspaceId) return;
+    if (!sourceFile || !workspaceId || isDemoMode()) return;
     const BASE = (import.meta.env?.VITE_API_URL || "http://localhost:8000").replace(/^http/, "ws");
     const params = new URLSearchParams({ source_file: sourceFile });
     const ws = new WebSocket(`${BASE}/api/v1/annotations/ws/${workspaceId}?${params}`);

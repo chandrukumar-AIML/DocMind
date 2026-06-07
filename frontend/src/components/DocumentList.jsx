@@ -174,9 +174,9 @@ export function DocumentList({ documents, onDeleted, selectedFile, onSelect, wor
     setReindexingId(sourceFile);
     try {
       await api.reindexDocument(sourceFile);
-      toast.success("Re-indexed successfully");
+      toast.success("Document refreshed");
     } catch {
-      toast.error("Re-index failed");
+      toast.error("Refresh failed");
     } finally {
       setReindexingId(null);
     }
@@ -337,7 +337,7 @@ export function DocumentList({ documents, onDeleted, selectedFile, onSelect, wor
                     className="doc-action-btn"
                     onClick={(e) => handleReindex(doc.source_file, e)}
                     disabled={isReindexing || isDeleting}
-                    aria-label={`Re-index ${shortName}`}
+                    aria-label={`Refresh ${shortName}`}
                     title="Re-process document"
                   >
                     {isReindexing

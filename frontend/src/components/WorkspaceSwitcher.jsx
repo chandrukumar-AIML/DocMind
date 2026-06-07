@@ -44,12 +44,12 @@ export function WorkspaceSwitcher({ user, workspaces, onSwitch }) {
         className="flex items-center gap-2 px-3 py-1.5 rounded-lg
           border border-gray-200 dark:border-gray-700
           hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-sm
-          focus:outline-none focus:ring-2 focus:ring-purple-500"
+          focus:outline-none focus:ring-2 focus:ring-teal-500"
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`Current workspace: ${currentWs.name || "Default"}`}
       >
-        <div className="w-5 h-5 rounded bg-gradient-to-br from-purple-400 to-blue-500
+        <div className="w-5 h-5 rounded bg-gradient-to-br from-teal-400 to-cyan-500
           flex items-center justify-center text-white text-xs font-bold" aria-hidden="true">
           {currentWs.name?.[0]?.toUpperCase() || "W"}
         </div>
@@ -96,14 +96,14 @@ export function WorkspaceSwitcher({ user, workspaces, onSwitch }) {
                 className={`
                   w-full flex items-center gap-2 px-3 py-2
                   hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left
-                  focus:outline-none focus:ring-2 focus:ring-purple-500
+                  focus:outline-none focus:ring-2 focus:ring-teal-500
                   ${ws.workspace_id === user.workspace_id
                     ? "bg-blue-50 dark:bg-blue-950/30"
                     : ""
                   }
                 `}
               >
-                <div className="w-6 h-6 rounded bg-gradient-to-br from-purple-400 to-blue-500
+                <div className="w-6 h-6 rounded bg-gradient-to-br from-teal-400 to-cyan-500
                   flex items-center justify-center text-white text-xs font-bold flex-shrink-0" aria-hidden="true">
                   {ws.name?.[0]?.toUpperCase() || "W"}
                 </div>

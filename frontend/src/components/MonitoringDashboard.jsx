@@ -4,6 +4,24 @@
 import { useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import PropTypes from "prop-types";
+import { isDemoMode } from "../api/demo";
+
+// Sample monitoring payload used in demo mode (no backend round-trip)
+const DEMO_STATS = {
+  query_count: 142,
+  confidence_mean: 0.81,
+  faithfulness_mean: 0.86,
+  context_precision_mean: 0.74,
+  latency_ms_p95: 3120,
+  crag_action_distribution: { use_as_is: 96, refine: 31, web_search: 15 },
+  faithfulness_alert: false,
+  latency_alert: false,
+};
+const DEMO_TREND = Array.from({ length: 14 }, (_, i) => ({
+  confidence_mean: 0.78 + Math.sin(i / 3) * 0.05,
+  faithfulness_mean: 0.83 + Math.cos(i / 4) * 0.04,
+  latency_ms_p95: 2900 + Math.sin(i / 2) * 400,
+}));
 
 const THRESHOLD_CONFIG = {
   confidence_mean:       { threshold: 0.65, label: "Confidence",        higher_better: true  },
@@ -78,7 +96,7 @@ function TrendSparkline({ trend, metricKey }) {
       <polyline
         points={pts}
         fill="none"
-        stroke="#7F77DD"
+        stroke="#14B8A6"
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -101,6 +119,13 @@ export function MonitoringDashboard({ API_URL = import.meta.env?.VITE_API_URL ||
 
   const fetchStats = useCallback(async () => {
     setLoading(true);
+    if (isDemoMode()) {
+      await new Promise(r => setTimeout(r, 300));
+      setStats(DEMO_STATS);
+      setTrend(DEMO_TREND);
+      setLoading(false);
+      return;
+    }
     try {
       const [statsRes, trendRes] = await Promise.all([
         fetch(`${API_URL}/api/v1/monitoring/stats?hours=${hours}`, { headers: authHeader() }),
@@ -122,6 +147,13 @@ export function MonitoringDashboard({ API_URL = import.meta.env?.VITE_API_URL ||
 
   const runPipeline = useCallback(async () => {
     setRunning(true);
+    if (isDemoMode()) {
+      await new Promise(r => setTimeout(r, 900));
+      toast.success("Monitoring complete — system healthy");
+      setStats(DEMO_STATS);
+      setRunning(false);
+      return;
+    }
     try {
       const res = await fetch(
         `${API_URL}/api/v1/monitoring/run?async_mode=false`,
@@ -164,7 +196,7 @@ export function MonitoringDashboard({ API_URL = import.meta.env?.VITE_API_URL ||
           <select
             value={hours}
             onChange={(e) => setHours(Number(e.target.value))}
-            className="text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-500"
             aria-label="Select time range"
           >
             <option value={6}>6h</option>
@@ -175,7 +207,7 @@ export function MonitoringDashboard({ API_URL = import.meta.env?.VITE_API_URL ||
           <button
             onClick={fetchStats}
             disabled={loading}
-            className="text-xs px-2 py-1 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="text-xs px-2 py-1 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-teal-500"
             aria-label="Refresh monitoring data"
           >
             ↻
@@ -183,7 +215,7 @@ export function MonitoringDashboard({ API_URL = import.meta.env?.VITE_API_URL ||
           <button
             onClick={runPipeline}
             disabled={running}
-            className="text-xs px-3 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="text-xs px-3 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500"
             aria-label={running ? "Pipeline running" : "Run monitoring pipeline"}
           >
             {running ? "Running..." : "Run pipeline"}
@@ -240,7 +272,7 @@ export function MonitoringDashboard({ API_URL = import.meta.env?.VITE_API_URL ||
                     <span className="text-xs text-gray-500 w-24 truncate">{action}</span>
                     <div className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-purple-500"
+                        className="h-full rounded-full bg-teal-500"
                         style={{ width: `${(count / totalCrag) * 100}%` }}
                         role="progressbar"
                         aria-valuenow={(count / totalCrag) * 100}

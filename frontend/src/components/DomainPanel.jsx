@@ -517,7 +517,7 @@ export function DomainPanel({ selectedFile, documents, workspaceId }) {
       if (status === 501) {
         setError("Domain module not installed on this server.");
       } else if (status === 404) {
-        setError("Document not found in vector store. Re-index the document first.");
+        setError("This document hasn't been processed yet. Please re-process it and try again.");
       } else {
         setError(msg);
       }

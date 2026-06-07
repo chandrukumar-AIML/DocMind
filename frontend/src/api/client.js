@@ -160,7 +160,7 @@ apiClient.interceptors.response.use(
 // ════════════════════════════════════════════════════════════════════════
 // API METHODS (Modular, explicit contracts)
 // ════════════════════════════════════════════════════════════════════════
-export const api = {
+const apiImpl = {
   // Health check (root-level, no auth required)
   health: () => apiClient.get("/health").then((r) => r.data),
 
@@ -602,5 +602,23 @@ export const api = {
   parseIndianNumber: (text) =>
     apiClient.post("/api/v1/regional/parse-number", { text }).then(r => r.data),
 };
+
+// ════════════════════════════════════════════════════════════════════════
+// DEMO-AWARE EXPORT
+// In demo mode every call is routed to the mock layer first (demoApi). If a
+// method has no mock (e.g. a URL builder like downloadDocument), it falls back
+// to the real implementation so the app never breaks. This guarantees a client
+// can touch ANY panel in demo mode without hitting the backend or seeing a
+// "Failed to load" error. Outside demo mode the real implementation is used
+// directly with zero overhead.
+// ════════════════════════════════════════════════════════════════════════
+export const api = isDemoMode()
+  ? new Proxy(apiImpl, {
+      get(target, prop) {
+        if (prop in demoApi) return demoApi[prop];
+        return target[prop];
+      },
+    })
+  : apiImpl;
 
 export default apiClient;

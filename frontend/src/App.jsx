@@ -1,5 +1,5 @@
 // frontend/src/App.jsx — DocuMind AI v2 — Nebula Dark Design
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { Toaster, toast } from "react-hot-toast";
 import { useStreamQuery } from "./hooks/useStreamQuery";
 import { useIngest } from "./hooks/useIngest";
@@ -18,7 +18,9 @@ import { FineTuningPanel } from "./components/FineTuningPanel";
 import { UrlWatcher } from "./components/UrlWatcher";
 import { IngestProgressPanel } from "./components/IngestProgressPanel";
 import { AgentStepsPanel } from "./components/AgentStepsPanel";
-import { PDFViewer } from "./components/PDFViewer";
+// Lazy-loaded: pulls in the heavy pdf.js vendor chunk (~400KB) only when the
+// user actually opens the PDF side-panel, keeping the initial bundle lean.
+const PDFViewer = lazy(() => import("./components/PDFViewer").then(m => ({ default: m.PDFViewer })));
 import { AudioUploader } from "./components/AudioUploader";
 import { MonitoringDashboard } from "./components/MonitoringDashboard";
 import { GraphQueryPanel } from "./components/GraphQueryPanel";
@@ -39,37 +41,11 @@ import { OnboardingPanel } from "./components/OnboardingPanel";
 import { RegionalPanel } from "./components/RegionalPanel";
 import { useConversationHistory } from "./hooks/useConversationHistory";
 import { api } from "./api/client";
+import { isDemoMode } from "./api/demo";
+import { IconClose } from "./components/Icons";
+import { Topbar } from "./components/Topbar";
+import { downloadConversationMarkdown, printConversationPdf } from "./utils/conversationExport";
 import "./App.css";
-
-// ── Icons ─────────────────────────────────────────────────────
-function IconMenu() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-    </svg>
-  );
-}
-function IconClose() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-    </svg>
-  );
-}
-function IconClear() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>
-    </svg>
-  );
-}
-function IconSpark() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-    </svg>
-  );
-}
 
 // ── Main App ──────────────────────────────────────────────────
 export default function App() {
@@ -110,7 +86,9 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem("dm_theme", theme);
-      document.documentElement.className = theme === "light" ? "theme-light" : "";
+      // "theme-light" drives the custom-CSS light overrides; "dark" drives Tailwind's
+      // class-based dark: variant (see tailwind.config.js darkMode: "class").
+      document.documentElement.className = theme === "light" ? "theme-light" : "dark";
     } catch { /* storage unavailable */ }
   }, [theme]);
 
@@ -202,57 +180,8 @@ export default function App() {
     if (selectedFile === file) setSelectedFile(null);
   }, [selectedFile]);
 
-  const handleExportConversation = useCallback(() => {
-    if (messages.length === 0) return;
-    const lines = messages.map(m => {
-      const role = m.role === "human" ? "**You**" : "**DocuMind AI**";
-      const content = m.content || "";
-      const citations = (m.citations || []).length > 0
-        ? "\n\n_Sources: " + m.citations.map(c =>
-            `${(c.source_file || "").split("/").pop().split("\\").pop()} p.${c.page_number ?? "?"}`)
-          .join(", ") + "_"
-        : "";
-      return `${role}\n\n${content}${citations}`;
-    });
-    const md = `# DocuMind AI Conversation\n_Exported ${new Date().toLocaleString()}_\n\n---\n\n${lines.join("\n\n---\n\n")}`;
-    const blob = new Blob([md], { type: "text/markdown" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `docmind-chat-${Date.now()}.md`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }, [messages]);
-
-  const handleExportPDF = useCallback(() => {
-    if (messages.length === 0) return;
-    const rows = messages.map(m => {
-      const role = m.role === "human" ? "You" : "DocuMind AI";
-      const content = (m.content || "").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
-      const cites = (m.citations || []).map(c =>
-        `<small>[${(c.source_file || "").split("/").pop().split("\\").pop()} p.${c.page_number ?? "?"}]</small>`
-      ).join(" ");
-      return `<div class="msg-block ${m.role}"><div class="msg-role">${role}</div><div class="msg-body">${content}${cites ? `<div class="cites">${cites}</div>` : ""}</div></div>`;
-    }).join("");
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>DocuMind AI Report</title>
-<style>body{font-family:Georgia,serif;max-width:720px;margin:40px auto;color:#1e293b;line-height:1.6}
-h1{font-size:22px;color:#0f172a;margin-bottom:4px}.meta{font-size:12px;color:#64748b;margin-bottom:28px}
-.msg-block{margin-bottom:20px;padding:14px 18px;border-radius:8px}
-.msg-block.human{background:#f1f5f9;border-left:3px solid #7c3aed}
-.msg-block.assistant{background:#f8fafc;border-left:3px solid #0ea5e9}
-.msg-role{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;color:#64748b}
-.msg-body{font-size:14px}
-.cites{margin-top:8px;font-size:11px;color:#94a3b8}
-small{margin-right:4px}</style></head>
-<body><h1>DocuMind AI — Conversation Report</h1>
-<div class="meta">Exported ${new Date().toLocaleString()} · ${messages.length} messages</div>
-${rows}</body></html>`;
-    const w = window.open("", "_blank");
-    if (w) {
-      w.document.write(html);
-      w.document.close();
-      w.onload = () => { w.print(); };
-    }
-  }, [messages]);
+  const handleExportConversation = useCallback(() => downloadConversationMarkdown(messages), [messages]);
+  const handleExportPDF = useCallback(() => printConversationPdf(messages), [messages]);
 
   // Track conversation in history whenever messages change
   useEffect(() => {
@@ -322,6 +251,7 @@ ${rows}</body></html>`;
     : null;
 
   const currentWorkspace = getCurrentWorkspace();
+  const demoMode = isDemoMode();
 
   // ── Loading ────────────────────────────────────────────────
   if (authLoading) {
@@ -752,98 +682,24 @@ ${rows}</body></html>`;
 
       {/* ── Chat Main ───────────────────────────────────── */}
       <main className="chat-main" role="main" aria-label="Chat interface">
-        {/* Topbar */}
-        <div className="topbar">
-          <button
-            className="topbar-btn"
-            onClick={() => setSidebarOpen(v => !v)}
-            aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-            aria-expanded={sidebarOpen}
-            aria-controls="sidebar"
-          >
-            <IconMenu />
-          </button>
-
-          {/* Context */}
-          <div className="topbar-context">
-            <div className="topbar-dot" aria-hidden="true" />
-            <span className="topbar-text">
-              {selectedFile ? `Querying: ${shortFileName}` : "All documents"}
-            </span>
-            {currentWorkspace && (
-              <span className="topbar-workspace" aria-hidden="true">
-                · {currentWorkspace.name || currentWorkspace.workspace_id}
-              </span>
-            )}
-          </div>
-
-          {/* Mode switcher */}
-          <div className="topbar-mode-switcher" role="group" aria-label="Query mode">
-            {[
-              { id: "rag",   label: "RAG" },
-              { id: "agent", label: "Agent" },
-              { id: "graph", label: "Graph" },
-            ].map(m => (
-              <button
-                key={m.id}
-                className={`mode-btn${queryMode === m.id ? " active" : ""}`}
-                onClick={() => setQueryMode(m.id)}
-                aria-pressed={queryMode === m.id}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Actions */}
-          <div className="topbar-actions">
-            {documents.length >= 2 && (
-              <button
-                className="topbar-action-btn"
-                onClick={() => setShowCompare(true)}
-                aria-label="Compare documents"
-                title="Compare 2 documents"
-              >
-                ⇔ Compare
-              </button>
-            )}
-            {messages.length > 0 && (
-              <>
-                <button
-                  className="topbar-action-btn"
-                  onClick={handleExportConversation}
-                  aria-label="Export conversation as Markdown"
-                  title="Export as Markdown"
-                >
-                  ↓ MD
-                </button>
-                <button
-                  className="topbar-action-btn"
-                  onClick={handleExportPDF}
-                  aria-label="Export conversation as PDF"
-                  title="Export as PDF Report"
-                >
-                  ↓ PDF
-                </button>
-                <button className="topbar-action-btn danger" onClick={clear} aria-label="Clear conversation">
-                  <IconClear /> Clear
-                </button>
-              </>
-            )}
-            <button
-              className="topbar-btn"
-              onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
-              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-              title={theme === "dark" ? "Light mode" : "Dark mode"}
-              style={{ fontSize: 14 }}
-            >
-              {theme === "dark" ? "☀️" : "🌙"}
-            </button>
-            <span className="badge badge-violet" style={{ fontSize: 10, padding: "3px 8px" }}>
-              <IconSpark /> {queryMode.toUpperCase()}
-            </span>
-          </div>
-        </div>
+        <Topbar
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen(v => !v)}
+          selectedFile={selectedFile}
+          shortFileName={shortFileName}
+          currentWorkspace={currentWorkspace}
+          demoMode={demoMode}
+          queryMode={queryMode}
+          onModeChange={setQueryMode}
+          documents={documents}
+          messages={messages}
+          onCompare={() => setShowCompare(true)}
+          onExportMarkdown={handleExportConversation}
+          onExportPdf={handleExportPDF}
+          onClear={clear}
+          theme={theme}
+          onToggleTheme={() => setTheme(t => t === "dark" ? "light" : "dark")}
+        />
 
         {/* Doc Brief Banner */}
         {docBrief && (
@@ -878,10 +734,12 @@ ${rows}</body></html>`;
               <button className="topbar-btn" onClick={() => setShowPdfViewer(false)} aria-label="Close PDF viewer">✕</button>
             </div>
             <ErrorBoundary>
-              <PDFViewer
-                sourceFile={selectedFile}
-                citations={messages.flatMap(m => m.citations || [])}
-              />
+              <Suspense fallback={<div className="panel-empty" style={{ padding: 24 }}>Loading PDF viewer…</div>}>
+                <PDFViewer
+                  sourceFile={selectedFile}
+                  citations={messages.flatMap(m => m.citations || [])}
+                />
+              </Suspense>
             </ErrorBoundary>
           </div>
         )}

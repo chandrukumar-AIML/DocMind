@@ -4,6 +4,7 @@
 import { useState, useRef, useCallback } from "react";
 import toast from "react-hot-toast";
 import PropTypes from "prop-types";
+import { isDemoMode } from "../api/demo";
 
 const AUDIO_EXTENSIONS = new Set(["mp3", "mp4", "wav", "m4a", "ogg", "webm"]);
 const DOC_EXTENSIONS = new Set(["docx", "xlsx"]);
@@ -65,6 +66,20 @@ export function AudioUploader({ onSuccess, API_URL = import.meta.env?.VITE_API_U
     setStage("upload");
     setProgress(0);
     setError(null);
+
+    // Demo mode: simulate the upload → process → index → done pipeline locally
+    if (isDemoMode()) {
+      for (let p = 0; p <= 100; p += 20) {
+        setProgress(p);
+        await new Promise(r => setTimeout(r, 120));
+      }
+      if (type === "audio") { setStage("process"); await new Promise(r => setTimeout(r, 600)); setStage("indexing"); await new Promise(r => setTimeout(r, 600)); }
+      setStage("done");
+      setProgress(100);
+      toast.success(`${icon} ${file.name} indexed`);
+      onSuccess?.({ source_file: `uploads/${file.name}` });
+      return;
+    }
 
     const formData = new FormData();
     formData.append("file", file);

@@ -55,12 +55,12 @@ export function FineTuningPanel({ workspaceId }) {
 
   const reembed = useCallback(async () => {
     set("reembed", true);
-    const toastId = toast.loading("Re-embedding workspace…");
+    const toastId = toast.loading("Re-processing documents…");
     try {
       const r = await api.reembedWorkspace(workspaceId);
-      toast.success(`Re-embedded: ${r.chunks_reembedded ?? 0} chunks`, { id: toastId });
+      toast.success(`Re-processed ${r.chunks_reembedded ?? 0} sections`, { id: toastId });
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Re-embed failed", { id: toastId });
+      toast.error(err.response?.data?.detail || "Re-processing failed", { id: toastId });
     } finally {
       set("reembed", false);
     }
@@ -85,10 +85,10 @@ export function FineTuningPanel({ workspaceId }) {
 
       {/* Re-embed */}
       <div className="ft-section">
-        <div className="ft-section-title">Re-embed Workspace</div>
-        <p className="ft-desc">Re-process all documents with the current embedding model.</p>
+        <div className="ft-section-title">Re-process Documents</div>
+        <p className="ft-desc">Re-process all documents with the current AI model.</p>
         <button className="ft-btn" onClick={reembed} disabled={loading.reembed}>
-          {loading.reembed ? "Re-embedding…" : "Re-embed All Docs"}
+          {loading.reembed ? "Re-processing…" : "Re-process All Documents"}
         </button>
       </div>
 
