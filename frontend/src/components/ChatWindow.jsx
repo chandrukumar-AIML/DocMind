@@ -1,12 +1,14 @@
 // frontend/src/components/ChatWindow.jsx — Nebula Dark
-import { useEffect, useRef, memo, useState } from "react";
+import { useEffect, useRef, memo, useState, lazy, Suspense } from "react";
 import PropTypes from "prop-types";
 import { api } from "../api/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { CitationCardV2 } from "./CitationCardV2";
+
+// Lazy-loaded: react-syntax-highlighter (~300 KB gzip) is only fetched when the
+// first fenced code block actually appears in a response — not at app startup.
+const LazyCodeBlock = lazy(() => import("./CodeBlock"));
 
 // ── Streaming cursor ───────────────────────────────────────
 function StreamCursor() {
@@ -57,34 +59,21 @@ function CopyButton({ text, className = "copy-answer-btn" }) {
   );
 }
 
-// ── Code block with syntax highlighting + copy ─────────────
-const CodeBlock = memo(function CodeBlock({ children, className }) {
-  const [copied, setCopied] = useState(false);
-  const lang = /language-(\w+)/.exec(className || "")?.[1] || "";
-  const code = String(children).replace(/\n$/, "");
-  const copy = () => {
-    navigator.clipboard?.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
+// ── Code block — suspends until vendor-syntax chunk arrives ──
+// Plain-text <pre> is shown while the chunk loads (instant on repeat visits).
+function SuspendedCodeBlock({ children, className }) {
   return (
-    <div className="md-code-block">
-      <div className="md-code-header">
-        <span className="md-code-lang">{lang || "code"}</span>
-        <button className="md-code-copy" onClick={copy}>{copied ? "✓ Copied" : "Copy"}</button>
-      </div>
-      <SyntaxHighlighter
-        language={lang || "text"}
-        style={oneDark}
-        PreTag="div"
-        customStyle={{ margin: 0, borderRadius: "0 0 6px 6px", fontSize: 12 }}
-      >
-        {code}
-      </SyntaxHighlighter>
-    </div>
+    <Suspense
+      fallback={
+        <pre className="md-code-block" style={{ padding: "10px 14px", fontSize: 12 }}>
+          <code>{String(children).replace(/\n$/, "")}</code>
+        </pre>
+      }
+    >
+      <LazyCodeBlock className={className}>{children}</LazyCodeBlock>
+    </Suspense>
   );
-});
+}
 
 // ── Markdown renderer ──────────────────────────────────────
 const MD_COMPONENTS = {
@@ -92,7 +81,7 @@ const MD_COMPONENTS = {
     if (inline) {
       return <code className="md-inline-code" {...props}>{children}</code>;
     }
-    return <CodeBlock className={className}>{children}</CodeBlock>;
+    return <SuspendedCodeBlock className={className}>{children}</SuspendedCodeBlock>;
   },
   a({ href, children }) {
     return <a href={href} target="_blank" rel="noopener noreferrer" className="md-link">{children}</a>;
