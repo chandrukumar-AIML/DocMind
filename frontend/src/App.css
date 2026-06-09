@@ -1541,7 +1541,198 @@
   -webkit-backdrop-filter: blur(4px);
 }
 
-/* ── Login Form ────────────────────────────────────────── */
+/* ── Auth Split-Screen Landing ─────────────────────────── */
+/*
+ * Desktop (≥900px): left hero panel + right auth card side-by-side.
+ * Mobile (<900px): hero panel hidden, auth card full-width centered.
+ * The auth-shell class is kept for legacy reference but no longer rendered.
+ */
+.auth-split {
+  min-height: 100vh;
+  display: flex;
+  background: var(--bg-0);
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Hero panel (left, desktop only) ──────────────────── */
+.auth-hero-panel {
+  display: none; /* hidden on mobile */
+  flex-direction: column;
+  justify-content: center;
+  padding: 56px 56px;
+  border-right: 1px solid var(--border);
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  /* Subtle brand tint on the left side */
+  background: linear-gradient(160deg, rgba(13,148,136,0.06) 0%, transparent 55%);
+}
+/* Decorative glow spot behind hero content */
+.auth-hero-panel::before {
+  content: "";
+  position: absolute;
+  top: 20%;
+  right: -10%;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(13,148,136,0.18) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* ── Auth form panel (right, always visible) ──────────── */
+.auth-form-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  position: relative;
+  z-index: 1;
+  flex: 1;          /* full width on mobile */
+  min-height: 100vh;
+}
+
+/* On desktop: show hero panel, constrain form panel width */
+@media (min-width: 900px) {
+  .auth-hero-panel {
+    display: flex;
+    flex: 1;
+    max-width: 58%;
+  }
+  .auth-form-panel {
+    flex: 0 0 440px;
+    min-height: unset;
+  }
+}
+
+/* ── Hero typography ──────────────────────────────────── */
+.hero-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 44px;
+}
+.hero-logo-mark {
+  width: 46px; height: 46px;
+  border-radius: 14px;
+  background: var(--grad-brand);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 800; color: #fff;
+  box-shadow: var(--shadow-violet);
+  flex-shrink: 0;
+}
+.hero-logo-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-1);
+  letter-spacing: -0.3px;
+}
+
+.hero-tagline {
+  font-size: clamp(26px, 2.6vw, 36px);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-1);
+  letter-spacing: -0.6px;
+  margin-bottom: 20px;
+  max-width: 440px;
+}
+.hero-tagline-accent {
+  background: var(--grad-brand);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-problem {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--text-2);
+  max-width: 420px;
+  margin-bottom: 32px;
+}
+
+/* ── Feature bullets ──────────────────────────────────── */
+.hero-features {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 32px;
+}
+.hero-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.hero-feature-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  line-height: 1.5;
+}
+.hero-feature-text {
+  font-size: 14px;
+  color: var(--text-2);
+  line-height: 1.55;
+  margin: 0;
+}
+.hero-feature-text strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+/* ── Metrics bar ──────────────────────────────────────── */
+.hero-metrics {
+  display: flex;
+  gap: 28px;
+  padding: 18px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+.hero-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.hero-metric-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--violet-2);
+  line-height: 1;
+}
+.hero-metric-label {
+  font-size: 10px;
+  color: var(--text-4);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 600;
+}
+
+/* ── GitHub / demo link ───────────────────────────────── */
+.hero-demo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+  background: var(--bg-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r);
+  padding: 9px 14px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: all var(--t-fast);
+  align-self: flex-start;
+}
+.hero-demo-link:hover {
+  background: var(--bg-3);
+  border-color: var(--border-3);
+  color: var(--text-1);
+}
+
+/* ── Login Form (legacy shell — no longer rendered) ────── */
 .auth-shell {
   min-height: 100vh;
   display: flex;
@@ -1651,16 +1842,45 @@
 
 /* ── Responsive ────────────────────────────────────────── */
 @media (max-width: 768px) {
+  /* Sidebar overlays the chat area on mobile */
   .sidebar {
     position: fixed;
     left: 0; top: 0; bottom: 0;
     z-index: 20;
     box-shadow: var(--shadow-lg);
   }
-  .chat-window { padding: 16px; }
-  .chat-input-area { padding: 12px 16px 16px; }
-  .topbar { padding: 0 14px; }
-  .topbar-mode-switcher { display: none; }
+
+  /* Topbar: tighten spacing, hide workspace name to save room */
+  .topbar {
+    padding: 0 10px;
+    gap: 6px;
+    height: 52px;
+  }
+  .topbar-workspace { display: none; }
+  .topbar-context { min-width: 0; }
+
+  /* Mode switcher: compact buttons so they fit on mobile */
+  .topbar-mode-switcher {
+    padding: 2px;
+  }
+  .mode-btn {
+    padding: 4px 8px;
+    font-size: 10px;
+    border-radius: 5px;
+  }
+
+  /* Action buttons: hide labels on mobile, keep icons */
+  .topbar-action-btn {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
+  /* Chat area */
+  .chat-window { padding: 14px 12px; }
+  .chat-input-area { padding: 10px 12px 14px; }
+
+  /* Suggestion cards: single column on mobile */
   .chat-suggestions { grid-template-columns: 1fr; }
   .msg-user-bubble { max-width: 88%; }
+  .chat-window { gap: 16px; }
 }

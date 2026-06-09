@@ -157,7 +157,7 @@ export function Sidebar({
         <div className="logo-mark" aria-hidden="true">D</div>
         <div className="logo-text">
           <div className="app-name">DocuMind AI</div>
-          <div className="app-tagline">v2 · Neural RAG</div>
+          <div className="app-tagline">Intelligent Document AI</div>
         </div>
       </div>
 
