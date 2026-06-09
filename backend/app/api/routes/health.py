@@ -181,6 +181,45 @@ async def _check_rag_chain(request: Request) -> ComponentHealth:
         return ComponentHealth(status="error", error=str(e))
 
 
+async def _check_database() -> ComponentHealth:
+    """Check PostgreSQL connectivity — most critical dependency.
+
+    If this returns 'error', every endpoint that touches the DB will fail.
+    Listed first in gather() so it appears first in the response dict.
+    """
+    start_ts = time.perf_counter()
+    try:
+        from app.database.engine import check_database_health
+        healthy = await asyncio.wait_for(
+            check_database_health(verify_schema=False),
+            timeout=5.0,
+        )
+        latency_ms = (time.perf_counter() - start_ts) * 1000
+        if not healthy:
+            return ComponentHealth(
+                status="error",
+                latency_ms=round(latency_ms, 2),
+                error="Database ping returned False",
+            )
+        return ComponentHealth(status="ok", latency_ms=round(latency_ms, 2))
+    except asyncio.TimeoutError:
+        latency_ms = (time.perf_counter() - start_ts) * 1000
+        logger.error("Database health check timed out")
+        return ComponentHealth(
+            status="error",
+            latency_ms=round(latency_ms, 2),
+            error="Database health check timeout (>5s)",
+        )
+    except Exception as e:
+        latency_ms = (time.perf_counter() - start_ts) * 1000
+        logger.error(f"Database health check failed: {e}", exc_info=True)
+        return ComponentHealth(
+            status="error",
+            latency_ms=round(latency_ms, 2),
+            error=f"{type(e).__name__}: {e}",
+        )
+
+
 async def _check_cache(request: Request) -> ComponentHealth:
     """Check Redis cache connectivity — optional component."""
     start_ts = time.perf_counter()
@@ -298,16 +337,16 @@ async def health_check(request: Request) -> HealthCheckResponse | JSONResponse:
     
     startup_errors: List[str] = getattr(request.app.state, "startup_errors", [])
     
-    # ✅ FIXED: Handle gather exceptions per task
+    # All checks run in parallel — gather with exception isolation
     results = await asyncio.gather(
+        _check_database(),           # ← CRITICAL: listed first
         _check_vector_store(request),
         _check_ocr_pipeline(request),
         _check_rag_chain(request),
         _check_cache(request),
-        return_exceptions=True,  # ✅ Allow exceptions to be returned
+        return_exceptions=True,
     )
-    
-    # ✅ Safe unpack with exception handling
+
     def _safe_result(r, default: ComponentHealth) -> ComponentHealth:
         if isinstance(r, ComponentHealth):
             return r
@@ -315,23 +354,26 @@ async def health_check(request: Request) -> HealthCheckResponse | JSONResponse:
             logger.warning(f"Health check task failed: {r}")
             return ComponentHealth(status="error", error=str(r))
         return default
-    
-    vector_health = _safe_result(results[0], ComponentHealth(status="error", error="vector_store check failed"))
-    ocr_health = _safe_result(results[1], ComponentHealth(status="error", error="ocr_pipeline check failed"))
-    rag_health = _safe_result(results[2], ComponentHealth(status="error", error="rag_chain check failed"))
-    cache_health = _safe_result(results[3], ComponentHealth(status="error", error="cache check failed"))
-    
+
+    db_health     = _safe_result(results[0], ComponentHealth(status="error", error="database check failed"))
+    vector_health = _safe_result(results[1], ComponentHealth(status="error", error="vector_store check failed"))
+    ocr_health    = _safe_result(results[2], ComponentHealth(status="error", error="ocr_pipeline check failed"))
+    rag_health    = _safe_result(results[3], ComponentHealth(status="error", error="rag_chain check failed"))
+    cache_health  = _safe_result(results[4], ComponentHealth(status="error", error="cache check failed"))
+
     components = {
+        "database":     db_health,   # ← always first in response
         "vector_store": vector_health,
         "ocr_pipeline": ocr_health,
-        "rag_chain": rag_health,
-        "cache": cache_health,
+        "rag_chain":    rag_health,
+        "cache":        cache_health,
     }
-    
-    # Critical components may be degraded in lazy-startup mode, but not error.
+
+    # Database is now a critical component — a dead DB means 503.
+    # Vector store / RAG may be "degraded" in lazy-startup mode.
     critical_ok = all(
         components[c].status in {"ok", "degraded"}
-        for c in ["vector_store", "rag_chain"]
+        for c in ["database", "vector_store", "rag_chain"]
     )
     
     if not critical_ok:
@@ -619,10 +661,10 @@ def _get_fallback_prometheus_metrics(
 
 
 def get_health_metadata() -> dict[str, Any]:
-    """✅ NEW: Return health endpoint metadata for debugging."""
+    """Return health endpoint metadata for debugging."""
     return {
         "endpoints": ["/health", "/ready", "/live", "/metrics"],
-        "critical_components": ["vector_store", "rag_chain"],
+        "critical_components": ["database", "vector_store", "rag_chain"],
         "optional_components": ["ocr_pipeline", "cache"],
         "prometheus_format": "0.0.4",
         "timeout_seconds": 10.0,

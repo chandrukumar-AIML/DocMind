@@ -1,11 +1,13 @@
-# DocuMind AI — Intelligent Document Intelligence Platform
+# DocuMind AI — AI-Powered Document Intelligence for Legal & Enterprise Teams
 
 <p align="center">
   <img src="frontend/public/logo.png" alt="DocuMind AI" width="120" height="120"/>
 </p>
 
 <p align="center">
-  <strong>Upload documents → Ask in natural language → Get AI-powered answers with cited sources</strong>
+  <strong>Legal teams and knowledge workers spend hours hunting through contracts,
+  reports, and case files for answers. DocuMind AI lets them ask in plain English
+  and get cited, accurate answers in seconds — across any document format.</strong>
 </p>
 
 <p align="center">
@@ -27,17 +29,30 @@
 
 ---
 
+## The Problem
+
+Legal teams, compliance officers, and enterprise analysts deal with hundreds of PDFs,
+contracts, and reports every week. Finding a specific clause, checking regulatory
+compliance, or comparing two contracts manually takes hours and is error-prone.
+
+**DocuMind AI solves this:** upload any document, ask a question in plain English, and get
+a cited answer with the exact source paragraph highlighted — in under 3 seconds.
+
+**Who it's for:** legal teams doing contract review, compliance officers running GDPR/HIPAA
+audits, enterprise teams with large document libraries, and any knowledge worker who
+regularly searches through unstructured documents.
+
+---
+
 ## 🎬 Demo
 
 **▶️ Live:** https://doc-mind-peach.vercel.app
 
-The live demo runs in **demo mode** with realistic sample data (no API key
-required) so you can explore every feature instantly — RAG/Agent/Graph chat,
-document library, domain analysis, and all collaboration panels. To run with a
+The live demo runs in **demo mode** with realistic sample data — no API key, no sign-up
+required. Explore every feature instantly: RAG/Agent/Graph chat, domain analysis, legal
+clause extraction, compliance scanning, and all 10 collaboration panels. To run with a
 real LLM backend, set `VITE_DEMO_MODE=false` and add an `OPENAI_API_KEY`
 (see [DEPLOY.md](DEPLOY.md)).
-
-> _Tip: add a GIF/screenshot here — record the walkthrough with OBS or Loom._
 
 ---
 
@@ -48,8 +63,6 @@ DocuMind AI is a full-stack AI document intelligence platform — **29 API route
 built-in demo mode. Upload PDFs, Word docs, Excel sheets, audio files, or web URLs — then
 query them in natural language, extract legal clauses, run compliance checks, annotate
 collaboratively, compare documents, and automate document workflows.
-
-Built for legal teams, enterprises, freelancers, and anyone who works with large volumes of documents.
 
 > **Project status:** feature-complete and demo-ready. Try every feature instantly via the
 > [live demo](https://doc-mind-peach.vercel.app) (no API key needed). Backend services
