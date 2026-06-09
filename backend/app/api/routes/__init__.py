@@ -4,6 +4,7 @@ The FastAPI application mounts route modules explicitly in app.main. This
 package intentionally avoids importing route modules during package import so
 startup does not trip over circular imports.
 """
+
 from typing import Any, Final
 
 from fastapi import APIRouter

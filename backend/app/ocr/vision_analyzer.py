@@ -21,12 +21,17 @@ from dataclasses import dataclass, field
 from typing import Final, Optional, TypedDict, List, Any, Union
 import numpy as np
 
-from openai import OpenAI, RateLimitError, APITimeoutError, APIConnectionError, AuthenticationError
+from openai import (
+    OpenAI,
+    RateLimitError,
+    APITimeoutError,
+    APIConnectionError,
+    AuthenticationError,
+)
 import httpx
 
 # DVMELTSS-M: Import centralized utilities
-from app.core.ocr_utils import scrub_pii_for_ocr, calculate_vision_tokens, generate_ocr_correlation_id
-from app.core.retry import retry_async, RetryConfig
+from app.core.ocr_utils import scrub_pii_for_ocr, generate_ocr_correlation_id
 from app.core.openai_errors import is_insufficient_quota_error
 
 # ✅ Mock cost_tracking if not available (for standalone testing)
@@ -35,10 +40,18 @@ try:
 except ImportError:
     # Fallback mock for testing
     class VisionCostTracker:
-        def __init__(self): self.estimated_cost_usd = 0.0
-        def log_call(self, **kwargs): pass
-        def report(self): return {"estimated_cost_usd": 0.0}
-        def log_report(self): pass
+        def __init__(self):
+            self.estimated_cost_usd = 0.0
+
+        def log_call(self, **kwargs):
+            pass
+
+        def report(self):
+            return {"estimated_cost_usd": 0.0}
+
+        def log_report(self):
+            pass
+
 
 from .image_utils import image_to_b64
 
@@ -49,7 +62,7 @@ else:
     TYPE_CHECKING = False
 
 if TYPE_CHECKING:
-    from .paddle_ocr import DocumentOCRResult, TextBlock
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +71,7 @@ _DEFAULT_MAX_RETRIES: Final[int] = 3
 _DEFAULT_MAX_WORKERS: Final[int] = 5
 _DEFAULT_MAX_VISION_COST: Final[float] = 2.00
 _DEFAULT_TIMEOUT_SECONDS: Final[float] = 120.0
+
 
 # ✅ NEW: TypedDict schemas for JSON validation
 class TableAnalysisSchema(TypedDict, total=False):
@@ -68,11 +82,13 @@ class TableAnalysisSchema(TypedDict, total=False):
     col_count: int
     table_type: str
 
+
 class DiagramAnalysisSchema(TypedDict, total=False):
     description: str
     diagram_type: str
     key_data_points: List[str]
     searchable_text: str
+
 
 class MetadataSchema(TypedDict, total=False):
     title: str
@@ -87,6 +103,7 @@ class MetadataSchema(TypedDict, total=False):
 @dataclass
 class VisionAnalyzerConfig:
     """Configuration for VisionAnalyzer semantic enrichment."""
+
     enable_tables: bool = True
     enable_diagrams: bool = True
     enable_metadata: bool = True
@@ -102,6 +119,7 @@ class VisionAnalyzerConfig:
 @dataclass
 class TableAnalysis:
     """Structured analysis result for a table."""
+
     raw_text: str
     markdown_table: str
     summary: str
@@ -127,6 +145,7 @@ class TableAnalysis:
 @dataclass
 class DiagramAnalysis:
     """Structured analysis result for a diagram/figure."""
+
     description: str
     diagram_type: str
     key_data_points: list[str]
@@ -146,6 +165,7 @@ class DiagramAnalysis:
 @dataclass
 class DocumentMetadata:
     """Extracted metadata for a document."""
+
     title: str
     document_type: str
     language: str
@@ -173,6 +193,7 @@ class DocumentMetadata:
 @dataclass
 class EnrichedDocument:
     """Complete enriched document with OCR + Vision analysis."""
+
     ocr_result: Any  # "DocumentOCRResult"
     metadata: Optional[DocumentMetadata] = None
     table_analyses: dict[str, TableAnalysis] = field(default_factory=dict)
@@ -194,7 +215,7 @@ class EnrichedDocument:
 class VisionAnalyzer:
     """
     GPT-4o Vision semantic enrichment for document blocks.
-    
+
     Features:
     - Table analysis: Extract structure, summary, and markdown
     - Diagram analysis: Describe visuals and extract key data
@@ -218,7 +239,7 @@ class VisionAnalyzer:
     ):
         if not api_key or not api_key.startswith("sk-"):
             raise ValueError("Invalid OpenAI API key format. Must start with 'sk-'")
-        
+
         # ✅ FIXED: Configure httpx client with timeout
         self.client = OpenAI(
             api_key=api_key,
@@ -228,10 +249,10 @@ class VisionAnalyzer:
         self.model = model
         self.config = config or VisionAnalyzerConfig()
         self.cost_tracker = VisionCostTracker()
-        
+
         # ✅ NEW: Lock for thread-safe cost tracking
         self._cost_lock = asyncio.Lock()
-        
+
         logger.info(
             f"VisionAnalyzer initialized: model={model}, "
             f"timeout={self.config.timeout_seconds}s, cost_tracking={self.cost_tracker}"
@@ -251,7 +272,7 @@ class VisionAnalyzer:
         """
         corr_id = correlation_id or generate_ocr_correlation_id("vision_enrich")
         timeout = timeout_seconds or self.config.timeout_seconds
-        
+
         try:
             result = await asyncio.wait_for(
                 self._enrich_document_sync(ocr_result, page_images, corr_id),
@@ -270,9 +291,10 @@ class VisionAnalyzer:
             # ✅ Memory cleanup
             del page_images
             gc.collect()
-            if hasattr(ocr_result, '__cuda_array_interface__'):
+            if hasattr(ocr_result, "__cuda_array_interface__"):
                 try:
                     import torch
+
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
                 except ImportError:
@@ -299,7 +321,7 @@ class VisionAnalyzer:
     ) -> EnrichedDocument:
         """Internal sync implementation — called by both sync and async wrappers."""
         corr_id = correlation_id or generate_ocr_correlation_id("vision_enrich")
-        
+
         enriched = EnrichedDocument(
             ocr_result=ocr_result,
             correlation_id=corr_id,
@@ -380,7 +402,7 @@ class VisionAnalyzer:
         """Analyze a table using GPT-4o Vision."""
         corr_id = correlation_id or "table_analysis"
         system_prompt = "You are a document analysis expert. Analyze the provided table and return ONLY valid JSON."
-        
+
         # Prepare content with PII scrubbing
         user_content_text = (
             f"Analyze this HTML table:\n\n{table_html}"
@@ -390,19 +412,27 @@ class VisionAnalyzer:
         user_content_text = scrub_pii_for_ocr(user_content_text, domain="all")
 
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
-        
+
         # Add image if available
         if page_image is not None and bbox:
             cropped = self._crop_region(page_image, bbox)
             if cropped is not None:
                 b64 = image_to_b64(cropped, quality=self._JPEG_QUALITY, correlation_id=corr_id)
-                messages.append({
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": self.config.table_detail}},
-                        {"type": "text", "text": user_content_text},
-                    ],
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{b64}",
+                                    "detail": self.config.table_detail,
+                                },
+                            },
+                            {"type": "text", "text": user_content_text},
+                        ],
+                    }
+                )
             else:
                 messages.append({"role": "user", "content": user_content_text})
         else:
@@ -410,7 +440,12 @@ class VisionAnalyzer:
 
         try:
             # ✅ Use retry wrapper with proper error handling
-            data = self._call_with_retry_sync(messages, max_tokens=1500, call_type="table_analysis", correlation_id=corr_id)
+            data = self._call_with_retry_sync(
+                messages,
+                max_tokens=1500,
+                call_type="table_analysis",
+                correlation_id=corr_id,
+            )
             return TableAnalysis(
                 raw_text=table_text,
                 markdown_table=data.get("markdown_table", table_text),
@@ -424,8 +459,14 @@ class VisionAnalyzer:
         except Exception as e:
             logger.error(f"[{corr_id}] Table analysis failed: {e}")
             return TableAnalysis(
-                raw_text=table_text, markdown_table=table_text, summary="", headers=[],
-                row_count=0, col_count=0, table_type="other", correlation_id=corr_id
+                raw_text=table_text,
+                markdown_table=table_text,
+                summary="",
+                headers=[],
+                row_count=0,
+                col_count=0,
+                table_type="other",
+                correlation_id=corr_id,
             )
 
     def analyze_diagram(
@@ -437,7 +478,7 @@ class VisionAnalyzer:
         """Analyze a diagram/figure using GPT-4o Vision."""
         corr_id = correlation_id or "diagram_analysis"
         system_prompt = "You are a document analysis expert specializing in data visualization. Return ONLY valid JSON."
-        
+
         cropped = self._crop_region(page_image, bbox)
         if cropped is None:
             return self._empty_diagram_analysis(corr_id)
@@ -445,13 +486,33 @@ class VisionAnalyzer:
         b64 = image_to_b64(cropped, quality=self._JPEG_QUALITY, correlation_id=corr_id)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": [
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": self.config.diagram_detail}},
-                {"type": "text", "text": scrub_pii_for_ocr("Describe this figure in detail. Extract all data points and text.", domain="all")},
-            ]},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{b64}",
+                            "detail": self.config.diagram_detail,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": scrub_pii_for_ocr(
+                            "Describe this figure in detail. Extract all data points and text.",
+                            domain="all",
+                        ),
+                    },
+                ],
+            },
         ]
         try:
-            data = self._call_with_retry_sync(messages, max_tokens=1000, call_type="diagram_analysis", correlation_id=corr_id)
+            data = self._call_with_retry_sync(
+                messages,
+                max_tokens=1000,
+                call_type="diagram_analysis",
+                correlation_id=corr_id,
+            )
             return DiagramAnalysis(
                 description=data.get("description", ""),
                 diagram_type=data.get("diagram_type", "other"),
@@ -473,16 +534,28 @@ class VisionAnalyzer:
         """Extract document-level metadata using GPT-4o Vision."""
         corr_id = correlation_id or "metadata_extract"
         system_prompt = "You are a document classification expert. Analyze and return ONLY valid JSON."
-        
+
         scrubbed_preview = scrub_pii_for_ocr(full_text_preview, domain="all")
         b64 = image_to_b64(first_page_image, quality=85, correlation_id=corr_id)
-        
+
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": [
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": self.config.metadata_detail}},
-                {"type": "text", "text": f"Document has {page_count} pages.\nText preview:\n{scrubbed_preview}\n\nExtract document metadata."},
-            ]},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{b64}",
+                            "detail": self.config.metadata_detail,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": f"Document has {page_count} pages.\nText preview:\n{scrubbed_preview}\n\nExtract document metadata.",
+                    },
+                ],
+            },
         ]
         try:
             data = self._call_with_retry_sync(messages, max_tokens=800, call_type="metadata", correlation_id=corr_id)
@@ -503,15 +576,27 @@ class VisionAnalyzer:
             reason = "quota exceeded" if is_insufficient_quota_error(e) else "transient"
             logger.warning(f"[{corr_id}] Metadata extraction skipped ({reason}): {e}")
             return DocumentMetadata(
-                title="Unknown", document_type="other", language="en", date=None,
-                author=None, page_count=page_count, summary="", key_entities=[],
+                title="Unknown",
+                document_type="other",
+                language="en",
+                date=None,
+                author=None,
+                page_count=page_count,
+                summary="",
+                key_entities=[],
                 correlation_id=corr_id,
             )
         except Exception as e:
             logger.error(f"[{corr_id}] Metadata extraction failed: {e}")
             return DocumentMetadata(
-                title="Unknown", document_type="other", language="en", date=None,
-                author=None, page_count=page_count, summary="", key_entities=[],
+                title="Unknown",
+                document_type="other",
+                language="en",
+                date=None,
+                author=None,
+                page_count=page_count,
+                summary="",
+                key_entities=[],
                 correlation_id=corr_id,
             )
 
@@ -527,7 +612,7 @@ class VisionAnalyzer:
         corr_id = correlation_id or "vision_call"
         delay = 1.0
         last_error: Optional[Exception] = None
-        
+
         for attempt in range(self.config.max_retries):
             try:
                 # ✅ Run sync OpenAI call in thread for async compatibility
@@ -542,11 +627,12 @@ class VisionAnalyzer:
                             response_format={"type": "json_object"},
                             extra_headers={"X-Correlation-ID": corr_id} if corr_id else {},
                         ),
-                        asyncio.get_event_loop()
+                        asyncio.get_event_loop(),
                     ).result()
                 else:
                     # Python 3.8 fallback
                     import concurrent.futures
+
                     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                         future = executor.submit(
                             self.client.chat.completions.create,
@@ -558,20 +644,21 @@ class VisionAnalyzer:
                             extra_headers={"X-Correlation-ID": corr_id} if corr_id else {},
                         )
                         response = future.result()
-                
+
                 # Track usage and cost
                 usage = getattr(response, "usage", None)
                 input_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
                 output_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
                 images_sent = sum(
-                    1 for msg in messages
+                    1
+                    for msg in messages
                     for item in (msg.get("content", []) if isinstance(msg.get("content"), list) else [])
                     if isinstance(item, dict) and item.get("type") == "image_url"
                 )
-                
+
                 # ✅ Thread-safe cost logging
                 asyncio.run(self._log_cost_safe(call_type, input_tokens, output_tokens, images_sent, corr_id))
-                
+
                 content = getattr(getattr(response, "choices", [None])[0], "message", None)
                 if content is None or getattr(content, "content", None) is None:
                     raise ValueError(f"{call_type} returned empty content")
@@ -583,7 +670,7 @@ class VisionAnalyzer:
                         f"Response preview: {getattr(content, 'content', '')[:200]}..."
                     )
                     raise ValueError(f"{call_type} returned invalid JSON: {e}") from e
-                    
+
             except (RateLimitError, APITimeoutError, APIConnectionError) as e:
                 last_error = e
                 if is_insufficient_quota_error(e):
@@ -599,7 +686,7 @@ class VisionAnalyzer:
             except Exception as e:
                 last_error = e
                 raise ValueError(f"{call_type} unexpected error: {type(e).__name__}: {e}") from e
-        
+
         raise ValueError(f"{call_type} max retries exceeded")
 
     # ✅ NEW: Async cost logging helper
@@ -647,20 +734,20 @@ class VisionAnalyzer:
                 x1, y1, x2, y2 = [int(v) for v in bbox[:4]]
             else:
                 return None
-            
+
             # Ensure x1 < x2 and y1 < y2
             if x1 > x2:
                 x1, x2 = x2, x1
             if y1 > y2:
                 y1, y2 = y2, y1
-            
+
             h, w = image.shape[:2]
             x1, y1 = max(0, x1 - padding), max(0, y1 - padding)
             x2, y2 = min(w, x2 + padding), min(h, y2 + padding)
-            
+
             if x2 <= x1 or y2 <= y1:
                 return None
-            
+
             cropped = image[y1:y2, x1:x2]
             if cropped.shape[0] < 50 or cropped.shape[1] < 50:
                 return None
@@ -696,8 +783,12 @@ class VisionAnalyzer:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = [
-    "VisionAnalyzerConfig", "TableAnalysis", "DiagramAnalysis",
-    "DocumentMetadata", "EnrichedDocument", "VisionAnalyzer",
+    "VisionAnalyzerConfig",
+    "TableAnalysis",
+    "DiagramAnalysis",
+    "DocumentMetadata",
+    "EnrichedDocument",
+    "VisionAnalyzer",
 ]
 
 # ========================================================================
@@ -708,8 +799,8 @@ if __name__ == "__main__":
     import asyncio
     import sys
     from pathlib import Path
-    from unittest.mock import patch, MagicMock, Mock
-    
+    from unittest.mock import patch, MagicMock
+
     # 🔧 ROBUST PATH SETUP
     current_file = Path(__file__).resolve()
     for parent in current_file.parents:
@@ -718,138 +809,154 @@ if __name__ == "__main__":
             break
     else:
         backend_root = current_file.parents[2]
-    
+
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
-    
+
     async def run_tests():
         print("🔍 Testing VisionAnalyzer module (app/ocr/vision_analyzer.py)")
         print("=" * 70)
-        
+
         try:
             from app.ocr.vision_analyzer import (
-                VisionAnalyzer, VisionAnalyzerConfig, TableAnalysis, DiagramAnalysis,
-                DocumentMetadata, EnrichedDocument
+                VisionAnalyzer,
+                VisionAnalyzerConfig,
+                TableAnalysis,
+                DiagramAnalysis,
+                DocumentMetadata,
+                EnrichedDocument,
             )
-            
+
             # -- Test 1: Module imports & dataclasses ---------------------
             print("\n📌 Test 1: Module imports & dataclass validation")
-            
+
             config = VisionAnalyzerConfig(enable_tables=True, enable_diagrams=False, max_retries=2)
             assert config.enable_tables is True and config.enable_diagrams is False
             print(f"   ✅ VisionAnalyzerConfig: tables={config.enable_tables}, diagrams={config.enable_diagrams}")
-            
+
             table = TableAnalysis(
                 raw_text="Item | Price\nA | $10",
                 markdown_table="| Item | Price |\n| A | $10 |",
                 summary="Price list",
                 headers=["Item", "Price"],
-                row_count=1, col_count=2, table_type="price_list",
-                correlation_id="test-table"
+                row_count=1,
+                col_count=2,
+                table_type="price_list",
+                correlation_id="test-table",
             )
             assert table.to_dict()["markdown_table"].startswith("|")
             print(f"   ✅ TableAnalysis: to_dict() works, type={table.table_type}")
-            
+
             diagram = DiagramAnalysis(
                 description="Bar chart showing sales",
                 diagram_type="bar_chart",
                 key_data_points=["Q1: $100", "Q2: $150"],
                 searchable_text="sales chart quarterly",
-                correlation_id="test-diagram"
+                correlation_id="test-diagram",
             )
             assert "bar_chart" in diagram.diagram_type
             print(f"   ✅ DiagramAnalysis: type={diagram.diagram_type}, points={len(diagram.key_data_points)}")
-            
+
             metadata = DocumentMetadata(
-                title="Invoice #123", document_type="invoice", language="en",
-                date="2026-05-10", author="Acme Corp", page_count=3,
-                summary="Monthly invoice", key_entities=["Acme", "Invoice"],
-                correlation_id="test-meta"
+                title="Invoice #123",
+                document_type="invoice",
+                language="en",
+                date="2026-05-10",
+                author="Acme Corp",
+                page_count=3,
+                summary="Monthly invoice",
+                key_entities=["Acme", "Invoice"],
+                correlation_id="test-meta",
             )
             assert metadata.page_count == 3 and "Acme" in metadata.key_entities
             print(f"   ✅ DocumentMetadata: title={metadata.title}, entities={len(metadata.key_entities)}")
-            
+
             mock_ocr = MagicMock()
             mock_ocr.to_dict = lambda: {"pages": []}
             enriched = EnrichedDocument(
-                ocr_result=mock_ocr, metadata=metadata,
-                table_analyses={"t1": table}, diagram_analyses={"d1": diagram},
-                cost_report={"estimated_cost_usd": 0.05}, correlation_id="test-enriched"
+                ocr_result=mock_ocr,
+                metadata=metadata,
+                table_analyses={"t1": table},
+                diagram_analyses={"d1": diagram},
+                cost_report={"estimated_cost_usd": 0.05},
+                correlation_id="test-enriched",
             )
             assert "t1" in enriched.to_dict()["table_analyses"]
             print(f"   ✅ EnrichedDocument: to_dict() includes {len(enriched.table_analyses)} tables")
-            
+
             # -- Test 2: Engine initialization & validation ---------------
             print("\n📌 Test 2: VisionAnalyzer initialization & API key validation")
-            
+
             try:
                 VisionAnalyzer(api_key="invalid-key")
             except ValueError as e:
                 if "Invalid OpenAI API key" in str(e):
-                    print(f"   ✅ Invalid API key rejected")
-            
+                    print("   ✅ Invalid API key rejected")
+
             with patch("app.ocr.vision_analyzer.OpenAI"):
                 analyzer = VisionAnalyzer(api_key="sk-test123", model="gpt-4o-mini")
                 assert analyzer.model == "gpt-4o-mini"
                 print(f"   ✅ Analyzer initialized: model={analyzer.model}")
-            
+
             # -- Test 3: Image cropping with bbox parsing -----------------
             print("\n📌 Test 3: _crop_region (multiple bbox formats)")
-            
+
             test_img = np.random.randint(0, 256, (500, 500, 3), dtype=np.uint8)
-            
+
             # Dict bbox
             bbox_dict = {"x0": 100, "y0": 100, "x1": 200, "y1": 200}
             cropped = VisionAnalyzer._crop_region(test_img, bbox_dict, padding=5)
             assert cropped is not None and cropped.shape == (110, 110, 3)
             print(f"   ✅ Dict bbox: cropped shape={cropped.shape}")
-            
+
             # Points bbox
             bbox_points = [[100, 100], [200, 100], [200, 200], [100, 200]]
             cropped = VisionAnalyzer._crop_region(test_img, bbox_points, padding=0)
             assert cropped is not None and cropped.shape == (100, 100, 3)
             print(f"   ✅ Points bbox: cropped shape={cropped.shape}")
-            
+
             # Flat bbox
             bbox_flat = [50, 50, 150, 150]
             cropped = VisionAnalyzer._crop_region(test_img, bbox_flat, padding=10)
             assert cropped is not None and cropped.shape == (120, 120, 3)
             print(f"   ✅ Flat bbox: cropped shape={cropped.shape}")
-            
+
             # Out-of-bounds
             bbox_oob = {"x0": -10, "y0": -10, "x1": 600, "y1": 600}
             cropped = VisionAnalyzer._crop_region(test_img, bbox_oob, padding=0)
             assert cropped is not None and cropped.shape[0] <= 500
-            print(f"   ✅ Out-of-bounds bbox: clamped to image dimensions")
-            
+            print("   ✅ Out-of-bounds bbox: clamped to image dimensions")
+
             # Invalid bbox
             invalid_bbox = {"x0": 100, "y0": 100}
             result = VisionAnalyzer._crop_region(test_img, invalid_bbox)
             assert result is None
-            print(f"   ✅ Invalid bbox: returns None gracefully")
-            
+            print("   ✅ Invalid bbox: returns None gracefully")
+
             # -- Test 4: Cost estimation ----------------------------------
             print("\n📌 Test 4: get_cost_estimate (monitoring hook)")
-            
+
             with patch("app.ocr.vision_analyzer.OpenAI"):
                 analyzer = VisionAnalyzer(api_key="sk-test123")
                 estimate = analyzer.get_cost_estimate(table_count=3, diagram_count=2)
-                expected_cost = round((3*1500 + 2*1000 + 800) / 1000 * 0.01, 4)
+                expected_cost = round((3 * 1500 + 2 * 1000 + 800) / 1000 * 0.01, 4)
                 assert estimate["estimated_cost_usd"] == expected_cost
                 print(f"   ✅ Cost estimate: 3 tables + 2 diagrams -> ${estimate['estimated_cost_usd']:.4f}")
-            
+
             # -- Test 5: Table analysis (direct _parse logic, no API call) -
             print("\n📌 Test 5: analyze_table (mocked _call_with_retry_sync)")
-            
+
             with patch("app.ocr.vision_analyzer.OpenAI"):
                 analyzer = VisionAnalyzer(api_key="sk-test123")
-                
+
                 # ✅ Mock the internal _call_with_retry_sync to return predictable data
                 mock_response = {
                     "markdown_table": "| Item | Price |\n| A | $10 |",
                     "summary": "Price table",
                     "headers": ["Item", "Price"],
-                    "row_count": 1, "col_count": 2, "table_type": "price_list"
+                    "row_count": 1,
+                    "col_count": 2,
+                    "table_type": "price_list",
                 }
                 with patch.object(analyzer, "_call_with_retry_sync", return_value=mock_response):
                     result = analyzer.analyze_table(
@@ -857,47 +964,52 @@ if __name__ == "__main__":
                         table_html="<table><tr><th>Item</th><th>Price</th></tr></table>",
                         page_image=None,  # Skip image processing for this test
                         bbox=None,
-                        correlation_id="test-table-analyze"
+                        correlation_id="test-table-analyze",
                     )
-                    
+
                     assert result.markdown_table.startswith("|")
                     assert result.table_type == "price_list"
                     assert result.row_count == 1
                     print(f"   ✅ Table analysis: type={result.table_type}, rows={result.row_count}")
-            
+
             # -- Test 6: Diagram analysis (mocked) ------------------------
             print("\n📌 Test 6: analyze_diagram (mocked _call_with_retry_sync)")
-            
+
             with patch("app.ocr.vision_analyzer.OpenAI"):
                 analyzer = VisionAnalyzer(api_key="sk-test123")
-                
+
                 mock_response = {
                     "description": "Bar chart of quarterly sales",
                     "diagram_type": "bar_chart",
                     "key_data_points": ["Q1: $100", "Q2: $150"],
-                    "searchable_text": "sales chart quarterly"
+                    "searchable_text": "sales chart quarterly",
                 }
                 with patch.object(analyzer, "_call_with_retry_sync", return_value=mock_response):
                     # Create a minimal test image
                     test_img = np.random.randint(0, 256, (200, 200, 3), dtype=np.uint8)
                     with patch.object(analyzer, "_crop_region", return_value=test_img):
-                        with patch("app.ocr.vision_analyzer.image_to_b64", return_value="test-b64"):
+                        with patch(
+                            "app.ocr.vision_analyzer.image_to_b64",
+                            return_value="test-b64",
+                        ):
                             result = analyzer.analyze_diagram(
                                 page_image=test_img,
                                 bbox=[[50, 50], [150, 50], [150, 150], [50, 150]],
-                                correlation_id="test-diagram-analyze"
+                                correlation_id="test-diagram-analyze",
                             )
-                            
+
                             assert "bar_chart" in result.diagram_type
                             assert len(result.key_data_points) >= 1
-                            print(f"   ✅ Diagram analysis: type={result.diagram_type}, points={len(result.key_data_points)}")
-            
+                            print(
+                                f"   ✅ Diagram analysis: type={result.diagram_type}, points={len(result.key_data_points)}"
+                            )
+
             # -- Test 7: Metadata extraction (mocked) ---------------------
             print("\n📌 Test 7: extract_metadata (mocked _call_with_retry_sync)")
-            
+
             with patch("app.ocr.vision_analyzer.OpenAI"):
                 analyzer = VisionAnalyzer(api_key="sk-test123")
-                
+
                 mock_response = {
                     "title": "Monthly Invoice",
                     "document_type": "invoice",
@@ -905,7 +1017,7 @@ if __name__ == "__main__":
                     "date": "2026-05-10",
                     "author": "Acme Corp",
                     "summary": "Invoice for services",
-                    "key_entities": ["Acme", "Invoice"]
+                    "key_entities": ["Acme", "Invoice"],
                 }
                 with patch.object(analyzer, "_call_with_retry_sync", return_value=mock_response):
                     test_img = np.random.randint(0, 256, (300, 300, 3), dtype=np.uint8)
@@ -914,22 +1026,25 @@ if __name__ == "__main__":
                             first_page_image=test_img,
                             full_text_preview="Invoice #123\nDate: 2026-05-10",
                             page_count=3,
-                            correlation_id="test-metadata"
+                            correlation_id="test-metadata",
                         )
-                        
+
                         assert result.document_type == "invoice"
                         assert "Acme" in result.key_entities
-                        print(f"   ✅ Metadata extraction: type={result.document_type}, entities={len(result.key_entities)}")
-            
+                        print(
+                            f"   ✅ Metadata extraction: type={result.document_type}, entities={len(result.key_entities)}"
+                        )
+
             # -- Test 8: PII scrubbing integration ------------------------
             print("\n📌 Test 8: PII scrubbing before API calls")
-            
+
             from app.core.ocr_utils import scrub_pii_for_ocr
+
             original = "Contact john.doe@email.com, SSN 123-45-6789"
             scrubbed = scrub_pii_for_ocr(original, domain="all")
             assert "john.doe@email.com" not in scrubbed or "email" in scrubbed.lower()
-            print(f"   ✅ PII scrubbing: sensitive data masked in prompts")
-            
+            print("   ✅ PII scrubbing: sensitive data masked in prompts")
+
             print("\n" + "=" * 70)
             print("✅ ALL TESTS PASSED! VisionAnalyzer module verified.")
             print("\n💡 Note: Real Vision enrichment requires:")
@@ -938,13 +1053,14 @@ if __name__ == "__main__":
             print("   • Cost awareness: ~$0.01-0.05 per enriched element")
             print("\n🔐 Security: PII is scrubbed from all prompts before API calls")
             return True
-            
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
-    
+
     # Run async tests
     success = asyncio.run(run_tests())
     sys.exit(0 if success else 1)

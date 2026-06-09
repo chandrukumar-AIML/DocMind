@@ -1,4 +1,4 @@
-﻿# backend/app/extraction/table_extractor.py
+# backend/app/extraction/table_extractor.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # BATMAN-FIX: A - True async, M - Memory safe pandas, T - Fast parsing
 # OWASP-FIX: 1 - Prompt escaping, 7 - Safe data handling
@@ -23,7 +23,6 @@ import numpy as np
 from pydantic import BaseModel, ValidationError, Field
 
 # DVMELTSS-M: Import centralized utilities
-from app.config import get_settings
 from app.core.vision_llm import get_vision_llm
 from app.core.retry import retry_async, RetryConfig
 from app.core.prompts import escape_prompt_content
@@ -35,9 +34,7 @@ logger = logging.getLogger(__name__)
 # -- CONSTANTS & CONFIG (DVMELTSS-S, BATMAN-M) -------------------------
 # ========================================================================
 
-_VALID_TABLE_TYPES: Final = frozenset({
-    "financial", "schedule", "comparison", "data", "form", "log", "other"
-})
+_VALID_TABLE_TYPES: Final = frozenset({"financial", "schedule", "comparison", "data", "form", "log", "other"})
 
 _MAX_RETRIES: Final = 3
 _RETRY_BASE_DELAY: Final = 1.0
@@ -50,6 +47,7 @@ _PERCENT_RE: Final = re.compile(r"%\s*$")
 _MAX_COLUMNS: Final = 200  # Truncate wide tables to prevent OOM
 _MAX_ROWS_FOR_SUMMARY: Final = 50  # Limit rows sent to LLM for summary
 _MAX_HTML_PREVIEW: Final = 2000  # Keep small HTML preview
+
 
 # DVMELTSS-V: Pydantic schemas for LLM summary generation
 class TableSummarySchema(BaseModel):
@@ -64,12 +62,14 @@ class TableSummarySchema(BaseModel):
 # -- IMMUTABLE DATA MODEL (DVMELTSS-M, V) -------------------------------
 # ========================================================================
 
+
 @dataclass
 class ExtractedTable:
     """
     Structured representation of a table.
     ✅ FIXED: Proper field defaults + validation in __post_init__.
     """
+
     table_id: str
     source_file: str
     page_number: int
@@ -91,12 +91,12 @@ class ExtractedTable:
     def __post_init__(self):
         # ✅ Validate table_type against allowed values
         if self.table_type not in _VALID_TABLE_TYPES:
-            object.__setattr__(self, 'table_type', 'data')
+            object.__setattr__(self, "table_type", "data")
         # ✅ Clamp counts to non-negative
         if self.row_count < 0:
-            object.__setattr__(self, 'row_count', 0)
+            object.__setattr__(self, "row_count", 0)
         if self.col_count < 0:
-            object.__setattr__(self, 'col_count', 0)
+            object.__setattr__(self, "col_count", 0)
 
     def to_embed_text(self) -> str:
         """Text to embed in vector store — combines summary + markdown."""
@@ -138,6 +138,7 @@ class ExtractedTable:
 # -- EXTRACTOR CLASS (DVMELTSS-V, BATMAN-A, OWASP-1) -------------------
 # ========================================================================
 
+
 class TableExtractor:
     """
     Extracts and structures tables from PP-StructureV3 HTML output or raw text.
@@ -155,7 +156,7 @@ class TableExtractor:
         self.client = get_vision_llm(model_override=model, timeout=30.0)
         self.model = model
         self.max_retries = max_retries
-        
+
         logger.info(f"TableExtractor initialized: model={model}, async=True")
 
     # ✅ NEW: Input validation helper
@@ -170,12 +171,14 @@ class TableExtractor:
         return True, ""
 
     # ✅ FIXED: Moved retry logic to dedicated method for testability
-    @retry_async(config=RetryConfig(
-        max_attempts=_MAX_RETRIES,
-        backoff_base=_RETRY_BASE_DELAY,
-        backoff_max=_RETRY_MAX_DELAY,
-        exceptions=(Exception,),
-    ))
+    @retry_async(
+        config=RetryConfig(
+            max_attempts=_MAX_RETRIES,
+            backoff_base=_RETRY_BASE_DELAY,
+            backoff_max=_RETRY_MAX_DELAY,
+            exceptions=(Exception,),
+        )
+    )
     async def _call_vision_api(self, prompt: str, corr_id: str):
         """Call vision LLM with retry logic."""
         # ✅ FIXED: Run sync OpenAI call in thread to avoid blocking event loop
@@ -201,7 +204,7 @@ class TableExtractor:
                     max_tokens=400,
                     response_format={"type": "json_object"},
                     extra_headers={"X-Correlation-ID": corr_id} if corr_id else {},
-                )
+                ),
             )
 
     def _estimate_tokens(self, text: str) -> int:
@@ -210,10 +213,10 @@ class TableExtractor:
     async def _call_llm_with_retry(self, prompt: str, correlation_id: str) -> Optional[dict]:
         """DVMELTSS-E: Async LLM call for table summary with centralized retry."""
         corr_id = correlation_id
-        
+
         # FIXED: Use centralized prompt escaping
         safe_prompt = escape_prompt_content(prompt)
-        
+
         if self._estimate_tokens(safe_prompt) > 4000:
             safe_prompt = safe_prompt[:16000]
 
@@ -246,10 +249,7 @@ class TableExtractor:
             df = tables[0]
             # Flatten multi-level columns
             if isinstance(df.columns, pd.MultiIndex):
-                df.columns = [
-                    " ".join(str(c) for c in col if str(c) != "Unnamed").strip()
-                    for col in df.columns
-                ]
+                df.columns = [" ".join(str(c) for c in col if str(c) != "Unnamed").strip() for col in df.columns]
             return df
         except Exception as e:
             logger.debug(f"HTML parse failed: {e}")
@@ -265,7 +265,8 @@ class TableExtractor:
         for line in lines:
             if "|" in line:
                 cells = [c.strip() for c in line.split("|") if c.strip()]
-                if cells: rows.append(cells)
+                if cells:
+                    rows.append(cells)
 
         if len(rows) < 2:
             return None
@@ -288,12 +289,9 @@ class TableExtractor:
         if len(df.columns) > _MAX_COLUMNS:
             logger.debug(f"Truncating wide table from {len(df.columns)} to {_MAX_COLUMNS} columns")
             df = df.iloc[:, :_MAX_COLUMNS]
-        
+
         # Rename unnamed columns
-        df.columns = [
-            f"Col_{i}" if "Unnamed" in str(c) else str(c).strip()
-            for i, c in enumerate(df.columns)
-        ]
+        df.columns = [f"Col_{i}" if "Unnamed" in str(c) else str(c).strip() for i, c in enumerate(df.columns)]
         # Drop empty
         df = df.dropna(how="all").dropna(axis=1, how="all")
         # Strip strings and control dtypes
@@ -303,10 +301,10 @@ class TableExtractor:
             # Convert numeric columns to appropriate dtype to save memory
             elif df[col].dtype in [np.float64, np.int64]:
                 try:
-                    df[col] = pd.to_numeric(df[col], downcast='integer')
+                    df[col] = pd.to_numeric(df[col], downcast="integer")
                 except (ValueError, TypeError):
                     try:
-                        df[col] = pd.to_numeric(df[col], downcast='float')
+                        df[col] = pd.to_numeric(df[col], downcast="float")
                     except (ValueError, TypeError):
                         pass  # Keep as is
         return df.reset_index(drop=True)
@@ -316,6 +314,7 @@ class TableExtractor:
         """Convert DataFrame to Markdown with fallback if tabulate not installed."""
         try:
             from tabulate import tabulate
+
             return tabulate(df, headers="keys", tablefmt="pipe", showindex=False)
         except ImportError:
             # ✅ Fallback: simple pipe-separated markdown
@@ -344,13 +343,13 @@ class TableExtractor:
         # FIXED: Use centralized prompt escaping + limit rows for LLM
         safe_markdown = escape_prompt_content(markdown[:1500])
         safe_source = escape_prompt_content(source_file)
-        
+
         # Limit markdown to first _MAX_ROWS_FOR_SUMMARY rows for LLM
         lines = markdown.split("\n")
         if len(lines) > _MAX_ROWS_FOR_SUMMARY + 2:  # +2 for header + separator
-            truncated = "\n".join(lines[:_MAX_ROWS_FOR_SUMMARY + 2]) + "\n... (truncated)"
+            truncated = "\n".join(lines[: _MAX_ROWS_FOR_SUMMARY + 2]) + "\n... (truncated)"
             safe_markdown = escape_prompt_content(truncated)
-        
+
         prompt = f"""Analyze this table and return JSON:
 {{
   "summary": "2-3 sentence description of what this table shows",
@@ -390,7 +389,7 @@ Document: {safe_source}
         ✅ FIXED: Input validation + safe error handling.
         """
         corr_id = correlation_id or "table_unknown"
-        
+
         # ✅ Validate inputs first
         is_valid, error = self._validate_table_input(html, text, corr_id)
         if not is_valid:
@@ -449,23 +448,29 @@ Document: {safe_source}
             loop = asyncio.get_running_loop()
             # If yes, we can't use asyncio.run() — warn and return None
             logger.warning(
-                f"⚠️ TableExtractor.extract() called from async context — "
-                f"use extract_async() instead. Returning None."
+                "⚠️ TableExtractor.extract() called from async context — " "use extract_async() instead. Returning None."
             )
             return None
         except RuntimeError:
             # No running loop — safe to use asyncio.run()
             return asyncio.run(
-                self.extract_async(html, text, table_id, source_file, page_number, chunk_id, correlation_id)
+                self.extract_async(
+                    html,
+                    text,
+                    table_id,
+                    source_file,
+                    page_number,
+                    chunk_id,
+                    correlation_id,
+                )
             )
 
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["TableExtractor", "ExtractedTable"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

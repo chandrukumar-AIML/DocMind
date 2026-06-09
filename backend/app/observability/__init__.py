@@ -20,19 +20,32 @@ Public API:
         LangSmithEvalDataset, EvalRunResult,  # Dataset management
     )
 """
+
 from __future__ import annotations
 from typing import Any
 
 # DVMELTSS-M: Explicit public API surface
 __all__ = [
     # LangSmith Tracing
-    "traceable", "trace_chain", "trace_tool", "trace_llm", "get_tracer_metadata",
+    "traceable",
+    "trace_chain",
+    "trace_tool",
+    "trace_llm",
+    "get_tracer_metadata",
     # MLflow Logging
-    "MLflowLogger", "configure_mlflow", "NULL_RUN", "get_mlflow_metadata",
+    "MLflowLogger",
+    "configure_mlflow",
+    "NULL_RUN",
+    "get_mlflow_metadata",
     # LangSmith Config
-    "configure_langsmith", "get_run_metadata", "get_dataset_metadata", "get_langsmith_config_metadata",
+    "configure_langsmith",
+    "get_run_metadata",
+    "get_dataset_metadata",
+    "get_langsmith_config_metadata",
     # LangSmith Dataset
-    "LangSmithEvalDataset", "EvalRunResult", "get_langsmith_dataset_metadata",
+    "LangSmithEvalDataset",
+    "EvalRunResult",
+    "get_langsmith_dataset_metadata",
     # Module metadata
     "get_observability_metadata",
 ]
@@ -58,11 +71,17 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "configure_langsmith": (".langsmith_config", "configure_langsmith"),
     "get_run_metadata": (".langsmith_config", "get_run_metadata"),
     "get_dataset_metadata": (".langsmith_config", "get_dataset_metadata"),
-    "get_langsmith_config_metadata": (".langsmith_config", "get_langsmith_config_metadata"),
+    "get_langsmith_config_metadata": (
+        ".langsmith_config",
+        "get_langsmith_config_metadata",
+    ),
     # LangSmith Dataset
     "LangSmithEvalDataset": (".langsmith_dataset", "LangSmithEvalDataset"),
     "EvalRunResult": (".langsmith_dataset", "EvalRunResult"),
-    "get_langsmith_dataset_metadata": (".langsmith_dataset", "get_langsmith_dataset_metadata"),
+    "get_langsmith_dataset_metadata": (
+        ".langsmith_dataset",
+        "get_langsmith_dataset_metadata",
+    ),
 }
 
 
@@ -75,16 +94,15 @@ def __getattr__(name: str) -> Any:
         module_path, attr_name = _LAZY_IMPORTS[name]
         try:
             import importlib
-            module = importlib.import_module(module_path, package=__name__.rpartition('.')[0])
+
+            module = importlib.import_module(module_path, package=__name__.rpartition(".")[0])
             return getattr(module, attr_name)
         except ImportError as e:
-            raise AttributeError(
-                f"Failed to lazy-import '{name}' from '{module_path}': {e}"
-            ) from e
-    
+            raise AttributeError(f"Failed to lazy-import '{name}' from '{module_path}': {e}") from e
+
     if name == "get_observability_metadata":
         return get_observability_metadata
-    
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -99,17 +117,23 @@ def __dir__() -> list[str]:
 def _reset_caches_for_tests() -> None:
     """Reset internal caches & singletons for clean pytest runs."""
     import importlib
-    
+
     # Invalidate import caches
-    for mod_name in [".langsmith_tracer", ".mlflow_logger", ".langsmith_config", ".langsmith_dataset"]:
+    for mod_name in [
+        ".langsmith_tracer",
+        ".mlflow_logger",
+        ".langsmith_config",
+        ".langsmith_dataset",
+    ]:
         try:
             importlib.invalidate_caches()
         except Exception:
             pass
-    
+
     # Reset MLflowLogger circuit breaker if loaded
     try:
         from . import mlflow_logger
+
         if hasattr(mlflow_logger.MLflowLogger, "_mlflow_available"):
             mlflow_logger.MLflowLogger._mlflow_available = True
             mlflow_logger.MLflowLogger._failure_count = 0
@@ -120,13 +144,15 @@ def _reset_caches_for_tests() -> None:
 # DVMELTSS-L: Module initialization logging for observability
 __init_logged: bool = False
 
+
 def _log_module_init() -> None:
     """Log module load — idempotent to avoid spam in multi-worker setups."""
     global __init_logged
     if __init_logged:
         return
-    
+
     import logging
+
     logger = logging.getLogger(__name__)
     logger.debug(  # ✅ Use debug level to avoid prod log spam
         f"Observability module loaded | version={__version__} | {__description__}"
@@ -145,7 +171,7 @@ def get_observability_metadata() -> dict[str, Any]:
     from .mlflow_logger import get_mlflow_metadata as _get_mlflow_meta
     from .langsmith_config import get_langsmith_config_metadata as _get_config_meta
     from .langsmith_dataset import get_langsmith_dataset_metadata as _get_dataset_meta
-    
+
     return {
         "version": __version__,
         "description": __description__,

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import inspect
 import sys
@@ -37,11 +37,7 @@ def _public_members(module: ModuleType) -> dict[str, Any]:
     exported = getattr(module, "__all__", None)
     if exported:
         return {name: getattr(module, name) for name in exported if hasattr(module, name)}
-    return {
-        name: value
-        for name, value in vars(module).items()
-        if not name.startswith("_")
-    }
+    return {name: value for name, value in vars(module).items() if not name.startswith("_")}
 
 
 def run_module_smoke(module: ModuleType, file_path: str) -> bool:
@@ -70,10 +66,7 @@ def run_module_smoke(module: ModuleType, file_path: str) -> bool:
         assert len(routes) > 0, "router exists but has no registered routes"
         print(f"FastAPI router routes: {len(routes)}")
 
-    metadata_helpers = [
-        name for name in functions
-        if name.startswith("get_") and name.endswith("_metadata")
-    ]
+    metadata_helpers = [name for name in functions if name.startswith("get_") and name.endswith("_metadata")]
     if metadata_helpers:
         print(f"Metadata helpers: {', '.join(metadata_helpers)}")
 
@@ -83,10 +76,9 @@ def run_module_smoke(module: ModuleType, file_path: str) -> bool:
 
 
 __all__ = ["ensure_backend_path", "module_name_from_file", "run_module_smoke"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

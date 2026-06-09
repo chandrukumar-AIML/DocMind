@@ -1,4 +1,4 @@
-﻿# backend/app/vectorstore/chroma_store.py
+# backend/app/vectorstore/chroma_store.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # BATMAN-FIX: A - True async, T - Atomic operations, M - Memory safety
 # OWASP-FIX: 3 - Credential safety, 9 - Input sanitization
@@ -27,7 +27,6 @@ from app.core.vectorstore_utils import (
     validate_metadata,
     validate_filter,
     generate_vectorstore_correlation_id,
-    REQUIRED_METADATA_FIELDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,7 +55,7 @@ def _get_chroma_client(persist_dir: str) -> chromadb.PersistentClient:
 class ChromaVectorStore:
     """
     ChromaDB persistent vector store wrapper.
-    
+
     Features:
     - Parent-child chunking support
     - Metadata validation & coercion with detailed logging
@@ -69,14 +68,15 @@ class ChromaVectorStore:
         settings = get_settings()
         self.persist_dir = settings.chroma_persist_dir
         self.collection_name = settings.chroma_collection_name
-        
+
         # ✅ FIXED: Lazy import embeddings to avoid circular import
         if embeddings is None:
             from .embeddings import CachedOpenAIEmbeddings
+
             self.embeddings = CachedOpenAIEmbeddings(api_key=settings.openai_api_key)
         else:
             self.embeddings = embeddings
-            
+
         self._client = _get_chroma_client(self.persist_dir)
         self._store = Chroma(
             client=self._client,
@@ -117,18 +117,15 @@ class ChromaVectorStore:
     def add_chunks(self, chunks: list[Document], correlation_id: Optional[str] = None) -> list[str]:
         """Add child chunks to ChromaDB with deduplication and validation."""
         corr_id = correlation_id or generate_vectorstore_correlation_id("chroma_add")
-        
+
         # ✅ Validate inputs
         chunks = self._validate_documents(chunks, corr_id)
         if not chunks:
             return []
-        
+
         # Generate or extract chunk IDs
-        candidate_ids = [
-            chunk.metadata.get("chunk_id") or str(uuid.uuid4())
-            for chunk in chunks
-        ]
-        
+        candidate_ids = [chunk.metadata.get("chunk_id") or str(uuid.uuid4()) for chunk in chunks]
+
         # Check for existing IDs to avoid duplicates
         try:
             collection = self._client.get_collection(self.collection_name)
@@ -137,17 +134,14 @@ class ChromaVectorStore:
         except Exception as e:
             logger.warning(f"[{corr_id}] Could not check for duplicates: {e}")
             existing_ids = set()
-        
-        new_chunks = [
-            chunk for chunk, cid in zip(chunks, candidate_ids)
-            if cid not in existing_ids
-        ]
+
+        new_chunks = [chunk for chunk, cid in zip(chunks, candidate_ids) if cid not in existing_ids]
         skipped = len(chunks) - len(new_chunks)
         if skipped:
             logger.info(f"[{corr_id}] Skipped {skipped} duplicate chunks")
         if not new_chunks:
             return []
-        
+
         # Validate and coerce metadata with detailed logging
         validated = []
         ids = []
@@ -158,13 +152,13 @@ class ChromaVectorStore:
                 for key, value in chunk.metadata.items():
                     coerced_meta[key] = coerce_metadata_value(value, key)
                 chunk.metadata = coerced_meta
-                
+
                 # Validate required fields
                 is_valid, error = validate_metadata(chunk.metadata)
                 if not is_valid:
                     logger.error(f"[{corr_id}] Metadata validation failed: {error}")
                     continue
-                
+
                 chunk_id = chunk.metadata.get("chunk_id") or str(uuid.uuid4())
                 chunk.metadata["chunk_id"] = chunk_id
                 validated.append(chunk)
@@ -173,10 +167,10 @@ class ChromaVectorStore:
                 # ✅ Per-chunk error handling — don't fail entire batch
                 logger.warning(f"[{corr_id}] Failed to process chunk: {e}")
                 continue
-        
+
         if not validated:
             return []
-        
+
         try:
             self._store.add_documents(documents=validated, ids=ids)
             self._update_document_registry(validated, corr_id)
@@ -190,15 +184,15 @@ class ChromaVectorStore:
     def add_parent_chunks(self, parents: list[Document], correlation_id: Optional[str] = None) -> list[str]:
         """Store parent chunks in a separate collection for context retrieval."""
         corr_id = correlation_id or generate_vectorstore_correlation_id("chroma_parents")
-        
+
         # ✅ Validate inputs
         parents = self._validate_documents(parents, corr_id)
         if not parents:
             return []
-        
+
         parent_collection = self._client.get_or_create_collection("parents")
         ids, docs, metadatas = [], [], []
-        
+
         for parent in parents:
             try:
                 # Coerce and validate
@@ -214,7 +208,7 @@ class ChromaVectorStore:
             except Exception as e:
                 logger.warning(f"[{corr_id}] Failed to process parent chunk: {e}")
                 continue
-        
+
         if ids:
             try:
                 parent_collection.add(ids=ids, documents=docs, metadatas=metadatas)
@@ -233,7 +227,7 @@ class ChromaVectorStore:
         """Search with optional metadata filtering."""
         corr_id = correlation_id or generate_vectorstore_correlation_id("chroma_search")
         kwargs: Dict[str, Any] = {"k": k}
-        
+
         if filter_dict:
             # FIXED: Use centralized filter validation
             is_valid, error = validate_filter(filter_dict)
@@ -242,7 +236,7 @@ class ChromaVectorStore:
                 # Fail open: proceed without filter rather than blocking query
             else:
                 kwargs["filter"] = filter_dict
-        
+
         try:
             return self._store.similarity_search(query, **kwargs)
         except Exception as e:
@@ -259,14 +253,14 @@ class ChromaVectorStore:
         """Search with relevance scores + optional filtering."""
         corr_id = correlation_id or generate_vectorstore_correlation_id("chroma_scores")
         kwargs: Dict[str, Any] = {"k": k}
-        
+
         if filter_dict:
             is_valid, error = validate_filter(filter_dict)
             if not is_valid:
                 logger.warning(f"[{corr_id}] Filter validation failed: {error}")
             else:
                 kwargs["filter"] = filter_dict
-        
+
         try:
             results = self._store.similarity_search_with_relevance_scores(query, **kwargs)
             # ✅ Ensure return type is list[tuple[Document, float]]
@@ -278,10 +272,10 @@ class ChromaVectorStore:
     def get_parent(self, parent_id: str, correlation_id: Optional[str] = None) -> Optional[str]:
         """Retrieve parent chunk content by ID for context expansion."""
         corr_id = correlation_id or generate_vectorstore_correlation_id("chroma_parent")
-        
+
         # ✅ Sanitize parent_id to prevent injection
         safe_id = sanitize_chroma_key(parent_id)
-        
+
         try:
             collection = self._client.get_collection("parents")
             result = collection.get(ids=[safe_id])
@@ -295,18 +289,17 @@ class ChromaVectorStore:
         """Get all chunks for a document without embedding an empty query."""
         corr_id = correlation_id or generate_vectorstore_correlation_id("chroma_doc")
         collection = self._client.get_collection(self.collection_name)
-        
+
         # FIXED: Use centralized key sanitization for filter
         safe_source = sanitize_chroma_key(source_file)
-        
+
         try:
             result = collection.get(
                 where={"source_file": safe_source},
                 include=["documents", "metadatas"],
             )
             return [
-                Document(page_content=doc, metadata=meta)
-                for doc, meta in zip(result["documents"], result["metadatas"])
+                Document(page_content=doc, metadata=meta) for doc, meta in zip(result["documents"], result["metadatas"])
             ]
         except Exception as e:
             logger.error(f"[{corr_id}] Failed to get document chunks: {e}")
@@ -322,7 +315,7 @@ class ChromaVectorStore:
         corr_id = correlation_id or generate_vectorstore_correlation_id("chroma_batch")
         collection = self._client.get_collection(self.collection_name)
         total = self._count_public()
-        
+
         for offset in range(0, total, batch_size):
             try:
                 batch = collection.get(
@@ -330,10 +323,7 @@ class ChromaVectorStore:
                     offset=offset,
                     include=["documents", "metadatas", "embeddings"],
                 )
-                docs = [
-                    Document(page_content=d, metadata=m)
-                    for d, m in zip(batch["documents"], batch["metadatas"])
-                ]
+                docs = [Document(page_content=d, metadata=m) for d, m in zip(batch["documents"], batch["metadatas"])]
                 yield docs, batch["embeddings"]
             except Exception as e:
                 logger.warning(f"[{corr_id}] Failed to fetch batch at offset {offset}: {e}")
@@ -351,7 +341,7 @@ class ChromaVectorStore:
             metadatas = result.get("metadatas") or []
             if metadatas:
                 return metadatas
-            
+
             # Registry empty — rebuild from existing chunks
             docs = self._list_documents_full_scan(corr_id)
             if docs:
@@ -371,7 +361,7 @@ class ChromaVectorStore:
         collection = self._client.get_collection(self.collection_name)
         all_meta = collection.get(include=["metadatas"])["metadatas"]
         seen: dict[str, dict] = {}
-        
+
         for meta in all_meta:
             source = meta.get("source_file", "unknown")
             if source not in seen:
@@ -386,13 +376,11 @@ class ChromaVectorStore:
                     "correlation_id": correlation_id,
                 }
             seen[source]["chunk_count"] += 1
-            seen[source]["page_count"] = max(
-                seen[source]["page_count"], meta.get("page_number", 0) + 1
-            )
+            seen[source]["page_count"] = max(seen[source]["page_count"], meta.get("page_number", 0) + 1)
             conf = meta.get("ocr_confidence", 0.0)
             if isinstance(conf, (int, float)):
                 seen[source]["_confs"].append(conf)
-        
+
         result = []
         for doc in seen.values():
             confs = doc.pop("_confs", [])
@@ -404,7 +392,7 @@ class ChromaVectorStore:
         """Update registry with new document metadata (idempotent upsert)."""
         registry = self._client.get_or_create_collection(REGISTRY_COLLECTION)
         seen_files: dict[str, dict] = {}
-        
+
         for chunk in chunks:
             sf = chunk.metadata.get("source_file", "unknown")
             if sf not in seen_files:
@@ -419,7 +407,7 @@ class ChromaVectorStore:
                     "correlation_id": correlation_id,
                 }
             seen_files[sf]["chunk_count"] += 1
-        
+
         for sf, meta in seen_files.items():
             # FIXED: Use centralized key sanitization
             safe_id = sanitize_chroma_key(sf, prefix="doc")
@@ -429,10 +417,10 @@ class ChromaVectorStore:
         """Delete all chunks for a document by source_file filter."""
         corr_id = correlation_id or generate_vectorstore_correlation_id("chroma_delete")
         collection = self._client.get_collection(self.collection_name)
-        
+
         # FIXED: Use centralized key sanitization
         safe_source = sanitize_chroma_key(source_file)
-        
+
         try:
             results = collection.get(where={"source_file": safe_source}, include=["metadatas"])
             ids = results.get("ids", [])
@@ -442,7 +430,7 @@ class ChromaVectorStore:
         except Exception as e:
             logger.error(f"[{corr_id}] Failed to delete chunks: {e}")
             ids = []
-        
+
         # ✅ Also remove from registry and parent collection
         try:
             registry = self._client.get_collection(REGISTRY_COLLECTION)
@@ -450,7 +438,7 @@ class ChromaVectorStore:
             registry.delete(ids=[safe_id])
         except Exception:
             pass  # Registry delete is non-critical
-        
+
         # ✅ Delete parent chunks for this document
         try:
             parent_collection = self._client.get_collection("parents")
@@ -464,7 +452,7 @@ class ChromaVectorStore:
                 logger.info(f"[{corr_id}] Deleted {len(parent_ids)} parent chunks for: {source_file}")
         except Exception as e:
             logger.warning(f"[{corr_id}] Failed to delete parent chunks: {e}")
-        
+
         return len(ids)
 
     def count(self) -> int:
@@ -481,11 +469,15 @@ def get_chroma_metadata() -> dict[str, Any]:
 
 
 # DVMELTSS-M: Explicit module exports
-__all__ = ["ChromaVectorStore", "_get_chroma_client", "REGISTRY_COLLECTION", "get_chroma_metadata"]
-# Local smoke test entry point. Run: python -m 
+__all__ = [
+    "ChromaVectorStore",
+    "_get_chroma_client",
+    "REGISTRY_COLLECTION",
+    "get_chroma_metadata",
+]
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

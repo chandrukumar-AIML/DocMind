@@ -1,4 +1,4 @@
-﻿# backend/app/graph/graph_extractor.py
+# backend/app/graph/graph_extractor.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # BATMAN-FIX: A - True async, T - Batch processing, M - Memory safety
 # OWASP-FIX: 1 - Prompt injection prevention, 7 - Safe data handling
@@ -48,11 +48,13 @@ _MAX_RETRIES: Final = 3
 _RETRY_BASE_DELAY: Final = 1.0
 _RETRY_MAX_DELAY: Final = 30.0
 
+
 # DVMELTSS-V: Pydantic schemas for structured LLM output
 class EntitySchema(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     type: str
     description: str = Field(default="", max_length=500)
+
 
 class RelationshipSchema(BaseModel):
     from_entity: str = Field(..., min_length=1)
@@ -60,10 +62,11 @@ class RelationshipSchema(BaseModel):
     type: str
     description: str = Field(default="", max_length=500)
 
+
 class ExtractionResponseSchema(BaseModel):
     entities: list[EntitySchema] = Field(default_factory=list, max_length=_MAX_ENTITIES)
     relationships: list[RelationshipSchema] = Field(default_factory=list, max_length=_MAX_RELATIONSHIPS)
-    
+
     # ✅ FIXED: Pydantic v2 config
     model_config = {"extra": "forbid"}
 
@@ -72,12 +75,14 @@ class ExtractionResponseSchema(BaseModel):
 # -- IMMUTABLE DATA MODELS (DVMELTSS-M, V) ------------------------------
 # ========================================================================
 
+
 @dataclass
 class ExtractedEntity:
     """
     Extracted entity with deterministic ID.
     ✅ FIXED: Proper field defaults + validation in __post_init__.
     """
+
     id: str
     name: str
     entity_type: str
@@ -90,7 +95,7 @@ class ExtractedEntity:
         self.entity_type = validate_entity_type(self.entity_type)
         # Sanitize name: lowercase, strip, remove dangerous sequences
         safe_name = self.name.lower().strip().replace("::", ":").replace("{", "").replace("}", "")
-        object.__setattr__(self, 'name', safe_name)
+        object.__setattr__(self, "name", safe_name)
 
     def to_dict(self) -> dict:
         return {
@@ -102,9 +107,11 @@ class ExtractedEntity:
             "correlation_id": self.correlation_id,
         }
 
+
 @dataclass
 class ExtractedRelationship:
     """Immutable extracted relationship."""
+
     from_entity_id: str
     to_entity_id: str
     relationship_type: str
@@ -124,9 +131,11 @@ class ExtractedRelationship:
             "correlation_id": self.correlation_id,
         }
 
+
 @dataclass
 class ExtractionResult:
     """Collection of extracted entities and relationships for a chunk."""
+
     entities: list[ExtractedEntity]
     relationships: list[ExtractedRelationship]
     source_file: str
@@ -176,10 +185,11 @@ Rules:
 # -- EXTRACTOR CLASS (DVMELTSS-V, BATMAN-A, OWASP-1) -------------------
 # ========================================================================
 
+
 class GraphExtractor:
     """
     Extracts entities and relationships from text chunks using GPT-4o.
-    
+
     Features:
     - Centralized LLM pool via app.core.llm_pool
     - Pydantic structured output validation
@@ -194,7 +204,7 @@ class GraphExtractor:
         self.llm = get_llm(streaming=False, model_override=model, temperature_override=0.0)
         self.model = model
         self.max_retries = max_retries
-        
+
         logger.info(f"GraphExtractor initialized: model={model}, async=True")
 
     # ✅ NEW: Input validation helper
@@ -224,18 +234,20 @@ class GraphExtractor:
         Prevents ID collision or injection via malicious names.
         """
         # ✅ Stricter sanitization: allow only alphanumeric, underscore, hyphen
-        safe_name = re.sub(r'[^a-z0-9_\-\s]', '', name.lower().strip())
-        safe_name = re.sub(r'\s+', '_', safe_name)  # Replace spaces with underscore
+        safe_name = re.sub(r"[^a-z0-9_\-\s]", "", name.lower().strip())
+        safe_name = re.sub(r"\s+", "_", safe_name)  # Replace spaces with underscore
         raw = f"{workspace_id}::{entity_type.lower()}::{safe_name}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     # ✅ FIXED: Proper async wrapper for sync LLM call
-    @retry_async(config=RetryConfig(
-        max_attempts=_MAX_RETRIES,
-        backoff_base=_RETRY_BASE_DELAY,
-        backoff_max=_RETRY_MAX_DELAY,
-        exceptions=(Exception,),
-    ))
+    @retry_async(
+        config=RetryConfig(
+            max_attempts=_MAX_RETRIES,
+            backoff_base=_RETRY_BASE_DELAY,
+            backoff_max=_RETRY_MAX_DELAY,
+            exceptions=(Exception,),
+        )
+    )
     async def _call_llm_with_retry(self, prompt: str, corr_id: str) -> str:
         """DVMELTSS-E: Async LLM call with centralized retry."""
         # ✅ Check if llm.ainvoke is truly async
@@ -247,11 +259,10 @@ class GraphExtractor:
         else:
             # Fallback: run sync call in thread
             import sys
+
             if sys.version_info >= (3, 9):
                 response = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        lambda: self.llm.invoke([{"role": "user", "content": prompt}])
-                    ),
+                    asyncio.to_thread(lambda: self.llm.invoke([{"role": "user", "content": prompt}])),
                     timeout=_LLM_TIMEOUT,
                 )
             else:
@@ -259,11 +270,11 @@ class GraphExtractor:
                 response = await asyncio.wait_for(
                     loop.run_in_executor(
                         None,
-                        lambda: self.llm.invoke([{"role": "user", "content": prompt}])
+                        lambda: self.llm.invoke([{"role": "user", "content": prompt}]),
                     ),
                     timeout=_LLM_TIMEOUT,
                 )
-        return response.content if hasattr(response, 'content') else str(response)
+        return response.content if hasattr(response, "content") else str(response)
 
     async def extract_from_chunk_async(
         self,
@@ -281,13 +292,13 @@ class GraphExtractor:
         ✅ FIXED: Input validation + proper async handling.
         """
         corr_id = correlation_id or generate_graph_correlation_id("extract")
-        
+
         # ✅ Validate inputs
         is_valid, error = self._validate_inputs(text, source_file, chunk_id, corr_id)
         if not is_valid:
             logger.error(f"[{corr_id}] Invalid inputs: {error}")
             return self._empty_result(source_file, page_number, chunk_id, corr_id)
-        
+
         if not text or len(text.strip()) < 50:
             return self._empty_result(source_file, page_number, chunk_id, corr_id)
 
@@ -301,11 +312,11 @@ class GraphExtractor:
         hint = focus_hints.get(document_type, focus_hints["general"])
         # FIXED: Use centralized prompt escaping
         safe_text = escape_graph_prompt(text[:_MAX_TEXT_LENGTH])
-        
-        prompt = EXTRACTION_SYSTEM_PROMPT.format(
-            max_entities=_MAX_ENTITIES,
-            max_rels=_MAX_RELATIONSHIPS
-        ) + f"\n\n{hint}\n\nText to analyze:\n{safe_text}"
+
+        prompt = (
+            EXTRACTION_SYSTEM_PROMPT.format(max_entities=_MAX_ENTITIES, max_rels=_MAX_RELATIONSHIPS)
+            + f"\n\n{hint}\n\nText to analyze:\n{safe_text}"
+        )
 
         try:
             content = await self._call_llm_with_retry(prompt, corr_id)
@@ -362,13 +373,15 @@ class GraphExtractor:
             if from_name not in entity_map or to_name not in entity_map:
                 continue  # skip dangling relationships
 
-            relationships.append(ExtractedRelationship(
-                from_entity_id=entity_map[from_name].id,
-                to_entity_id=entity_map[to_name].id,
-                relationship_type=rel_type,
-                properties={"description": str(r.get("description", ""))[:500]},
-                correlation_id=correlation_id,
-            ))
+            relationships.append(
+                ExtractedRelationship(
+                    from_entity_id=entity_map[from_name].id,
+                    to_entity_id=entity_map[to_name].id,
+                    relationship_type=rel_type,
+                    properties={"description": str(r.get("description", ""))[:500]},
+                    correlation_id=correlation_id,
+                )
+            )
 
         return ExtractionResult(
             entities=list(entity_map.values()),
@@ -382,7 +395,8 @@ class GraphExtractor:
     @staticmethod
     def _empty_result(source_file: str, page_number: int, chunk_id: str, correlation_id: str) -> ExtractionResult:
         return ExtractionResult(
-            entities=[], relationships=[],
+            entities=[],
+            relationships=[],
             source_file=source_file,
             page_number=page_number,
             chunk_id=chunk_id,
@@ -470,14 +484,22 @@ class GraphExtractor:
             loop = asyncio.get_running_loop()
             # If yes, we can't use asyncio.run() — warn and return empty
             logger.warning(
-                f"⚠️ GraphExtractor.extract_from_chunk() called from async context — "
-                f"use extract_from_chunk_async() instead. Returning empty result."
+                "⚠️ GraphExtractor.extract_from_chunk() called from async context — "
+                "use extract_from_chunk_async() instead. Returning empty result."
             )
             return self._empty_result(source_file, page_number, chunk_id, correlation_id or "sync_wrapper")
         except RuntimeError:
             # No running loop — safe to use asyncio.run()
             return asyncio.run(
-                self.extract_from_chunk_async(text, source_file, page_number, chunk_id, workspace_id, document_type, correlation_id)
+                self.extract_from_chunk_async(
+                    text,
+                    source_file,
+                    page_number,
+                    chunk_id,
+                    workspace_id,
+                    document_type,
+                    correlation_id,
+                )
             )
 
     def extract_from_document(
@@ -497,8 +519,8 @@ class GraphExtractor:
             loop = asyncio.get_running_loop()
             # If yes, we can't use asyncio.run() — warn and return empty
             logger.warning(
-                f"⚠️ GraphExtractor.extract_from_document() called from async context — "
-                f"use extract_from_document_async() instead. Returning empty result."
+                "⚠️ GraphExtractor.extract_from_document() called from async context — "
+                "use extract_from_document_async() instead. Returning empty result."
             )
             return []
         except RuntimeError:
@@ -531,10 +553,9 @@ __all__ = [
     "ExtractionResult",
     "get_graph_extractor_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

@@ -13,19 +13,25 @@ Provides:
 Public API:
 from app.versioning import DiffEngine, VersionRegistry, compute_document_diff
 """
+
 from __future__ import annotations
 from typing import Any
 
 # DVMELTSS-M: Explicit public API surface
 __all__ = [
     # Core versioning
-    "DiffEngine", "VersionRegistry", "VersionMetadata",
+    "DiffEngine",
+    "VersionRegistry",
+    "VersionMetadata",
     # Diff utilities
-    "compute_document_diff", "summarize_changes",
+    "compute_document_diff",
+    "summarize_changes",
     # Models
-    "DiffResult", "VersionComparison",
+    "DiffResult",
+    "VersionComparison",
     # Summarizer
-    "generate_change_summary_async", "generate_fallback_summary",
+    "generate_change_summary_async",
+    "generate_fallback_summary",
     # Metadata helpers
     "get_versioning_metadata",
 ]
@@ -48,7 +54,10 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "DiffResult": (".models", "DiffResult"),
     "VersionComparison": (".models", "VersionComparison"),
     # Summarizer
-    "generate_change_summary_async": (".diff_summarizer", "generate_change_summary_async"),
+    "generate_change_summary_async": (
+        ".diff_summarizer",
+        "generate_change_summary_async",
+    ),
     "generate_fallback_summary": (".diff_summarizer", "generate_fallback_summary"),
 }
 
@@ -62,17 +71,17 @@ def __getattr__(name: str) -> Any:
         module_path, attr_name = _LAZY_IMPORTS[name]
         try:
             import importlib
-            module = importlib.import_module(module_path, package=__name__.rpartition('.')[0])
+
+            module = importlib.import_module(module_path, package=__name__.rpartition(".")[0])
             return getattr(module, attr_name)
         except ImportError as e:
-            raise AttributeError(
-                f"Failed to lazy-import '{name}' from '{module_path}': {e}"
-            ) from e
-    
+            raise AttributeError(f"Failed to lazy-import '{name}' from '{module_path}': {e}") from e
+
     if name == "get_versioning_metadata":
         from .registry import get_versioning_metadata
+
         return get_versioning_metadata
-    
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -88,17 +97,18 @@ def _reset_caches_for_tests() -> None:
     """Reset internal caches & singletons for clean pytest runs."""
     import importlib
     import sys
-    
+
     # Invalidate import caches
     for mod_name in [".diff_engine", ".diff_summarizer", ".models", ".registry"]:
         try:
             importlib.invalidate_caches()
         except Exception:
             pass
-    
+
     # ✅ FIXED: Reset module-level singletons if loaded
     try:
         from . import registry
+
         if hasattr(registry, "_version_cache"):
             registry._version_cache.clear()
     except ImportError:
@@ -108,13 +118,15 @@ def _reset_caches_for_tests() -> None:
 # DVMELTSS-L: Module initialization logging for observability
 __init_logged: bool = False
 
+
 def _log_module_init() -> None:
     """Log module load — idempotent to avoid spam in multi-worker setups."""
     global __init_logged
     if __init_logged:
         return
-    
+
     import logging
+
     logger = logging.getLogger(__name__)
     logger.debug(  # ✅ Use debug level to avoid prod log spam
         f"Versioning module loaded | version={__version__} | {__description__}"
@@ -133,7 +145,7 @@ def get_versioning_metadata() -> dict[str, Any]:
     from .diff_engine import get_diff_engine_metadata as _get_diff_meta
     from .diff_summarizer import get_summarizer_metadata as _get_summarizer_meta
     from .models import get_versioning_models_metadata as _get_models_meta
-    
+
     return {
         "version": __version__,
         "description": __description__,

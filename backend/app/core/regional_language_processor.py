@@ -1,5 +1,6 @@
 # backend/app/core/regional_language_processor.py
 """Indian regional language support: Tanglish, cross-language search, Indian formats."""
+
 from __future__ import annotations
 
 import logging
@@ -11,15 +12,15 @@ logger = logging.getLogger(__name__)
 # ── Script detection Unicode ranges ──────────────────────────
 
 _SCRIPT_RANGES = {
-    "tamil":     (0x0B80, 0x0BFF),
-    "telugu":    (0x0C00, 0x0C7F),
-    "kannada":   (0x0C80, 0x0CFF),
+    "tamil": (0x0B80, 0x0BFF),
+    "telugu": (0x0C00, 0x0C7F),
+    "kannada": (0x0C80, 0x0CFF),
     "malayalam": (0x0D00, 0x0D7F),
-    "hindi":     (0x0900, 0x097F),
-    "bengali":   (0x0980, 0x09FF),
-    "gujarati":  (0x0A80, 0x0AFF),
-    "punjabi":   (0x0A00, 0x0A7F),
-    "odia":      (0x0B00, 0x0B7F),
+    "hindi": (0x0900, 0x097F),
+    "bengali": (0x0980, 0x09FF),
+    "gujarati": (0x0A80, 0x0AFF),
+    "punjabi": (0x0A00, 0x0A7F),
+    "odia": (0x0B00, 0x0B7F),
 }
 
 # ── Indian number format ──────────────────────────────────────
@@ -41,9 +42,7 @@ _INDIAN_NUMBER_WORDS = {
 
 _PAN_PATTERN = re.compile(r"\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b")
 _AADHAAR_PATTERN = re.compile(r"\b[2-9]\d{3}[\s\-]?\d{4}[\s\-]?\d{4}\b")
-_GSTIN_PATTERN = re.compile(
-    r"\b[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[A-Z0-9]{1}Z[A-Z0-9]{1}\b"
-)
+_GSTIN_PATTERN = re.compile(r"\b[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[A-Z0-9]{1}Z[A-Z0-9]{1}\b")
 _INDIAN_MOBILE_PATTERN = re.compile(r"\b(?:\+91[\s\-]?)?[6-9]\d{9}\b")
 _PINCODE_PATTERN = re.compile(r"\b[1-9][0-9]{5}\b")
 

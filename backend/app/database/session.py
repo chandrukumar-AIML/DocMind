@@ -22,6 +22,7 @@ Usage in routes:
     def my_sync_endpoint(db: Session = Depends(get_db)):
         result = db.execute(stmt)
 """
+
 from __future__ import annotations
 
 import logging
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 # -- Sync Session Dependency -----------------------------------------------
+
 
 def get_db() -> Generator[Session, None, None]:
     """
@@ -62,6 +64,7 @@ def get_db() -> Generator[Session, None, None]:
 
 
 # -- Async Session Dependency ----------------------------------------------
+
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     """
@@ -90,6 +93,7 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 # -- Utility: Raw sessions for scripts/tests -------------------------------
+
 
 def get_db_session() -> Session:
     """
@@ -120,7 +124,9 @@ async def get_async_db_session() -> AsyncSession:
     """
     return AsyncSessionLocal()
 
+
 # -- Health Check ----------------------------------------------------------
+
 
 async def check_database_health() -> bool:
     """
@@ -132,6 +138,7 @@ async def check_database_health() -> bool:
     try:
         async with AsyncSessionLocal() as db:
             from sqlalchemy import text
+
             await db.execute(text("SELECT 1"))
             return True
     except Exception as e:
@@ -140,6 +147,7 @@ async def check_database_health() -> bool:
 
 
 # -- Lifecycle -------------------------------------------------------------
+
 
 async def close_all_sessions():
     """
@@ -168,11 +176,9 @@ __all__ = [
     # FastAPI dependencies
     "get_db",
     "get_async_db",
-
     # Raw sessions for scripts/tests
     "get_db_session",
     "get_async_db_session",
-
     # Lifecycle
     "check_database_health",
     "close_all_sessions",
@@ -187,7 +193,7 @@ if __name__ == "__main__":
     import sys
     from pathlib import Path
     from unittest.mock import AsyncMock, MagicMock, patch
-    
+
     # 🔧 ROBUST PATH SETUP
     current_file = Path(__file__).resolve()
     for parent in current_file.parents:
@@ -196,65 +202,68 @@ if __name__ == "__main__":
             break
     else:
         backend_root = current_file.parents[2]
-    
+
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
-    
+
     async def run_tests():
         print("🔍 Testing Database Session module (app/database/session.py)")
         print("=" * 70)
-        
+
         try:
             from app.database.session import (
-                get_db, get_async_db,
-                get_db_session, get_async_db_session,
-                check_database_health, close_all_sessions
+                get_db,
+                get_async_db,
+                get_db_session,
+                get_async_db_session,
+                check_database_health,
+                close_all_sessions,
             )
             from sqlalchemy.orm import Session
             from sqlalchemy.ext.asyncio import AsyncSession
             import inspect
-            
+
             # -- Test 1: Function signatures -----------------------------
             print("\n📌 Test 1: Function signatures (FastAPI compatible)")
-            
+
             # get_db should be a generator function (not decorated)
             assert inspect.isgeneratorfunction(get_db), "get_db should be a generator"
-            print(f"   ✅ get_db: generator function (FastAPI compatible)")
-            
+            print("   ✅ get_db: generator function (FastAPI compatible)")
+
             # get_async_db should be an async generator function
             assert inspect.isasyncgenfunction(get_async_db), "get_async_db should be async generator"
-            print(f"   ✅ get_async_db: async generator function (FastAPI compatible)")
-            
+            print("   ✅ get_async_db: async generator function (FastAPI compatible)")
+
             # -- Test 2: Raw session getters (mocked) --------------------
             print("\n📌 Test 2: Raw session getters (mocked creation)")
-            
-            with patch('app.database.session.SyncSessionLocal') as mock_sync, \
-                 patch('app.database.session.AsyncSessionLocal') as mock_async:
-                
+
+            with patch("app.database.session.SyncSessionLocal") as mock_sync, patch(
+                "app.database.session.AsyncSessionLocal"
+            ) as mock_async:
                 mock_sync.return_value = MagicMock(spec=Session)
                 mock_async.return_value = AsyncMock(spec=AsyncSession)
-                
+
                 # Test sync raw getter
                 sync_sess = get_db_session()
                 assert isinstance(sync_sess, MagicMock)
-                print(f"   ✅ get_db_session() returns session")
-                
+                print("   ✅ get_db_session() returns session")
+
                 # Test async raw getter
                 async_sess = await get_async_db_session()
                 assert isinstance(async_sess, AsyncMock)
-                print(f"   ✅ get_async_db_session() returns async session")
-            
+                print("   ✅ get_async_db_session() returns async session")
+
             # -- Test 3: Dependency generators (mocked lifecycle) --------
             print("\n📌 Test 3: Dependency generators (mocked lifecycle)")
-            
+
             # Mock the session factories
-            with patch('app.database.session.SyncSessionLocal') as mock_sync, \
-                 patch('app.database.session.AsyncSessionLocal') as mock_async:
-                
+            with patch("app.database.session.SyncSessionLocal") as mock_sync, patch(
+                "app.database.session.AsyncSessionLocal"
+            ) as mock_async:
                 # Setup sync session mock
                 mock_sync_sess = MagicMock(spec=Session)
                 mock_sync.return_value = mock_sync_sess
-                
+
                 # Test sync generator: success path
                 gen = get_db()
                 sess = next(gen)  # Should yield session
@@ -266,8 +275,8 @@ if __name__ == "__main__":
                     pass  # Expected: generator finished
                 mock_sync_sess.commit.assert_called_once()
                 mock_sync_sess.close.assert_called_once()
-                print(f"   ✅ get_db: success path (commit + close)")
-                
+                print("   ✅ get_db: success path (commit + close)")
+
                 # Test sync generator: error path (rollback)
                 mock_sync_sess.reset_mock()
                 gen = get_db()
@@ -280,12 +289,12 @@ if __name__ == "__main__":
                     pass  # Also acceptable: generator finished after error
                 mock_sync_sess.rollback.assert_called_once()
                 mock_sync_sess.close.assert_called_once()
-                print(f"   ✅ get_db: error path (rollback + close)")
-                
+                print("   ✅ get_db: error path (rollback + close)")
+
                 # Setup async session mock
                 mock_async_sess = AsyncMock(spec=AsyncSession)
                 mock_async.return_value.__aenter__.return_value = mock_async_sess
-                
+
                 # Test async generator: success path
                 async_gen = get_async_db()
                 sess = await async_gen.asend(None)  # Should yield session
@@ -297,8 +306,8 @@ if __name__ == "__main__":
                     pass  # Expected: async generator finished
                 mock_async_sess.commit.assert_called_once()
                 mock_async_sess.close.assert_called_once()
-                print(f"   ✅ get_async_db: success path (commit + close)")
-                
+                print("   ✅ get_async_db: success path (commit + close)")
+
                 # Test async generator: error path (rollback)
                 mock_async_sess.reset_mock()
                 async_gen = get_async_db()
@@ -311,41 +320,41 @@ if __name__ == "__main__":
                     pass  # Also acceptable: async generator finished after error
                 mock_async_sess.rollback.assert_called_once()
                 mock_async_sess.close.assert_called_once()
-                print(f"   ✅ get_async_db: error path (rollback + close)")
-            
+                print("   ✅ get_async_db: error path (rollback + close)")
+
             # -- Test 4: Health check (mocked) --------------------------
             print("\n📌 Test 4: check_database_health (mocked)")
-            
-            with patch('app.database.session.AsyncSessionLocal') as mock_async_local:
+
+            with patch("app.database.session.AsyncSessionLocal") as mock_async_local:
                 mock_sess = AsyncMock()
                 mock_async_local.return_value.__aenter__.return_value = mock_sess
                 mock_sess.execute = AsyncMock()
-                
+
                 # Healthy DB
                 healthy = await check_database_health()
                 assert healthy is True
-                print(f"   ✅ Health check: passed when DB reachable")
-                
+                print("   ✅ Health check: passed when DB reachable")
+
                 # Unhealthy DB (exception)
                 mock_sess.execute.side_effect = Exception("Connection failed")
                 healthy = await check_database_health()
                 assert healthy is False
-                print(f"   ✅ Health check: failed when DB unreachable")
-            
+                print("   ✅ Health check: failed when DB unreachable")
+
             # -- Test 5: Lifecycle shutdown (mocked) --------------------
             print("\n📌 Test 5: close_all_sessions (graceful shutdown)")
-            
-            with patch('app.database.session.engine') as mock_sync_engine, \
-                 patch('app.database.session.async_engine') as mock_async_engine:
-                
+
+            with patch("app.database.session.engine") as mock_sync_engine, patch(
+                "app.database.session.async_engine"
+            ) as mock_async_engine:
                 mock_async_engine.dispose = AsyncMock()
-                
+
                 await close_all_sessions()
-                
+
                 mock_sync_engine.dispose.assert_called_once()
                 mock_async_engine.dispose.assert_called_once()
-                print(f"   ✅ close_all_sessions: disposed both engines")
-            
+                print("   ✅ close_all_sessions: disposed both engines")
+
             print("\n" + "=" * 70)
             print("✅ ALL TESTS PASSED! Database Session module verified.")
             print("\n💡 What we verified:")
@@ -356,13 +365,14 @@ if __name__ == "__main__":
             print("   • Shutdown: Engine disposal for graceful shutdown ✅")
             print("\n🔐 Production: Proper session lifecycle prevents connection leaks")
             return True
-            
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
-    
+
     # Run async tests
     success = asyncio.run(run_tests())
     sys.exit(0 if success else 1)

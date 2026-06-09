@@ -1,9 +1,8 @@
-﻿# backend/app/domains/medical/drug_checker.py
+# backend/app/domains/medical/drug_checker.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import Final, Optional
@@ -66,6 +65,7 @@ Return ONLY valid JSON:
 @dataclass
 class DrugInteraction:
     """A detected drug-drug interaction."""
+
     drug_1: str
     drug_2: str
     severity: str  # major / moderate / minor
@@ -77,6 +77,7 @@ class DrugInteraction:
 @dataclass
 class DrugCheckResult:
     """Result of medication extraction and interaction checking."""
+
     medications: list[dict]
     interactions: list[DrugInteraction] = field(default_factory=list)
     high_risk_count: int = 0
@@ -100,20 +101,22 @@ class DrugInteractionChecker:
     def __init__(self, model: str = "gpt-4o"):
         # FIXED: Use centralized LLM pool
         self.llm = get_domain_llm(streaming=False, model_override=model)
-        self._llm_retry = retry_async(config=RetryConfig(
-            max_attempts=2,
-            backoff_base=0.5,
-            exceptions=(Exception,),
-        ))
+        self._llm_retry = retry_async(
+            config=RetryConfig(
+                max_attempts=2,
+                backoff_base=0.5,
+                exceptions=(Exception,),
+            )
+        )
 
     async def check(
-        self, 
+        self,
         chunks: list[Document],
         correlation_id: Optional[str] = None,  # FIXED: Added param
     ) -> DrugCheckResult:
         """Extract medications and check for interactions."""
         corr_id = correlation_id or generate_domain_correlation_id("medical")
-        
+
         # Step 1: Extract all medications
         all_meds = []
         for chunk in chunks:
@@ -145,50 +148,53 @@ class DrugInteractionChecker:
 
     async def _extract_medications(self, text: str, corr_id: str) -> list[dict]:
         """Extract medications from a text chunk."""
-        med_keywords = ["mg", "prescribed", "medication", "drug", "tablet",
-                        "capsule", "injection", "dose", "twice", "daily"]
+        med_keywords = [
+            "mg",
+            "prescribed",
+            "medication",
+            "drug",
+            "tablet",
+            "capsule",
+            "injection",
+            "dose",
+            "twice",
+            "daily",
+        ]
         if not any(kw in text.lower() for kw in med_keywords):
             return []
 
         prompt = build_domain_prompt(DRUG_EXTRACTION_PROMPT, text=text[:2000])
         try:
-            response = await self._llm_retry(
-                lambda: self.llm.ainvoke([{"role": "user", "content": prompt}])
-            )
+            response = await self._llm_retry(lambda: self.llm.ainvoke([{"role": "user", "content": prompt}]))
             data = safe_parse_llm_json(response.content, default={"medications": []})
-            
+
             is_valid, error = validate_medical_output(data)
             if not is_valid:
                 logger.warning(f"[{corr_id}] Invalid drug extraction: {error}")
                 return []
-                
+
             return data.get("medications", [])
         except Exception as e:
             logger.debug(f"[{corr_id}] Drug extraction failed: {e}")
             return []
 
     async def _check_interactions(
-        self, 
+        self,
         medications: list[dict],
         corr_id: str,
     ) -> tuple[list[DrugInteraction], int, int]:
         """Check a medication list for interactions."""
         med_names = [m.get("name", "") for m in medications if m.get("name")]
-        prompt = build_domain_prompt(
-            INTERACTION_CHECK_PROMPT,
-            medications=", ".join(med_names[:20])
-        )
+        prompt = build_domain_prompt(INTERACTION_CHECK_PROMPT, medications=", ".join(med_names[:20]))
         try:
-            response = await self._llm_retry(
-                lambda: self.llm.ainvoke([{"role": "user", "content": prompt}])
-            )
+            response = await self._llm_retry(lambda: self.llm.ainvoke([{"role": "user", "content": prompt}]))
             data = safe_parse_llm_json(response.content, default={"interactions": []})
-            
+
             is_valid, error = validate_medical_output(data)
             if not is_valid:
                 logger.warning(f"[{corr_id}] Invalid interaction output: {error}")
                 return [], 0, 0
-                
+
             interactions = [
                 DrugInteraction(
                     drug_1=str(item.get("drug_1", "")),
@@ -210,10 +216,9 @@ class DrugInteractionChecker:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["DrugInteractionChecker", "DrugCheckResult", "DrugInteraction"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

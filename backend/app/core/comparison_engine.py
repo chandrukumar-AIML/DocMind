@@ -1,14 +1,14 @@
 # backend/app/core/comparison_engine.py
 """Batch cross-document comparison engine using LangChain/LLM."""
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Optional
 
 from sqlalchemy import text
 
@@ -34,7 +34,8 @@ async def ensure_comparison_schema() -> None:
     async with async_engine.begin() as conn:
         if conn.dialect.name != "postgresql":
             return
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS comparison_jobs (
                 id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 workspace_id  VARCHAR(64) NOT NULL,
@@ -47,11 +48,11 @@ async def ensure_comparison_schema() -> None:
                 created_at    TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 completed_at  TIMESTAMP WITH TIME ZONE
             )
-        """))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_comparison_jobs_workspace "
-            "ON comparison_jobs(workspace_id)"
-        ))
+        """)
+        )
+        await conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_comparison_jobs_workspace " "ON comparison_jobs(workspace_id)")
+        )
     logger.info("Comparison schema verified")
 
 
@@ -63,27 +64,33 @@ async def create_comparison_job(
 ) -> str:
     job_id = str(uuid.uuid4())
     async with async_engine.begin() as conn:
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             INSERT INTO comparison_jobs (id, workspace_id, mode, doc_ids, created_by)
             VALUES (:id, :ws, :mode, CAST(:doc_ids AS jsonb), :by)
-        """), {
-            "id": job_id,
-            "ws": workspace_id,
-            "mode": mode.value,
-            "doc_ids": json.dumps(source_files),
-            "by": created_by,
-        })
+        """),
+            {
+                "id": job_id,
+                "ws": workspace_id,
+                "mode": mode.value,
+                "doc_ids": json.dumps(source_files),
+                "by": created_by,
+            },
+        )
     return job_id
 
 
 async def get_comparison_job(job_id: str, workspace_id: str) -> Optional[dict]:
     async with async_engine.begin() as conn:
-        row = await conn.execute(text("""
+        row = await conn.execute(
+            text("""
             SELECT id, workspace_id, mode, doc_ids, status, result, error_msg,
                    created_by, created_at, completed_at
             FROM comparison_jobs
             WHERE id = :id AND workspace_id = :ws
-        """), {"id": job_id, "ws": workspace_id})
+        """),
+            {"id": job_id, "ws": workspace_id},
+        )
         r = row.fetchone()
     if not r:
         return None
@@ -105,6 +112,7 @@ async def _fetch_doc_chunks(source_file: str, workspace_id: str) -> str:
     """Retrieve top chunks for a document from the vector store."""
     try:
         from app.dependencies import get_store_manager
+
         store = get_store_manager()
         results = store.similarity_search(source_file, k=10, workspace_id=workspace_id)
         texts = [r.page_content for r in results if hasattr(r, "page_content")]
@@ -119,8 +127,7 @@ def _build_comparison_prompt(
     doc_texts: dict[str, str],
 ) -> str:
     doc_block = "\n\n".join(
-        f"### Document {i+1}: {name}\n{text[:3000]}"
-        for i, (name, text) in enumerate(doc_texts.items())
+        f"### Document {i+1}: {name}\n{text[:3000]}" for i, (name, text) in enumerate(doc_texts.items())
     )
     instructions = {
         ComparisonMode.SIMILARITY: (
@@ -156,7 +163,8 @@ async def run_comparison(job_id: str, workspace_id: str) -> None:
 
     async def _update_status(status: str, result=None, error=None):
         async with async_engine.begin() as conn:
-            await conn.execute(text("""
+            await conn.execute(
+                text("""
                 UPDATE comparison_jobs
                 SET status = :status,
                     result = CAST(:result AS jsonb),
@@ -164,12 +172,14 @@ async def run_comparison(job_id: str, workspace_id: str) -> None:
                     completed_at = CASE WHEN :status IN ('done','failed')
                                         THEN NOW() ELSE NULL END
                 WHERE id = :id
-            """), {
-                "id": job_id,
-                "status": status,
-                "result": json.dumps(result) if result else None,
-                "error": error,
-            })
+            """),
+                {
+                    "id": job_id,
+                    "status": status,
+                    "result": json.dumps(result) if result else None,
+                    "error": error,
+                },
+            )
 
     await _update_status("running")
 
@@ -193,11 +203,14 @@ async def run_comparison(job_id: str, workspace_id: str) -> None:
 
         # Call LLM
         from app.core.vision_llm import get_vision_llm
+
         llm = get_vision_llm()
 
         async def _call_llm():
-            return await asyncio.get_running_loop().run_in_executor(  # FIXED: get_event_loop() deprecated in Python 3.10+
-                None, lambda: llm.invoke(prompt)
+            return (
+                await asyncio.get_running_loop().run_in_executor(  # FIXED: get_event_loop() deprecated in Python 3.10+
+                    None, lambda: llm.invoke(prompt)
+                )
             )
 
         raw = await asyncio.wait_for(_call_llm(), timeout=_LLM_TIMEOUT)
@@ -236,7 +249,7 @@ if __name__ == "__main__":
         print("Comparison engine smoke test")
         prompt = _build_comparison_prompt(
             ComparisonMode.SIMILARITY,
-            {"doc1.pdf": "Contract for services.", "doc2.pdf": "Service agreement."}
+            {"doc1.pdf": "Contract for services.", "doc2.pdf": "Service agreement."},
         )
         assert "ONLY valid JSON" in prompt
         assert "Document 1" in prompt

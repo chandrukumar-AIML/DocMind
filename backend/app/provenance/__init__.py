@@ -14,17 +14,27 @@ Provides:
 Public API:
 from app.provenance import ProvenanceStore, compute_highlight_color, find_text_offset
 """
+
 from __future__ import annotations
 from typing import Any
 
 # DVMELTSS-M: Explicit public API surface
 __all__ = [
     # Models
-    "Base", "Answer", "Citation", "DocumentStore", "HighlightColor",
+    "Base",
+    "Answer",
+    "Citation",
+    "DocumentStore",
+    "HighlightColor",
     # Store
-    "ProvenanceStore", "init_db", "get_engine", "get_session_factory",
+    "ProvenanceStore",
+    "init_db",
+    "get_engine",
+    "get_session_factory",
     # Highlight utilities
-    "compute_highlight_color", "find_text_offset", "compute_citation_offsets",
+    "compute_highlight_color",
+    "find_text_offset",
+    "compute_citation_offsets",
     # Metadata helpers
     "get_provenance_metadata",
 ]
@@ -63,17 +73,17 @@ def __getattr__(name: str) -> Any:
         module_path, attr_name = _LAZY_IMPORTS[name]
         try:
             import importlib
-            module = importlib.import_module(module_path, package=__name__.rpartition('.')[0])
+
+            module = importlib.import_module(module_path, package=__name__.rpartition(".")[0])
             return getattr(module, attr_name)
         except ImportError as e:
-            raise AttributeError(
-                f"Failed to lazy-import '{name}' from '{module_path}': {e}"
-            ) from e
-    
+            raise AttributeError(f"Failed to lazy-import '{name}' from '{module_path}': {e}") from e
+
     if name == "get_provenance_metadata":
         from .store import get_provenance_metadata
+
         return get_provenance_metadata
-    
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -89,17 +99,18 @@ def _reset_caches_for_tests() -> None:
     """Reset internal caches for clean pytest runs."""
     import importlib
     import sys
-    
+
     # Invalidate import caches
     for mod_name in [".models", ".store", ".highlight"]:
         try:
             importlib.invalidate_caches()
         except Exception:
             pass
-    
+
     # ✅ FIXED: Reset module-level singletons in store.py
     try:
         from . import store
+
         if hasattr(store, "_engines"):
             store._engines.clear()
         if hasattr(store, "_session_factories"):
@@ -111,13 +122,15 @@ def _reset_caches_for_tests() -> None:
 # DVMELTSS-L: Module initialization logging for observability
 __init_logged: bool = False
 
+
 def _log_module_init() -> None:
     """Log module load — idempotent to avoid spam in multi-worker setups."""
     global __init_logged
     if __init_logged:
         return
-    
+
     import logging
+
     logger = logging.getLogger(__name__)
     logger.debug(  # ✅ Use debug level to avoid prod log spam
         f"Provenance module loaded | version={__version__} | {__description__}"
@@ -133,4 +146,5 @@ _log_module_init()
 def get_provenance_metadata() -> dict[str, Any]:
     """Return provenance module metadata for monitoring/debugging."""
     from .store import get_provenance_metadata as _get_meta
+
     return _get_meta()

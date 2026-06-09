@@ -1,4 +1,4 @@
-﻿# backend/app/core/prompts.py
+# backend/app/core/prompts.py
 # DVMELTSS-FIX: M - Modular, S - Security, V - Validate
 # ASCALE-FIX: S - Separation, C - Coupling
 # OWASP-FIX: 1 - Prompt injection prevention
@@ -11,10 +11,11 @@ to prevent duplication across CRAG, agent, and domain modules.
 Usage:
     from app.core.prompts import escape_prompt_content, estimate_tokens_approx
 """
+
 from __future__ import annotations
 
 import re
-from typing import Final, Optional
+from typing import Final
 
 # DVMELTSS-S: Immutable prompt utilities — safe defaults
 _CHARS_PER_TOKEN_ESTIMATE: Final = 4  # Conservative estimate for English
@@ -28,14 +29,14 @@ SAFETY_MARGIN_TOKENS: Final = 500  # Buffer for unexpected tokens
 def estimate_tokens_approx(text: str, chars_per_token: int = _CHARS_PER_TOKEN_ESTIMATE) -> int:
     """
     Rough token estimation for context window safety checks.
-    
+
     Note: For production accuracy, use tiktoken library.
     This is a fast approximation for pre-checks.
-    
+
     Args:
         text: Text to estimate
         chars_per_token: Override default chars-per-token ratio
-    
+
     Returns:
         Approximate token count
     """
@@ -70,35 +71,35 @@ def escape_prompt_content(text: str) -> str:
 def truncate_for_prompt(text: str, max_tokens: int, chars_per_token: int = _CHARS_PER_TOKEN_ESTIMATE) -> str:
     """
     Truncate text to fit within token budget.
-    
+
     Args:
         text: Text to truncate
         max_tokens: Maximum allowed tokens
         chars_per_token: Override default chars-per-token ratio
-    
+
     Returns:
         Truncated text that should fit within max_tokens
     """
     if not text:
         return ""
-    
+
     max_chars = max_tokens * chars_per_token
     if len(text) <= max_chars:
         return text
-    
+
     # Truncate and add ellipsis
-    truncated = text[:max_chars - 3] + "..."
+    truncated = text[: max_chars - 3] + "..."
     return truncated
 
 
 def build_safe_prompt(template: str, **variables: str) -> str:
     """
     Build prompt with escaped variables to prevent injection.
-    
+
     Args:
         template: LangChain-style template with {var} placeholders
         **variables: Variables to inject (will be escaped)
-    
+
     Returns:
         Safe prompt string ready for LLM invocation
     """
@@ -110,23 +111,23 @@ def build_safe_prompt(template: str, **variables: str) -> str:
 def build_grading_prompt(query: str, documents: list[str], template: str) -> str:
     """
     Build document grading prompt with token-aware truncation.
-    
+
     Args:
         query: User query to grade against
         documents: List of document snippets to include
         template: Prompt template with {query} and {documents} placeholders
-    
+
     Returns:
         Safe, token-bounded prompt string
     """
     # Estimate base template tokens
     base_tokens = estimate_tokens_approx(template)
     query_tokens = estimate_tokens_approx(query)
-    
+
     # Calculate remaining budget for documents
     remaining_tokens = DEFAULT_MAX_PROMPT_TOKENS - SAFETY_MARGIN_TOKENS - base_tokens - query_tokens
     remaining_chars = remaining_tokens * _CHARS_PER_TOKEN_ESTIMATE
-    
+
     # Truncate documents to fit budget
     doc_parts = []
     used_chars = 0
@@ -135,9 +136,9 @@ def build_grading_prompt(query: str, documents: list[str], template: str) -> str
             break
         doc_parts.append(doc)
         used_chars += len(doc)
-    
+
     documents_text = "\n\n".join(doc_parts)
-    
+
     return build_safe_prompt(template, query=query, documents=documents_text)
 
 
@@ -151,10 +152,9 @@ __all__ = [
     "DEFAULT_MAX_PROMPT_TOKENS",
     "SAFETY_MARGIN_TOKENS",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

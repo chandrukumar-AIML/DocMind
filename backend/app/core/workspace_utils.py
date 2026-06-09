@@ -1,4 +1,4 @@
-﻿# backend/app/core/workspace_utils.py
+# backend/app/core/workspace_utils.py
 # DVMELTSS-FIX: M - Modular, V - Validate, S - Security
 # ASCALE-FIX: S - Separation, C - Coupling
 """
@@ -13,13 +13,14 @@ Centralizes:
 Usage:
     from app.core.workspace_utils import validate_workspace_id, get_chroma_collection_name
 """
+
 from __future__ import annotations
 
 import re
 from pathlib import Path
 from typing import Final, Optional
 
-from app.config import get_settings 
+from app.config import get_settings
 from app.core.ids import generate_correlation_id
 
 # DVMELTSS-S: Workspace ID validation pattern
@@ -30,26 +31,24 @@ _MAX_WORKSPACE_ID_LENGTH: Final = 64
 def validate_workspace_id(workspace_id: str) -> str:
     """
     Validate and sanitize workspace identifier.
-    
+
     Args:
         workspace_id: Raw workspace ID string
-    
+
     Returns:
         Validated, lowercased workspace ID
-    
+
     Raises:
         ValueError: If ID format is invalid
     """
     if not workspace_id or not isinstance(workspace_id, str):
         raise ValueError("workspace_id must be a non-empty string")
-    
+
     safe_id = workspace_id.lower().strip()
-    
+
     if not _WORKSPACE_ID_PATTERN.match(safe_id):
-        raise ValueError(
-            f"workspace_id must be 3-64 chars, lowercase letters/numbers/hyphens/underscores only"
-        )
-    
+        raise ValueError("workspace_id must be 3-64 chars, lowercase letters/numbers/hyphens/underscores only")
+
     return safe_id
 
 
@@ -67,11 +66,11 @@ def get_neo4j_namespace(workspace_id: str) -> str:
 def get_bm25_index_path(workspace_id: str, persist_dir: Optional[str] = None) -> Path:
     """
     Generate BM25 index file path for workspace.
-    
+
     Args:
         workspace_id: Validated workspace ID
         persist_dir: Optional override for cache directory
-    
+
     Returns:
         Path object for BM25 index file
     """
@@ -105,10 +104,9 @@ __all__ = [
     "get_embeddings_cache_path",
     "generate_workspace_correlation_id",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

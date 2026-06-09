@@ -1,4 +1,4 @@
-﻿# backend/app/evaluation/ocr_metrics.py
+# backend/app/evaluation/ocr_metrics.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 # ✅ FIXED: None handling + safe division + input validation
 
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class OCRPageMetrics:
     """Metrics for a single OCR-processed page."""
+
     page_num: int
     cer: float  # Character Error Rate [0.0, 1.0]
     wer: float  # Word Error Rate [0.0, 1.0]
@@ -28,13 +29,13 @@ class OCRPageMetrics:
     char_count_gt: int  # Characters in ground truth
     used_vision_fallback: bool  # Whether GPT-4o Vision was used as fallback
     correlation_id: str = ""
-    
+
     @property
     def accuracy_cer(self) -> float:
         """Character-level accuracy (1 - CER)."""
         # ✅ FIXED: Clamp to [0.0, 1.0]
         return max(0.0, min(1.0, 1.0 - self.cer))
-    
+
     @property
     def accuracy_wer(self) -> float:
         """Word-level accuracy (1 - WER)."""
@@ -45,6 +46,7 @@ class OCRPageMetrics:
 @dataclass
 class OCRDocumentMetrics:
     """Aggregated metrics for a multi-page document."""
+
     source_file: str
     pages: List[OCRPageMetrics] = field(default_factory=list)
     correlation_id: str = ""
@@ -103,7 +105,7 @@ def _validate_page_inputs(
 class OCRMetricsCalculator:
     """
     Computes CER and WER between OCR output and ground truth text.
-    
+
     Features:
     - Character-level and word-level error rates
     - Windowed approximation for very long texts
@@ -119,7 +121,7 @@ class OCRMetricsCalculator:
         # ✅ FIXED: Handle None inputs
         if predicted is None or ground_truth is None:
             return 1.0
-        
+
         if normalize:
             predicted = normalize_text_for_ocr(predicted)
             ground_truth = normalize_text_for_ocr(ground_truth)
@@ -140,7 +142,7 @@ class OCRMetricsCalculator:
         # ✅ FIXED: Handle None inputs
         if predicted is None or ground_truth is None:
             return 1.0
-        
+
         if normalize:
             predicted = normalize_text_for_ocr(predicted)
             ground_truth = normalize_text_for_ocr(ground_truth)
@@ -170,14 +172,19 @@ class OCRMetricsCalculator:
         if not is_valid:
             logger.error(f"Invalid page inputs: {error}")
             return OCRPageMetrics(
-                page_num=page_num, cer=1.0, wer=1.0, ocr_confidence=0.0,
-                char_count_pred=0, char_count_gt=0, used_vision_fallback=used_fallback,
+                page_num=page_num,
+                cer=1.0,
+                wer=1.0,
+                ocr_confidence=0.0,
+                char_count_pred=0,
+                char_count_gt=0,
+                used_vision_fallback=used_fallback,
                 correlation_id=correlation_id or generate_eval_correlation_id("ocr_page"),
             )
-        
+
         cer = self.compute_cer(predicted, ground_truth)
         wer = self.compute_wer(predicted, ground_truth)
-        
+
         return OCRPageMetrics(
             page_num=page_num,
             cer=cer,
@@ -200,13 +207,13 @@ class OCRMetricsCalculator:
     ) -> OCRDocumentMetrics:
         """Evaluate a multi-page document and return aggregated metrics."""
         corr_id = correlation_id or generate_eval_correlation_id("ocr_doc")
-        
+
         # ✅ Validate inputs
         if not isinstance(source_file, str) or not source_file.strip():
             raise ValueError("source_file must be a non-empty string")
         if not isinstance(predicted_pages, list) or not isinstance(ground_truth_pages, list):
             raise ValueError("predicted_pages and ground_truth_pages must be lists")
-        
+
         if len(predicted_pages) != len(ground_truth_pages):
             raise ValueError(
                 f"Page count mismatch for '{source_file}': "
@@ -224,7 +231,14 @@ class OCRMetricsCalculator:
             zip(predicted_pages, ground_truth_pages, confidences, fallback_flags)
         ):
             doc_metrics.pages.append(
-                self.evaluate_page(pred, gt, page_num=i, confidence=conf, used_fallback=fallback, correlation_id=corr_id)
+                self.evaluate_page(
+                    pred,
+                    gt,
+                    page_num=i,
+                    confidence=conf,
+                    used_fallback=fallback,
+                    correlation_id=corr_id,
+                )
             )
 
         logger.info(
@@ -239,11 +253,16 @@ class OCRMetricsCalculator:
         if not confidences:
             logger.warning("confidence_distribution called with empty list")
             return {
-                "mean": 0.0, "median": 0.0, "std": 0.0,
-                "min": 0.0, "max": 0.0,
-                "pct_above_0.9": 0.0, "pct_above_0.85": 0.0, "pct_below_0.7": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "pct_above_0.9": 0.0,
+                "pct_above_0.85": 0.0,
+                "pct_below_0.7": 0.0,
             }
-            
+
         arr = np.array(confidences)
         return {
             "mean": round(float(arr.mean()), 4),
@@ -260,21 +279,21 @@ class OCRMetricsCalculator:
         """Compute approximate CER using sliding windows for very long texts."""
         step = window // 2  # 50% overlap for smoother approximation
         cers = []
-        
+
         max_len = max(len(predicted), len(ground_truth))
         for i in range(0, max_len, step):
-            p_chunk = predicted[i: i + window]
-            g_chunk = ground_truth[i: i + window]
-            
+            p_chunk = predicted[i : i + window]
+            g_chunk = ground_truth[i : i + window]
+
             # ✅ FIXED: Skip empty ground truth chunks to avoid division by zero
             if not g_chunk:
                 continue
-                
+
             distance = levenshtein_distance(p_chunk, g_chunk)
             # ✅ FIXED: Safe division
             cer = distance / len(g_chunk) if len(g_chunk) > 0 else 0.0
             cers.append(cer)
-        
+
         return float(np.mean(cers)) if cers else 0.0
 
 
@@ -295,10 +314,9 @@ __all__ = [
     "OCRDocumentMetrics",
     "get_ocr_metrics_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

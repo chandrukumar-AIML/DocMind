@@ -1,4 +1,4 @@
-﻿# backend/app/finetuning/model_registry.py
+# backend/app/finetuning/model_registry.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # ASCALE-FIX: S - Separation, C - Coupling
 # OWASP-FIX: 7 - Safe credential handling
@@ -40,6 +40,7 @@ _DEFAULT_CACHE_DIR: Final = Path(".cache/finetuned_models")
 # MODEL CARD
 # ========================================================================
 
+
 @dataclass(frozen=True)
 class ModelCard:
     model_id: str
@@ -57,7 +58,7 @@ class ModelCard:
 
     def __post_init__(self):
         if not (-100.0 <= self.improvement_pct <= 1000.0):
-            object.__setattr__(self, 'improvement_pct', 0.0)
+            object.__setattr__(self, "improvement_pct", 0.0)
 
     def to_dict(self) -> dict:
         return {
@@ -79,8 +80,8 @@ class ModelCard:
 # MODEL REGISTRY
 # ========================================================================
 
-class ModelRegistry:
 
+class ModelRegistry:
     def __init__(self, cache_dir: Optional[str | Path] = None):
         settings = get_settings()
 
@@ -97,10 +98,7 @@ class ModelRegistry:
     # ----------------------------------------------------------------
 
     def _redact_sensitive(self, data: dict) -> dict:
-        return {
-            k: "[REDACTED]" if k.lower() in _SENSITIVE_FIELDS else v
-            for k, v in data.items()
-        }
+        return {k: "[REDACTED]" if k.lower() in _SENSITIVE_FIELDS else v for k, v in data.items()}
 
     def _validate_model_name(self, name: str) -> bool:
         return bool(re.match(_MODEL_NAME_PATTERN, name))
@@ -118,7 +116,6 @@ class ModelRegistry:
         commit_message: str = "",
         correlation_id: Optional[str] = None,  # FIXED: Added param
     ) -> str:
-
         corr_id = correlation_id or generate_finetune_correlation_id("push_model")
 
         if not self.hf_token:
@@ -156,9 +153,7 @@ class ModelRegistry:
 
             # Load model safely (non-blocking)
             loop = asyncio.get_running_loop()
-            model = await loop.run_in_executor(
-                None, lambda: SentenceTransformer(str(safe_path))
-            )
+            model = await loop.run_in_executor(None, lambda: SentenceTransformer(str(safe_path)))
 
             # Push with centralized retry
             await hf_api_with_retry(
@@ -181,7 +176,7 @@ class ModelRegistry:
         except Exception as e:
             # FIXED: Redact sensitive info from error logs
             safe_error = scrub_pii_for_evaluation(str(e), domain="general")
-            
+
             if self.hf_token:
                 safe_error = safe_error.replace(self.hf_token, "[REDACTED]")
 
@@ -193,7 +188,6 @@ class ModelRegistry:
     # ----------------------------------------------------------------
 
     async def _create_model_card_async(self, api, repo_id, domain, version, correlation_id):
-
         card = f"""---
 language: en
 tags:
@@ -253,13 +247,11 @@ tags:
         """
         try:
             loop = asyncio.get_running_loop()
-            actual_dim: int = await loop.run_in_executor(
-                None, lambda: model.get_sentence_embedding_dimension()
-            )
+            actual_dim: int = await loop.run_in_executor(None, lambda: model.get_sentence_embedding_dimension())
 
             if actual_dim != expected_dim:
                 _s = get_settings()
-                strict = getattr(_s, 'strict_qdrant_dim_check', False)
+                strict = getattr(_s, "strict_qdrant_dim_check", False)
                 msg = (
                     f"[{corr_id}] Qdrant dimension mismatch for {repo_id}: "
                     f"model outputs {actual_dim}d, configured qdrant_dim={expected_dim}d. "
@@ -286,10 +278,9 @@ tags:
         self,
         repo_id: str,
         local_path: Optional[str] = None,
-        expected_dim: Optional[int] = None,   # [OK] FIXED: added for dimension validation
+        expected_dim: Optional[int] = None,  # [OK] FIXED: added for dimension validation
         correlation_id: Optional[str] = None,
     ) -> Path:
-
         corr_id = correlation_id or generate_finetune_correlation_id("pull_model")
 
         from sentence_transformers import SentenceTransformer
@@ -304,14 +295,12 @@ tags:
 
         loop = asyncio.get_running_loop()
 
-        model = await loop.run_in_executor(
-            None, lambda: SentenceTransformer(repo_id, **kwargs)
-        )
+        model = await loop.run_in_executor(None, lambda: SentenceTransformer(repo_id, **kwargs))
 
         # [OK] FIXED: Validate embedding dimension against qdrant_dim config
         if expected_dim is None:
             _s = get_settings()
-            expected_dim = getattr(_s, 'qdrant_dim', 1536)
+            expected_dim = getattr(_s, "qdrant_dim", 1536)
 
         await self.validate_model_dimension(model, expected_dim, repo_id, corr_id)
 
@@ -336,11 +325,13 @@ tags:
             if path.is_dir():
                 size = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
 
-                models.append({
-                    "name": path.name,
-                    "local_path": str(path),
-                    "size_mb": round(size / 1024 / 1024, 1),
-                })
+                models.append(
+                    {
+                        "name": path.name,
+                        "local_path": str(path),
+                        "size_mb": round(size / 1024 / 1024, 1),
+                    }
+                )
 
         return models
 
@@ -373,10 +364,9 @@ tags:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["ModelRegistry", "ModelCard"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

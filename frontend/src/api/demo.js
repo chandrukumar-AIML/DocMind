@@ -87,7 +87,9 @@ async function* streamText(text, delayMs = 18) {
 // Small latency simulator so the demo feels like a real network round-trip.
 // Collapsed to 0ms under Vitest so the test suite is fast and never flakes on
 // timers under CPU load (the simulated latency only matters in the browser demo).
-const _IN_TEST = typeof process !== "undefined" && process.env?.VITEST;
+// Use import.meta.env.VITEST (Vite-native) rather than process.env which is not
+// available in the browser runtime and triggers a no-undef ESLint error.
+const _IN_TEST = Boolean(import.meta.env.VITEST);
 const delay = (ms = 300) => new Promise(r => setTimeout(r, _IN_TEST ? 0 : ms));
 
 // ── Demo API surface (matches api/client.js api object shape) ──

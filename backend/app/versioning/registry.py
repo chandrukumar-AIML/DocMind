@@ -1,4 +1,4 @@
-﻿# backend/app/versioning/registry.py
+# backend/app/versioning/registry.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, M - Modular
 # BATMAN-FIX: A - True async, M - Memory safety
 # ACID-INDEX: C - Constraints, E - Error handling
@@ -77,18 +77,18 @@ class DiffEngine:
             VersionMetadata for the new version
         """
         corr_id = validate_correlation_id(correlation_id) or "version_create"
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_version_inputs(document_id, content, author_id, corr_id)
         if not is_valid:
             logger.error(f"[{corr_id}] Invalid version inputs: {error}")
             raise ValueError(f"Version creation failed: {error}")
-        
+
         timestamp = datetime.now(timezone.utc)
-        
+
         # Generate version ID
         version_id = generate_version_id(content, timestamp.timestamp())
-        
+
         # Compute diff if previous content provided
         change_summary = "Initial version."
         if previous_content:
@@ -110,7 +110,7 @@ class DiffEngine:
             except Exception as e:
                 logger.warning(f"[{corr_id}] Diff computation failed: {e}")
                 change_summary = "Content updated (diff error)"
-        
+
         # Create metadata
         metadata = VersionMetadata(
             version_id=version_id,
@@ -121,13 +121,13 @@ class DiffEngine:
             status="draft",
             correlation_id=corr_id,
         )
-        
+
         # Validate before storage
         is_valid, error = validate_version_metadata(metadata.to_dict())
         if not is_valid:
             logger.error(f"[{corr_id}] Invalid version metadata: {error}")
             raise ValueError(f"Version metadata validation failed: {error}")
-        
+
         # Store if backend provided
         if self.storage and hasattr(self.storage, "save_version"):
             try:
@@ -139,7 +139,7 @@ class DiffEngine:
                 logger.warning(f"[{corr_id}] Version save timed out after {_STORAGE_TIMEOUT}s")
             except Exception as e:
                 logger.warning(f"[{corr_id}] Version save failed: {e}")
-        
+
         logger.info(f"[{corr_id}] Version created: {version_id} for doc {document_id}")
         return metadata
 
@@ -159,11 +159,11 @@ class DiffEngine:
             List of VersionMetadata, newest first
         """
         corr_id = validate_correlation_id(correlation_id) or "version_history"
-        
+
         if not self.storage or not hasattr(self.storage, "get_versions"):
             logger.warning(f"[{corr_id}] No storage backend configured")
             return []
-        
+
         try:
             versions = await asyncio.wait_for(
                 self.storage.get_versions(  # type: ignore
@@ -172,10 +172,10 @@ class DiffEngine:
                 ),
                 timeout=_STORAGE_TIMEOUT,
             )
-            
+
             # ✅ FIXED: Safe iteration with type checks
             result = []
-            for v in (versions or []):
+            for v in versions or []:
                 if isinstance(v, dict):
                     try:
                         result.append(VersionMetadata(**v))
@@ -184,7 +184,7 @@ class DiffEngine:
                 elif isinstance(v, VersionMetadata):
                     result.append(v)
             return result
-            
+
         except asyncio.TimeoutError:
             logger.warning(f"[{corr_id}] Version history fetch timed out after {_STORAGE_TIMEOUT}s")
             return []
@@ -210,16 +210,16 @@ class DiffEngine:
             VersionMetadata for the rollback version
         """
         corr_id = validate_correlation_id(correlation_id) or "rollback"
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_version_inputs(document_id, "", author_id, corr_id)
         if not is_valid:
             logger.error(f"[{corr_id}] Invalid rollback inputs: {error}")
             raise ValueError(f"Rollback failed: {error}")
-        
+
         if not self.storage:
             raise RuntimeError("Storage backend required for rollback")
-        
+
         # Fetch target version content (implementation depends on storage)
         try:
             target_content = await asyncio.wait_for(
@@ -231,11 +231,11 @@ class DiffEngine:
             )
         except asyncio.TimeoutError:
             logger.error(f"[{corr_id}] Content fetch timed out after {_STORAGE_TIMEOUT}s")
-            raise RuntimeError(f"Failed to fetch version content: timeout")
+            raise RuntimeError("Failed to fetch version content: timeout")
         except Exception as e:
             logger.error(f"[{corr_id}] Content fetch failed: {e}")
             raise RuntimeError(f"Failed to fetch version content: {e}")
-        
+
         # Create new version with rollback marker
         return await self.create_version_async(
             document_id=document_id,
@@ -322,13 +322,13 @@ class VersionRegistry:
             Tuple of (VersionMetadata, DiffResult)
         """
         corr_id = validate_correlation_id(correlation_id) or "save_version"
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_version_inputs(document_id, content, author_id, corr_id)
         if not is_valid:
             logger.error(f"[{corr_id}] Invalid save inputs: {error}")
             raise ValueError(f"Save failed: {error}")
-        
+
         # Fetch previous version content if exists
         previous_content = None
         if self.storage and hasattr(self.storage, "get_latest_content"):
@@ -339,7 +339,7 @@ class VersionRegistry:
                 )
             except Exception as e:
                 logger.warning(f"[{corr_id}] Failed to fetch previous content: {e}")
-        
+
         # Create version with diff
         version = await self.diff_engine.create_version_async(
             document_id=document_id,
@@ -349,7 +349,7 @@ class VersionRegistry:
             document_type=document_type,
             correlation_id=corr_id,
         )
-        
+
         # Compute diff result for API response
         try:
             diff_result = await asyncio.wait_for(
@@ -374,7 +374,7 @@ class VersionRegistry:
                 removed_lines=[],
                 correlation_id=corr_id,
             )
-        
+
         # Store content if backend provided
         if self.storage and hasattr(self.storage, "save_content"):
             try:
@@ -388,7 +388,7 @@ class VersionRegistry:
                 )
             except Exception as e:
                 logger.warning(f"[{corr_id}] Content save failed: {e}")
-        
+
         return version, diff_result
 
     def get_latest_version(self, document_id: str) -> Optional[VersionMetadata]:
@@ -396,8 +396,10 @@ class VersionRegistry:
         Sync helper to get latest version (prefers async version).
         ✅ FIXED: Use run_async_in_task helper to avoid deadlock.
         """
+
         async def _do_get():
             return await self.get_latest_version_async(document_id)
+
         return run_async_in_task(_do_get)
 
     async def get_latest_version_async(
@@ -407,7 +409,7 @@ class VersionRegistry:
     ) -> Optional[VersionMetadata]:
         """Async: Get the most recent version for a document."""
         corr_id = validate_correlation_id(correlation_id) or "latest_version"
-        
+
         history = await self.diff_engine.get_version_history_async(
             document_id=document_id,
             limit=1,
@@ -440,10 +442,9 @@ __all__ = [
     "VersionMetadata",
     "get_versioning_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

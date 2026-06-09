@@ -1,4 +1,4 @@
-﻿# backend/app/api/routes/finetuning.py
+# backend/app/api/routes/finetuning.py
 # DVMELTSS-FIX: M/E/S + OWASP-3 + BATMAN-A
 # ✅ FIXED: Proper background task handling + input validation + safe file ops + timeout
 
@@ -7,18 +7,14 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
-import time
-import uuid
 from pathlib import Path
 from typing import Annotated, Optional, Any, Final
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, status
 from pydantic import BaseModel, Field
 
-from app.config import get_settings, lazy_settings as settings  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.ids import generate_correlation_id
 from app.auth.dependencies import get_current_user, require_admin, AuthenticatedUser
-from app.models import ErrorResponse
 from app.finetuning.dataset_generator import TripletDatasetGenerator
 from app.finetuning.model_registry import ModelRegistry
 from app.finetuning.embedding_updater import EmbeddingUpdater
@@ -44,7 +40,10 @@ class GenerateDatasetRequest(BaseModel):
 
 
 class PullModelRequest(BaseModel):
-    repo_id: str = Field(..., description="HuggingFace model repo ID (e.g., 'sentence-transformers/all-MiniLM-L6-v2')")
+    repo_id: str = Field(
+        ...,
+        description="HuggingFace model repo ID (e.g., 'sentence-transformers/all-MiniLM-L6-v2')",
+    )
     local_path: Optional[str] = Field(default=None)
 
 
@@ -67,7 +66,9 @@ def _validate_finetuning_inputs(
         return False, "domain must be a string or None"
     if max_chunks is not None and (not isinstance(max_chunks, int) or max_chunks < 10 or max_chunks > 5000):
         return False, "max_chunks must be between 10 and 5000"
-    if queries_per_chunk is not None and (not isinstance(queries_per_chunk, int) or queries_per_chunk < 1 or queries_per_chunk > 5):
+    if queries_per_chunk is not None and (
+        not isinstance(queries_per_chunk, int) or queries_per_chunk < 1 or queries_per_chunk > 5
+    ):
         return False, "queries_per_chunk must be between 1 and 5"
     if save_path is not None and not isinstance(save_path, str):
         return False, "save_path must be a string or None"
@@ -93,22 +94,25 @@ async def generate_dataset(
     background_tasks: BackgroundTasks,
 ) -> dict:
     corr_id = generate_correlation_id("generate_dataset")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_finetuning_inputs(
-        request.domain, request.max_chunks, request.queries_per_chunk, 
-        request.save_path, None, None, corr_id
+        request.domain,
+        request.max_chunks,
+        request.queries_per_chunk,
+        request.save_path,
+        None,
+        None,
+        corr_id,
     )
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     workspace_id = request.workspace_id or user.workspace_id
-    
+
     # Save path defaults
-    safe_path = request.save_path or (
-        f".cache/training_data/{request.domain}_{workspace_id}.jsonl"
-    )
-    
+    safe_path = request.save_path or (f".cache/training_data/{request.domain}_{workspace_id}.jsonl")
+
     # ✅ FIXED: Proper path security validation with resolve()
     try:
         resolved = Path(safe_path).resolve()
@@ -117,7 +121,10 @@ async def generate_dataset(
         resolved.relative_to(base_dir)
     except ValueError:
         logger.warning(f"[{corr_id}] Path traversal attempt blocked: '{safe_path}'")
-        raise HTTPException(status_code=400, detail="Invalid save path: path must be within .cache/training_data")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid save path: path must be within .cache/training_data",
+        )
     except Exception as e:
         logger.error(f"[{corr_id}] Path validation failed: {e}")
         raise HTTPException(status_code=400, detail="Invalid save path")
@@ -127,7 +134,7 @@ async def generate_dataset(
         try:
             generator = TripletDatasetGenerator()
             logger.info(f"[{corr_id}] Starting dataset generation: ws={workspace_id}, chunks={request.max_chunks}")
-            
+
             dataset = generator.generate_dataset(
                 workspace_id=workspace_id,
                 domain=request.domain,
@@ -136,7 +143,9 @@ async def generate_dataset(
                 save_path=safe_path,
                 correlation_id=corr_id,
             )
-            logger.info(f"[{corr_id}] Dataset saved: {dataset.size if hasattr(dataset, 'size') else 'unknown'} triplets")
+            logger.info(
+                f"[{corr_id}] Dataset saved: {dataset.size if hasattr(dataset, 'size') else 'unknown'} triplets"
+            )
         except Exception as e:
             logger.error(f"[{corr_id}] Dataset generation failed: {e}", exc_info=True)
 
@@ -162,17 +171,17 @@ async def get_dataset_status(
 ) -> dict:
     corr_id = generate_correlation_id("dataset_status")
     workspace_id = user.workspace_id if user else "default"
-    
+
     path = Path(f".cache/training_data/{domain}_{workspace_id}.jsonl")
-    
+
     if not path.exists():
         return {"exists": False, "path": str(path)}
-    
+
     # ✅ FIXED: Use context manager for safe file handling
     try:
         with open(path, "r", encoding="utf-8") as f:
             n_triplets = sum(1 for _ in f)
-        
+
         return {
             "exists": True,
             "path": str(path),
@@ -196,12 +205,12 @@ async def pull_model(
     user: Annotated[AuthenticatedUser, Depends(require_admin)],
 ) -> dict:
     corr_id = generate_correlation_id("pull_model")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_finetuning_inputs(None, None, None, None, request.repo_id, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     registry = ModelRegistry()
     try:
         # ✅ FIXED: Use functools.partial for safe arg passing in executor
@@ -217,7 +226,7 @@ async def pull_model(
             ),
             timeout=_PULL_TIMEOUT,
         )
-        
+
         return {
             "status": "downloaded",
             "repo_id": request.repo_id,
@@ -242,10 +251,10 @@ async def list_models(
 ) -> dict:
     corr_id = generate_correlation_id("list_models")
     registry = ModelRegistry()
-    
+
     try:
         models = registry.list_available_models()
-        
+
         return {
             "models": models or [],
             "workspace_id": user.workspace_id,
@@ -269,12 +278,12 @@ async def reembed_workspace(
 ) -> dict:
     corr_id = generate_correlation_id("reembed")
     workspace_id = user.workspace_id
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_finetuning_inputs(None, None, None, None, None, request.model_path, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     # Validate model path exists and is safe
     model_path = Path(request.model_path)
     try:
@@ -292,12 +301,9 @@ async def reembed_workspace(
         try:
             logger.info(f"[{corr_id}] Starting re-embedding: ws={workspace_id}")
             updater = EmbeddingUpdater(workspace_id=workspace_id)
-            
-            result = updater.update(
-                model_path=str(model_path),
-                correlation_id=corr_id
-            )
-            
+
+            result = updater.update(model_path=str(model_path), correlation_id=corr_id)
+
             logger.info(f"[{corr_id}] Re-embedding complete: chunks={getattr(result, 'chunks_processed', 'unknown')}")
         except Exception as e:
             logger.error(f"[{corr_id}] Re-embedding failed: {e}", exc_info=True)
@@ -339,10 +345,9 @@ def get_finetuning_metadata() -> dict[str, Any]:
 
 
 __all__ = ["router", "get_finetuning_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

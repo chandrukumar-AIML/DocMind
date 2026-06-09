@@ -1,4 +1,4 @@
-﻿# backend/app/versioning/diff_summarizer.py
+# backend/app/versioning/diff_summarizer.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, A - Async
 # BATMAN-FIX: A - True async, T - Batch processing
 # ✅ FIXED: Explicit async retry loop + input validation + safe LLM parsing + timeout
@@ -7,6 +7,7 @@
 LLM-based change summarization for document versioning.
 Centralizes prompt templates and LLM interaction logic.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -77,20 +78,22 @@ async def generate_change_summary_async(
         Human-readable change summary string
     """
     corr_id = correlation_id or "summarizer_unknown"
-    
+
     # ✅ Validate inputs
-    is_valid, error = _validate_summarizer_inputs(added_content, removed_content, modified_sections, document_type, corr_id)
+    is_valid, error = _validate_summarizer_inputs(
+        added_content, removed_content, modified_sections, document_type, corr_id
+    )
     if not is_valid:
         logger.error(f"[{corr_id}] Invalid summarizer inputs: {error}")
         return f"Error: {error}"
 
     domain_context = _DOMAIN_CONTEXTS.get(document_type, document_type)
-    
+
     # ✅ FIXED: Safe truncation before preview
     added_preview = "\n".join(added_content[:3])[:200] if added_content else "(none)"
     removed_preview = "\n".join(removed_content[:3])[:200] if removed_content else "(none)"
     modified_count = len(modified_sections or [])
-    
+
     # FIXED: Use centralized prompt escaping with safe truncation
     raw_prompt = f"""Summarize changes to this {domain_context} document.
 ADDED (first 3 lines):
@@ -102,14 +105,14 @@ Provide a 1-2 sentence summary focusing on:
 - What substantive content changed
 - Why it might matter for {document_type} documents
 Keep it concise and professional."""
-    
+
     try:
         prompt = escape_prompt_content(raw_prompt)
     except Exception:
         prompt = raw_prompt[:2000]  # Fallback truncation
 
     llm = get_llm(streaming=False, temperature_override=0.3)
-    
+
     # ✅ FIXED: Explicit async retry loop (avoids closure/scoping issues with inner decorators)
     last_error = None
     for attempt in range(_SUMMARY_RETRY_CONFIG.max_attempts):
@@ -118,7 +121,7 @@ Keep it concise and professional."""
                 llm.ainvoke([{"role": "user", "content": prompt}]),
                 timeout=_LLM_TIMEOUT,
             )
-            
+
             # ✅ Safe content extraction
             if hasattr(response, "content"):
                 summary = response.content.strip()
@@ -128,26 +131,26 @@ Keep it concise and professional."""
                 summary = str(response["content"]).strip()
             else:
                 summary = str(response).strip()
-                
+
             # Truncate and clean
             if len(summary) > _MAX_SUMMARY_LENGTH:
-                summary = summary[:_MAX_SUMMARY_LENGTH - 3] + "..."
+                summary = summary[: _MAX_SUMMARY_LENGTH - 3] + "..."
             return summary
-            
+
         except asyncio.TimeoutError:
             last_error = f"LLM call timed out after {_LLM_TIMEOUT}s"
             logger.warning(f"[{corr_id}] LLM summarization timed out (attempt {attempt + 1})")
         except Exception as e:
             last_error = str(e)
             logger.warning(f"[{corr_id}] LLM summarization failed (attempt {attempt + 1}): {e}")
-            
+
         if attempt < _SUMMARY_RETRY_CONFIG.max_attempts - 1:
             wait = min(
-                _SUMMARY_RETRY_CONFIG.backoff_base * (2 ** attempt),
-                _SUMMARY_RETRY_CONFIG.backoff_max
+                _SUMMARY_RETRY_CONFIG.backoff_base * (2**attempt),
+                _SUMMARY_RETRY_CONFIG.backoff_max,
             )
             await asyncio.sleep(wait)
-            
+
     # All retries exhausted
     logger.error(f"[{corr_id}] LLM summarization failed after all retries: {last_error}")
     # Fallback summary
@@ -175,10 +178,10 @@ def generate_fallback_summary(
     removed_count = max(0, int(removed_count))
     modified_count = max(0, int(modified_count))
     similarity = max(0.0, min(1.0, float(similarity)))
-    
+
     if similarity >= 0.99:
         return "Minor formatting or whitespace changes only."
-        
+
     parts = []
     if added_count > 0:
         parts.append(f"{added_count} lines added")
@@ -186,10 +189,10 @@ def generate_fallback_summary(
         parts.append(f"{removed_count} lines removed")
     if modified_count > 0:
         parts.append(f"{modified_count} sections modified")
-        
+
     if not parts:
         return "Document content unchanged."
-        
+
     return f"Changes detected: {', '.join(parts)}. Similarity: {similarity:.1%}."
 
 
@@ -213,10 +216,9 @@ __all__ = [
     "generate_fallback_summary",
     "get_summarizer_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

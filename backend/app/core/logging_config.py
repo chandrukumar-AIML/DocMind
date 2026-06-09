@@ -1,4 +1,4 @@
-﻿# backend/app/core/logging_config.py
+# backend/app/core/logging_config.py
 # DVMELTSS-FIX: M - Modular, L - Logging, S - Security
 # ASCALE-FIX: S - Separation, C - Coupling
 """
@@ -14,9 +14,9 @@ Usage:
     from app.core.logging_config import configure_logging, get_request_logger
     configure_logging(level="INFO", log_format="json", log_file="logs/app.log")
 """
+
 from __future__ import annotations
 
-import json
 import logging
 import sys
 from pathlib import Path
@@ -29,7 +29,6 @@ except ImportError:
     # Fallback: install with `pip install python-json-logger`
     jsonlogger = None  # type: ignore[assignment]
 
-from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +36,10 @@ logger = logging.getLogger(__name__)
 class CustomJsonFormatter(jsonlogger.JsonFormatter if jsonlogger else logging.Formatter):  # type: ignore[misc]
     """
     Custom JSON formatter with additional fields for observability.
-    
+
     Falls back to standard Formatter if python-json-logger is unavailable.
     """
-    
+
     def add_fields(self, log_record, record, message_dict):
         if jsonlogger:
             super().add_fields(log_record, record, message_dict)
@@ -61,7 +60,7 @@ def configure_logging(
 ) -> None:
     """
     Configure structured logging for all app modules.
-    
+
     Features:
     - Text or JSON output format
     - Optional rotating file handler for production
@@ -71,11 +70,11 @@ def configure_logging(
     # Clear existing handlers to avoid duplicates on reload
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
-    
+
     # Set root level
     numeric_level = getattr(logging, level.upper(), logging.INFO)
     root_logger.setLevel(numeric_level)
-    
+
     # Create formatter based on format choice
     if log_format == "json" and jsonlogger:
         formatter = CustomJsonFormatter(
@@ -89,21 +88,21 @@ def configure_logging(
             "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
             datefmt="%Y-%m-%dT%H:%M:%S%z",
         )
-    
+
     # Always add stdout handler (required for container logging)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     console_handler.setLevel(numeric_level)
     root_logger.addHandler(console_handler)
-    
+
     # Add rotating file handler if log_file specified
     if log_file:
         try:
             from logging.handlers import RotatingFileHandler
-            
+
             log_path = Path(log_file)
             log_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             file_handler = RotatingFileHandler(
                 str(log_path),
                 maxBytes=max_bytes,
@@ -113,14 +112,14 @@ def configure_logging(
             file_handler.setFormatter(formatter)
             file_handler.setLevel(numeric_level)
             root_logger.addHandler(file_handler)
-            
+
             logging.info(f"Logging to file: {log_path} (max {max_bytes/1024/1024:.1f}MB, {backup_count} backups)")
-            
+
         except ImportError:
             logging.warning("RotatingFileHandler not available — file logging disabled")
         except Exception as e:
             logging.warning(f"Failed to configure file logging: {e}")
-    
+
     # Suppress noisy third-party loggers
     noisy_loggers = {
         "paddleocr": logging.WARNING,
@@ -137,24 +136,24 @@ def configure_logging(
         "botocore": logging.WARNING,
         "boto3": logging.WARNING,
     }
-    
+
     for logger_name, log_level in noisy_loggers.items():
         logging.getLogger(logger_name).setLevel(log_level)
-    
+
     logging.info(f"Logging configured: level={level}, format={log_format}")
 
 
 def get_request_logger(request_id: Optional[str] = None) -> logging.Logger:
     """
     Get a logger with optional request_id for distributed tracing.
-    
+
     Usage:
         logger = get_request_logger(request_id="abc123")
         logger.info("Processing request", extra={"request_id": request_id})
-    
+
     Args:
         request_id: Optional unique identifier for request tracing
-        
+
     Returns:
         Configured logger instance
     """
@@ -167,10 +166,9 @@ def get_request_logger(request_id: Optional[str] = None) -> logging.Logger:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["configure_logging", "get_request_logger", "CustomJsonFormatter"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

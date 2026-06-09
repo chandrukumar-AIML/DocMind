@@ -1,4 +1,4 @@
-﻿# backend/app/vectorstore/embeddings.py
+# backend/app/vectorstore/embeddings.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # BATMAN-FIX: A - True async, T - Batch processing, M - Memory safety
 # OWASP-FIX: 7 - Safe data handling, 9 - Input sanitization
@@ -16,14 +16,13 @@ from pathlib import Path
 from typing import Optional, List, Any
 
 import numpy as np
-from openai import OpenAI, RateLimitError, APIError
+from openai import OpenAI, APIError
 from langchain_core.embeddings import Embeddings
 
 # DVMELTSS-M: Import centralized utilities
 from app.config import get_settings
 from app.core.retry import retry_async, RetryConfig
 from app.core.pii_utils import scrub_pii_for_evaluation
-from app.core.openai_errors import is_insufficient_quota_error
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +36,7 @@ class CachedOpenAIEmbeddings(Embeddings):
     - Expanded PII scrubbing for GDPR/HIPAA compliance
     - Correlation ID tracing for distributed debugging
     """
+
     MAX_BATCH_SIZE = 512
     EMBEDDING_DIM = 3072
     # DVMELTSS-E: Only retry transient errors — never retry quota/auth failures
@@ -58,7 +58,7 @@ class CachedOpenAIEmbeddings(Embeddings):
         # Validate API key format if provided
         if api_key and not api_key.startswith("sk-"):
             logger.warning("OpenAI API key format may be invalid (should start with 'sk-')")
-            
+
         self.client = OpenAI(api_key=api_key) if api_key else None
         self.api_key = api_key
         self.model = model
@@ -68,13 +68,13 @@ class CachedOpenAIEmbeddings(Embeddings):
         self._keys: list[str] = []
         self._vectors: np.ndarray = np.empty((0, dimensions), dtype=np.float32)
         self._key_to_idx: dict[str, int] = {}
-        
+
         cache_base = Path(cache_dir or ".cache/embeddings")
         cache_base.mkdir(parents=True, exist_ok=True)
         self._keys_path = cache_base / f"{model}.keys.txt"
         self._vecs_path = cache_base / f"{model}.npy"
         self._load_cache()
-        
+
         logger.info(
             f"CachedOpenAIEmbeddings: model={model}, dims={dimensions}, "
             f"cached_entries={len(self._keys)}, mode={'local' if self._local_fallback else 'openai'}, "
@@ -86,7 +86,7 @@ class CachedOpenAIEmbeddings(Embeddings):
         """Validate that texts is a list of non-empty strings."""
         if not isinstance(texts, list):
             raise TypeError(f"[{corr_id}] texts must be a list, got {type(texts).__name__}")
-        
+
         valid = []
         for i, text in enumerate(texts):
             if not isinstance(text, str):
@@ -100,34 +100,34 @@ class CachedOpenAIEmbeddings(Embeddings):
 
     def embed_documents(self, texts: list[str], correlation_id: Optional[str] = None) -> list[list[float]]:
         corr_id = correlation_id or "embed_docs"
-        
+
         # ✅ Validate inputs
         texts = self._validate_texts(texts, corr_id)
         if not texts:
             return []
-        
+
         # Optional PII scrubbing before embedding — using centralized utility
         if self.enable_pii_scrubbing:
             texts = [scrub_pii_for_evaluation(text, domain="general") for text in texts]
-        
+
         return self._embed_batch(texts, corr_id)
 
     def embed_query(self, text: str, correlation_id: Optional[str] = None) -> list[float]:
         corr_id = correlation_id or "embed_query"
-        
+
         if self.enable_pii_scrubbing:
             text = scrub_pii_for_evaluation(text, domain="general")
-        
+
         return self._embed_batch([text], corr_id)[0]
 
     def _embed_batch(self, texts: list[str], correlation_id: str) -> list[list[float]]:
         if not texts:
             return []
-        
+
         results: list[Optional[list[float]]] = [None] * len(texts)
         uncached_indices: list[int] = []
         uncached_texts: list[str] = []
-        
+
         for i, text in enumerate(texts):
             key = self._cache_key(text)
             cached = self._get_cached(key)
@@ -136,11 +136,11 @@ class CachedOpenAIEmbeddings(Embeddings):
             else:
                 uncached_indices.append(i)
                 uncached_texts.append(text)
-        
+
         cache_hits = len(texts) - len(uncached_texts)
         if cache_hits > 0:
             logger.debug(f"[{correlation_id}] Embedding cache hits: {cache_hits}/{len(texts)}")
-        
+
         if uncached_texts:
             embeddings = self._call_api_batched(uncached_texts, correlation_id)
             for idx, text, emb in zip(uncached_indices, uncached_texts, embeddings):
@@ -149,7 +149,7 @@ class CachedOpenAIEmbeddings(Embeddings):
                 results[idx] = emb
             # ✅ FIXED: Save cache ONCE after all batches processed (not per-batch)
             self._save_cache()
-        
+
         return [r for r in results if r is not None]
 
     def _call_api_batched(self, texts: list[str], correlation_id: str) -> list[list[float]]:
@@ -159,27 +159,28 @@ class CachedOpenAIEmbeddings(Embeddings):
 
         all_embeddings: list[list[float]] = []
         for batch_start in range(0, len(texts), self.MAX_BATCH_SIZE):
-            batch = texts[batch_start: batch_start + self.MAX_BATCH_SIZE]
+            batch = texts[batch_start : batch_start + self.MAX_BATCH_SIZE]
 
             try:
                 # ✅ FIXED: Use asyncio.run for sync API call in async context
                 if sys.version_info >= (3, 9):
-                    embeddings = asyncio.run(
-                        self._call_api_with_retry_async(batch, correlation_id)
-                    )
+                    embeddings = asyncio.run(self._call_api_with_retry_async(batch, correlation_id))
                 else:
                     import concurrent.futures
+
                     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                         future = executor.submit(
                             lambda: asyncio.run(self._call_api_with_retry_async(batch, correlation_id))
                         )
                         embeddings = future.result()
             except Exception as exc:
-                from app.core.openai_errors import is_insufficient_quota_error, is_authentication_error
+                from app.core.openai_errors import (
+                    is_insufficient_quota_error,
+                    is_authentication_error,
+                )
+
                 if is_insufficient_quota_error(exc) or is_authentication_error(exc):
-                    logger.warning(
-                        f"[{correlation_id}] OpenAI quota/auth error — switching to local fallback: {exc}"
-                    )
+                    logger.warning(f"[{correlation_id}] OpenAI quota/auth error — switching to local fallback: {exc}")
                     self._enable_local_fallback(str(exc))
                     embeddings = [self._local_embed_text(t) for t in batch]
                 else:
@@ -192,26 +193,27 @@ class CachedOpenAIEmbeddings(Embeddings):
                 backoff = min(2 ** (len(all_embeddings) // self.MAX_BATCH_SIZE), 10)
                 jitter = np.random.uniform(0, 0.5)
                 time.sleep(backoff + jitter)
-        
+
         return all_embeddings
 
     # ✅ FIXED: Proper async wrapper for sync OpenAI call
     async def _call_api_with_retry_async(self, texts: list[str], correlation_id: str) -> list[list[float]]:
         """Async wrapper that runs sync OpenAI call in thread."""
+
         @retry_async(config=self._EMBEDDING_RETRY_CONFIG)
         async def _do_call():
             if sys.version_info >= (3, 9):
                 return await asyncio.to_thread(
                     self.client.embeddings.create,
-                    input=texts, model=self.model, dimensions=self.dimensions
+                    input=texts,
+                    model=self.model,
+                    dimensions=self.dimensions,
                 )
             else:
                 loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in Python 3.10+
                 return await loop.run_in_executor(
                     None,
-                    lambda: self.client.embeddings.create(
-                        input=texts, model=self.model, dimensions=self.dimensions
-                    )
+                    lambda: self.client.embeddings.create(input=texts, model=self.model, dimensions=self.dimensions),
                 )
 
         response = await _do_call()
@@ -224,6 +226,7 @@ class CachedOpenAIEmbeddings(Embeddings):
             logger.warning(f"Switching embeddings to local fallback mode: {reason}")
             self._local_fallback = True
             from app.core.openai_errors import mark_openai_quota_exceeded
+
             mark_openai_quota_exceeded()
 
     def _local_embed_text(self, text: str) -> list[float]:
@@ -269,10 +272,10 @@ class CachedOpenAIEmbeddings(Embeddings):
             try:
                 with open(self._keys_path, "r", encoding="utf-8") as f:
                     self._keys = [line.strip() for line in f if line.strip()]
-                
+
                 # ✅ FIXED: Verify .npy file integrity before loading
                 vec_data = np.load(str(self._vecs_path), allow_pickle=False)
-                
+
                 # Validate dimensions match
                 if vec_data.ndim != 2 or vec_data.shape[1] != self.dimensions:
                     logger.warning(
@@ -283,7 +286,7 @@ class CachedOpenAIEmbeddings(Embeddings):
                     self._vectors = np.empty((0, self.dimensions), dtype=np.float32)
                     self._key_to_idx = {}
                     return
-                
+
                 self._vectors = vec_data
                 self._key_to_idx = {k: i for i, k in enumerate(self._keys)}
                 logger.info(f"Embedding cache loaded: {len(self._keys)} entries")
@@ -318,9 +321,7 @@ class CachedOpenAIEmbeddings(Embeddings):
             "cache_keys_file": str(self._keys_path),
             "cache_vecs_file": str(self._vecs_path),
             "mode": "local" if self._local_fallback else "openai",
-            "cache_size_mb": round(
-                self._vecs_path.stat().st_size / 1024 / 1024, 2
-            ) if self._vecs_path.exists() else 0,
+            "cache_size_mb": round(self._vecs_path.stat().st_size / 1024 / 1024, 2) if self._vecs_path.exists() else 0,
             "pii_scrubbing_enabled": self.enable_pii_scrubbing,
             "correlation_id": corr_id,
         }
@@ -341,10 +342,9 @@ def get_embeddings_metadata() -> dict[str, Any]:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["CachedOpenAIEmbeddings", "get_embeddings_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

@@ -1,5 +1,6 @@
 # backend/app/api/routes/apikeys.py
 """API key management routes — create, list, revoke, rotate."""
+
 from __future__ import annotations
 
 import logging
@@ -10,8 +11,11 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.auth.dependencies import AuthenticatedUser, require_workspace_admin
 from app.core.apikey_manager import (
-    create_api_key, list_api_keys, revoke_api_key,
-    rotate_api_key, get_key_usage,
+    create_api_key,
+    list_api_keys,
+    revoke_api_key,
+    rotate_api_key,
+    get_key_usage,
 )
 
 logger = logging.getLogger(__name__)

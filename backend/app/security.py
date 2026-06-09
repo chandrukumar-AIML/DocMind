@@ -1,12 +1,16 @@
-﻿# backend/app/security.py
+# backend/app/security.py
 # DVMELTSS-FIX: S - Security, V - Validate, E - Error handling
 # ASCALE-FIX: S - Separation, C - Coupling, E - Error propagation
 # OWASP-FIX: 3 - Credential safety, 7 - Safe data handling
 from __future__ import annotations
-import hashlib, hmac, logging, secrets, time
+import hashlib
+import hmac
+import logging
+import secrets
+import time
 from typing import Optional, Final
 from fastapi import Security, HTTPException, status, Request
-from fastapi.security import APIKeyHeader, APIKeyQuery, HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import APIKeyHeader, APIKeyQuery, HTTPBearer
 
 from app.config import get_settings
 
@@ -27,23 +31,23 @@ def validate_api_key(
 ) -> Optional[str]:
     """
     Validate API key from header or query param.
-    
+
     Args:
         key: API key from X-API-Key header
         query_key: API key from ?api_key= query param
         required: If False, returns None instead of raising
-        
+
     Returns:
         Validated API key string or None
-        
+
     Raises:
         HTTPException: If key is missing/invalid and required=True
     """
     settings = get_settings()
-    
+
     # Prefer header over query param (more secure)
     api_key = key or query_key
-    
+
     if not api_key:
         if required:
             raise HTTPException(
@@ -52,7 +56,7 @@ def validate_api_key(
                 headers={"WWW-Authenticate": "ApiKey"},
             )
         return None
-    
+
     # ✅ FIXED: Production validation against configured app API keys
     if not settings.api_reload:
         # In production, validate against app-specific API keys.
@@ -72,7 +76,7 @@ def validate_api_key(
                 detail="Invalid API key",
                 headers={"WWW-Authenticate": "ApiKey"},
             )
-    
+
     return api_key
 
 
@@ -80,10 +84,10 @@ def validate_api_key(
 def create_secure_token(length: int = 32) -> str:
     """
     Generate a cryptographically secure random token.
-    
+
     Args:
         length: Token length in bytes (default 32 = 256 bits)
-        
+
     Returns:
         Hex-encoded secure token string
     """
@@ -98,13 +102,13 @@ def verify_hmac_signature(
 ) -> bool:
     """
     Verify HMAC signature for webhook security (constant-time compare).
-    
+
     Args:
         payload: Raw request body bytes
         signature: Hex-encoded signature from request header
         secret: Shared secret for HMAC
         algorithm: Hash algorithm (default: sha256)
-        
+
     Returns:
         True if signature is valid, False otherwise
     """
@@ -125,29 +129,29 @@ def verify_hmac_signature(
 class RateLimiter:
     """
     Redis-backed rate limiter for production use.
-    
+
     Falls back to in-memory for development.
     """
-    
+
     def __init__(self, max_requests: int, window_seconds: int, redis_client=None):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self._redis = redis_client
         self._memory_store: dict[str, list[float]] = {} if redis_client is None else None
-    
+
     def is_allowed(self, key: str) -> bool:
         """
         Check if request is allowed under rate limit.
-        
+
         Args:
             key: Unique identifier (e.g., API key, IP address)
-            
+
         Returns:
             True if request is allowed, False if rate limited
         """
         now = time.time()
         window_start = now - self.window_seconds
-        
+
         if self._redis:
             # Redis implementation (atomic)
             pipe = self._redis.pipeline()
@@ -161,15 +165,12 @@ class RateLimiter:
             return True
         else:
             # In-memory fallback (development only)
-            self._memory_store[key] = [
-                ts for ts in self._memory_store.get(key, [])
-                if ts > window_start
-            ]
+            self._memory_store[key] = [ts for ts in self._memory_store.get(key, []) if ts > window_start]
             if len(self._memory_store[key]) >= self.max_requests:
                 return False
             self._memory_store[key].append(now)
             return True
-    
+
     def get_retry_after(self, key: str) -> Optional[int]:
         """Get seconds until rate limit resets."""
         if self._memory_store and key in self._memory_store:
@@ -182,7 +183,7 @@ class RateLimiter:
 async def add_security_headers(request: Request, call_next):
     """
     Add security headers to all responses (OWASP best practices).
-    
+
     Headers added:
     - X-Content-Type-Options: nosniff
     - X-Frame-Options: DENY
@@ -191,13 +192,13 @@ async def add_security_headers(request: Request, call_next):
     - Content-Security-Policy: default-src 'self'
     """
     settings = get_settings()
-    
+
     response = await call_next(request)
-    
+
     # Core security headers
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-XSS-Protection"] = "1; mode=block"
-    
+
     if settings.api_reload:
         # Development: permissive CSP to allow Swagger UI (CDN scripts/styles/images)
         response.headers["Content-Security-Policy"] = (
@@ -213,7 +214,7 @@ async def add_security_headers(request: Request, call_next):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Content-Security-Policy"] = "default-src 'self'"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
-    
+
     return response
 
 
@@ -221,27 +222,25 @@ async def add_security_headers(request: Request, call_next):
 async def add_correlation_id(request: Request, call_next):
     """
     Inject correlation_id into request context and response headers.
-    
+
     Enables end-to-end tracing across microservices.
     """
     from app.core.ids import generate_correlation_id
-    
+
     # Get or generate correlation ID
     corr_id = (
-        request.headers.get("X-Correlation-ID")
-        or request.headers.get("X-Request-ID")
-        or generate_correlation_id("api")
+        request.headers.get("X-Correlation-ID") or request.headers.get("X-Request-ID") or generate_correlation_id("api")
     )
-    
+
     # Attach to request state for logging
     request.state.correlation_id = corr_id
-    
+
     # Process request
     response = await call_next(request)
-    
+
     # Add to response headers
     response.headers["X-Correlation-ID"] = corr_id
-    
+
     return response
 
 
@@ -258,10 +257,9 @@ __all__ = [
     "api_key_query",
     "http_bearer",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

@@ -1,4 +1,4 @@
-﻿# backend/app/dependencies.py
+# backend/app/dependencies.py
 # DVMELTSS-FIX: M - Modular, A - Async-safe, S - Scalability, D - Dependencies
 # ASCALE-FIX: S - Separation, C - Coupling, E - Error handling
 # ADDED: Production-ready central dependency providers for OCR, vector store, and RAG chain
@@ -61,7 +61,10 @@ def get_component_health() -> dict[str, bool]:
         store = get_store_manager()
         health["vectorstore"] = getattr(store, "_initialized", True)
     except Exception as exc:
-        logger.warning("VectorStoreManager health check failed during dependency health assessment: %s", exc)
+        logger.warning(
+            "VectorStoreManager health check failed during dependency health assessment: %s",
+            exc,
+        )
 
     try:
         rag_chain = get_rag_chain()
@@ -86,10 +89,9 @@ __all__ = [
     "get_component_health",
     "reset_dependency_cache",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

@@ -16,9 +16,22 @@ from enum import Enum as PyEnum
 from typing import TYPE_CHECKING, Optional, Final
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey, String, Text,
-    Index, UniqueConstraint, CheckConstraint,
-    Integer, Float, event, func, text, Enum, ARRAY,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    Index,
+    UniqueConstraint,
+    CheckConstraint,
+    Integer,
+    Float,
+    event,
+    func,
+    text,
+    Enum,
+    ARRAY,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, relationship, validates, object_session
@@ -34,17 +47,22 @@ logger = logging.getLogger(__name__)
 # -- CONSTANTS & HELPERS ------------------------------------------------
 # ========================================================================
 
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
 
 _SLUG_MIN_LENGTH: Final = 3
 _SLUG_MAX_LENGTH: Final = 64
 
 # PostgreSQL native ENUM  (workspace_admin added by migration)
 UserRoleEnum = Enum(
-    "admin", "workspace_admin", "editor", "viewer",
+    "admin",
+    "workspace_admin",
+    "editor",
+    "viewer",
     name="user_role_enum",
-    create_type=False,   # managed by migration script
+    create_type=False,  # managed by migration script
     metadata=Base.metadata,
 )
 
@@ -52,6 +70,7 @@ UserRoleEnum = Enum(
 # ========================================================================
 # -- ROLE ENUM (Python + DB sync) ---------------------------------------
 # ========================================================================
+
 
 class UserRole(str, PyEnum):
     """Application-level role enum — synced with DB enum.
@@ -63,8 +82,9 @@ class UserRole(str, PyEnum):
       editor         → can upload / query / annotate
       viewer         → read-only
     """
+
     WORKSPACE_ADMIN = "workspace_admin"
-    ADMIN = "admin"       # legacy alias — treat same as workspace_admin
+    ADMIN = "admin"  # legacy alias — treat same as workspace_admin
     EDITOR = "editor"
     VIEWER = "viewer"
 
@@ -82,6 +102,7 @@ class UserRole(str, PyEnum):
 # -- WORKSPACE MODEL -----------------------------------------------------
 # ========================================================================
 
+
 class Workspace(Base):
     __tablename__ = "workspaces"
 
@@ -91,24 +112,27 @@ class Workspace(Base):
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
     created_at = Column(
-        DateTime(timezone=True), default=_utcnow, nullable=False, server_default=func.now()
+        DateTime(timezone=True),
+        default=_utcnow,
+        nullable=False,
+        server_default=func.now(),
     )
     max_documents = Column(Integer, default=1000, nullable=False, server_default=text("1000"))
     max_queries = Column(Integer, default=10000, nullable=False, server_default=text("10000"))
 
     # Access management additions
-    client_name         = Column(String(128), nullable=True)
-    client_email        = Column(String(255), nullable=True)
-    plan                = Column(String(20), nullable=False, default="starter", server_default="starter")
-    max_docs            = Column(Integer, default=100, nullable=False, server_default=text("100"))
+    client_name = Column(String(128), nullable=True)
+    client_email = Column(String(255), nullable=True)
+    plan = Column(String(20), nullable=False, default="starter", server_default="starter")
+    max_docs = Column(Integer, default=100, nullable=False, server_default=text("100"))
     max_queries_per_day = Column(Integer, default=500, nullable=False, server_default=text("500"))
-    max_storage_gb      = Column(Float, default=5.0, nullable=False, server_default=text("5.0"))
-    storage_used_mb     = Column(Float, default=0.0, nullable=False, server_default=text("0.0"))
-    query_count_today   = Column(Integer, default=0, nullable=False, server_default=text("0"))
-    doc_count           = Column(Integer, default=0, nullable=False, server_default=text("0"))
-    domain_type         = Column(String(50), nullable=True)
-    suspended_at        = Column(DateTime(timezone=True), nullable=True)
-    suspended_reason    = Column(Text, nullable=True)
+    max_storage_gb = Column(Float, default=5.0, nullable=False, server_default=text("5.0"))
+    storage_used_mb = Column(Float, default=0.0, nullable=False, server_default=text("0.0"))
+    query_count_today = Column(Integer, default=0, nullable=False, server_default=text("0"))
+    doc_count = Column(Integer, default=0, nullable=False, server_default=text("0"))
+    domain_type = Column(String(50), nullable=True)
+    suspended_at = Column(DateTime(timezone=True), nullable=True)
+    suspended_reason = Column(Text, nullable=True)
 
     members: Mapped[list["WorkspaceMember"]] = relationship(
         "WorkspaceMember",
@@ -145,8 +169,10 @@ class Workspace(Base):
 # -- USER MODEL ---------------------------------------------------------
 # ========================================================================
 
+
 class User(Base):
     """System user — authenticated via JWT."""
+
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -160,11 +186,14 @@ class User(Base):
     is_email_verified = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     # Access management additions
-    invited_by  = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     global_role = Column(String(20), nullable=False, default="viewer", server_default="viewer")
 
     created_at = Column(
-        DateTime(timezone=True), default=_utcnow, nullable=False, server_default=func.now()
+        DateTime(timezone=True),
+        default=_utcnow,
+        nullable=False,
+        server_default=func.now(),
     )
     last_login_at = Column(DateTime(timezone=True), nullable=True)
     updated_at = Column(
@@ -192,11 +221,7 @@ class User(Base):
 
     @property
     def workspace_ids(self) -> list[str]:
-        return [
-            str(m.workspace_id)
-            for m in self.memberships
-            if m.is_active and m.workspace
-        ]
+        return [str(m.workspace_id) for m in self.memberships if m.is_active and m.workspace]
 
     @property
     def primary_workspace_id(self) -> Optional[str]:
@@ -227,6 +252,7 @@ class User(Base):
 # -- WORKSPACE MEMBER MODEL ---------------------------------------------
 # ========================================================================
 
+
 class WorkspaceMember(Base):
     __tablename__ = "workspace_members"
 
@@ -254,7 +280,10 @@ class WorkspaceMember(Base):
     is_active = Column(Boolean, default=True, nullable=False, server_default=text("true"))
     is_primary = Column(Boolean, default=False, nullable=False, server_default=text("false"))
     joined_at = Column(
-        DateTime(timezone=True), default=_utcnow, nullable=False, server_default=func.now()
+        DateTime(timezone=True),
+        default=_utcnow,
+        nullable=False,
+        server_default=func.now(),
     )
 
     user: Mapped["User"] = relationship("User", back_populates="memberships")
@@ -286,22 +315,33 @@ class WorkspaceMember(Base):
 # -- INVITE MODEL -------------------------------------------------------
 # ========================================================================
 
+
 class Invite(Base):
     """Workspace invitation — token stored hashed, shown once."""
+
     __tablename__ = "invites"
 
-    id           = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email        = Column(String(255), nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True)
-    role         = Column(String(20), nullable=False, default=UserRole.WORKSPACE_ADMIN.value)
-    token_hash   = Column(String(255), nullable=False, unique=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), nullable=False)
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    role = Column(String(20), nullable=False, default=UserRole.WORKSPACE_ADMIN.value)
+    token_hash = Column(String(255), nullable=False, unique=True)
     token_prefix = Column(String(12), nullable=False)
-    invited_by   = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    expires_at   = Column(DateTime(timezone=True), nullable=False)
-    accepted_at  = Column(DateTime(timezone=True), nullable=True)
-    resent_at    = Column(DateTime(timezone=True), nullable=True)
-    status       = Column(String(20), nullable=False, default="pending")
-    created_at   = Column(DateTime(timezone=True), default=_utcnow, nullable=False, server_default=func.now())
+    invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    resent_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(20), nullable=False, default="pending")
+    created_at = Column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        nullable=False,
+        server_default=func.now(),
+    )
 
     workspace: Mapped[Optional["Workspace"]] = relationship("Workspace", lazy="select")
 
@@ -323,22 +363,33 @@ class Invite(Base):
 # -- API KEY MODEL ------------------------------------------------------
 # ========================================================================
 
+
 class ApiKey(Base):
     """Workspace API key — full key shown ONCE, only hash stored."""
+
     __tablename__ = "api_keys"
 
-    id           = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
-    name         = Column(String(100), nullable=False)
-    key_hash     = Column(String(255), nullable=False, unique=True)
-    key_prefix   = Column(String(20), nullable=False)
-    created_by   = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name = Column(String(100), nullable=False)
+    key_hash = Column(String(255), nullable=False, unique=True)
+    key_prefix = Column(String(20), nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     last_used_at = Column(DateTime(timezone=True), nullable=True)
-    usage_count  = Column(Integer, default=0, nullable=False, server_default=text("0"))
-    is_active    = Column(Boolean, default=True, nullable=False, server_default=text("true"))
-    expires_at   = Column(DateTime(timezone=True), nullable=True)
-    scopes       = Column(ARRAY(String), default=list, nullable=False)
-    created_at   = Column(DateTime(timezone=True), default=_utcnow, nullable=False, server_default=func.now())
+    usage_count = Column(Integer, default=0, nullable=False, server_default=text("0"))
+    is_active = Column(Boolean, default=True, nullable=False, server_default=text("true"))
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    scopes = Column(ARRAY(String), default=list, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        nullable=False,
+        server_default=func.now(),
+    )
 
     workspace: Mapped["Workspace"] = relationship("Workspace", lazy="select")
 
@@ -355,22 +406,32 @@ class ApiKey(Base):
 # -- USAGE LOG MODEL ----------------------------------------------------
 # ========================================================================
 
+
 class UsageLog(Base):
     __tablename__ = "usage_logs"
 
-    id               = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    workspace_id     = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
-    user_id          = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    action_type      = Column(String(50), nullable=False)
-    resource_type    = Column(String(50), nullable=True)
-    resource_id      = Column(UUID(as_uuid=True), nullable=True)
-    tokens_used      = Column(Integer, default=0, nullable=False, server_default=text("0"))
-    ocr_pages        = Column(Integer, default=0, nullable=False, server_default=text("0"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    action_type = Column(String(50), nullable=False)
+    resource_type = Column(String(50), nullable=True)
+    resource_id = Column(UUID(as_uuid=True), nullable=True)
+    tokens_used = Column(Integer, default=0, nullable=False, server_default=text("0"))
+    ocr_pages = Column(Integer, default=0, nullable=False, server_default=text("0"))
     storage_delta_mb = Column(Float, default=0.0, nullable=False, server_default=text("0.0"))
     # [OK] FIXED: 'metadata' is a reserved SQLAlchemy attribute on Declarative models.
     # Renamed to 'log_metadata'; column name in DB stays "metadata" for backward compat.
-    log_metadata     = Column("metadata", JSONB, default=dict, nullable=False, server_default=text("'{}'"))
-    created_at       = Column(DateTime(timezone=True), default=_utcnow, nullable=False, server_default=func.now())
+    log_metadata = Column("metadata", JSONB, default=dict, nullable=False, server_default=text("'{}'"))
+    created_at = Column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        nullable=False,
+        server_default=func.now(),
+    )
 
     __table_args__ = (
         Index("ix_usage_logs_workspace_id", "workspace_id"),
@@ -383,21 +444,31 @@ class UsageLog(Base):
 # -- AUDIT LOG MODEL ----------------------------------------------------
 # ========================================================================
 
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 
-    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    workspace_id    = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True)
-    user_id         = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    action          = Column(String(100), nullable=False)
-    resource_type   = Column(String(50), nullable=True)
-    resource_id     = Column(String(255), nullable=True)
-    ip_address      = Column(String(45), nullable=True)
-    user_agent      = Column(Text, nullable=True)
-    request_data    = Column(JSONB, default=dict, nullable=False, server_default=text("'{}'"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    action = Column(String(100), nullable=False)
+    resource_type = Column(String(50), nullable=True)
+    resource_id = Column(String(255), nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(Text, nullable=True)
+    request_data = Column(JSONB, default=dict, nullable=False, server_default=text("'{}'"))
     response_status = Column(Integer, nullable=True)
-    severity        = Column(String(10), nullable=False, default="info")
-    created_at      = Column(DateTime(timezone=True), default=_utcnow, nullable=False, server_default=func.now())
+    severity = Column(String(10), nullable=False, default="info")
+    created_at = Column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        nullable=False,
+        server_default=func.now(),
+    )
 
     __table_args__ = (
         Index("ix_audit_log_workspace_id", "workspace_id"),
@@ -411,13 +482,14 @@ class AuditLog(Base):
 # -- EVENT LISTENERS ----------------------------------------------------
 # ========================================================================
 
+
 @event.listens_for(WorkspaceMember, "before_insert")
 def _enforce_single_primary(mapper, connection, target: WorkspaceMember):
     """
     Ensure only one primary member per workspace.
     [OK] FIXED: Completed truncated listener.
-    [WARN]️ Note: In async SQLAlchemy apps, this is often better handled in the 
-    service/endpoint layer to avoid sync DB calls during flush. This provides 
+    [WARN]️ Note: In async SQLAlchemy apps, this is often better handled in the
+    service/endpoint layer to avoid sync DB calls during flush. This provides
     a safety net for sync migrations/tests.
     """
     if target.is_primary and target.workspace_id:
@@ -426,7 +498,7 @@ def _enforce_single_primary(mapper, connection, target: WorkspaceMember):
             session.query(WorkspaceMember).filter(
                 WorkspaceMember.workspace_id == target.workspace_id,
                 WorkspaceMember.is_primary == True,
-                WorkspaceMember.id != target.id
+                WorkspaceMember.id != target.id,
             ).update({"is_primary": False}, synchronize_session="fetch")
 
 
@@ -436,15 +508,14 @@ def _enforce_single_primary(mapper, connection, target: WorkspaceMember):
 
 if __name__ == "__main__":
     import sys
-    from pathlib import Path
-    
+
     print("[>>] Testing Auth Models module (app/auth/models.py)")
     print("=" * 70)
-    
+
     try:
-        # [OK] NO IMPORT NEEDED! 
+        # [OK] NO IMPORT NEEDED!
         # We are inside the file, so User, Workspace, UserRole are already defined.
-        
+
         # -- Test 1: UserRole enum ---------------------------------------
         print("\n[PIN] Test 1: UserRole enum values")
         assert UserRole.ADMIN.value == "admin"
@@ -452,52 +523,52 @@ if __name__ == "__main__":
         assert UserRole.VIEWER.value == "viewer"
         assert UserRole.is_valid("admin") is True
         assert UserRole.is_valid("invalid") is False
-        print(f"   [OK] UserRole: admin/editor/viewer + is_valid() check")
-        
+        print("   [OK] UserRole: admin/editor/viewer + is_valid() check")
+
         # -- Test 2: SQLAlchemy model attributes ------------------------
         print("\n[PIN] Test 2: SQLAlchemy model structure (columns)")
         # Check User model has expected columns via __table__.c
         user_cols = [c.name for c in User.__table__.c]
-        assert 'email' in user_cols, f"Missing 'email' in User columns: {user_cols}"
-        assert 'hashed_password' in user_cols
-        assert 'is_active' in user_cols
-        print(f"   [OK] User model columns: email, hashed_password, is_active")
-        
+        assert "email" in user_cols, f"Missing 'email' in User columns: {user_cols}"
+        assert "hashed_password" in user_cols
+        assert "is_active" in user_cols
+        print("   [OK] User model columns: email, hashed_password, is_active")
+
         # Check Workspace model
         ws_cols = [c.name for c in Workspace.__table__.c]
-        assert 'slug' in ws_cols, f"Missing 'slug' in Workspace columns: {ws_cols}"
-        assert 'is_active' in ws_cols
-        print(f"   [OK] Workspace model columns: slug, is_active")
-        
+        assert "slug" in ws_cols, f"Missing 'slug' in Workspace columns: {ws_cols}"
+        assert "is_active" in ws_cols
+        print("   [OK] Workspace model columns: slug, is_active")
+
         # Check WorkspaceMember model
         member_cols = [c.name for c in WorkspaceMember.__table__.c]
-        assert 'role' in member_cols, f"Missing 'role' in Member columns: {member_cols}"
-        assert 'is_primary' in member_cols
-        print(f"   [OK] WorkspaceMember model columns: role, is_primary")
-        
+        assert "role" in member_cols, f"Missing 'role' in Member columns: {member_cols}"
+        assert "is_primary" in member_cols
+        print("   [OK] WorkspaceMember model columns: role, is_primary")
+
         # -- Test 3: Model relationships --------------------------------
         print("\n[PIN] Test 3: Model relationships (selectinload ready)")
         # Check relationships are defined via __mapper__.relationships
         user_rels = [r.key for r in User.__mapper__.relationships]
-        assert 'memberships' in user_rels, f"Missing 'memberships' in User rels: {user_rels}"
-        print(f"   [OK] User relationships: memberships")
-        
+        assert "memberships" in user_rels, f"Missing 'memberships' in User rels: {user_rels}"
+        print("   [OK] User relationships: memberships")
+
         ws_rels = [r.key for r in Workspace.__mapper__.relationships]
-        assert 'members' in ws_rels, f"Missing 'members' in Workspace rels: {ws_rels}"
-        print(f"   [OK] Workspace relationships: members")
-        
+        assert "members" in ws_rels, f"Missing 'members' in Workspace rels: {ws_rels}"
+        print("   [OK] Workspace relationships: members")
+
         # -- Test 4: Table metadata -------------------------------------
         print("\n[PIN] Test 4: Table metadata (schema validation)")
         assert User.__tablename__ == "users"
         assert Workspace.__tablename__ == "workspaces"
         assert WorkspaceMember.__tablename__ == "workspace_members"
-        print(f"   [OK] Table names: users, workspaces, workspace_members")
-        
+        print("   [OK] Table names: users, workspaces, workspace_members")
+
         # Check primary keys
         assert len(User.__table__.primary_key) == 1
         assert str(list(User.__table__.primary_key)[0].name) == "id"
-        print(f"   [OK] Primary keys: User.id (UUID)")
-        
+        print("   [OK] Primary keys: User.id (UUID)")
+
         print("\n" + "=" * 70)
         print("[OK] ALL TESTS PASSED! Auth models module verified.")
         print("\n[TIP] What we verified:")
@@ -507,9 +578,10 @@ if __name__ == "__main__":
         print("\n[FIX] For integration tests:")
         print("   • Run: python -m app.api.routes.auth")
         print("\n[SEC] Security: Models enforce email format, password hashing")
-        
+
     except Exception as e:
         print(f"\n[FAIL] Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

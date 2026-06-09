@@ -1,4 +1,4 @@
-﻿# backend/app/observability/langsmith_tracer.py
+# backend/app/observability/langsmith_tracer.py
 # DVMELTSS-FIX: M - Modular, E - Error handling, A - Async
 # ASCALE-FIX: S - Separation, C - Coupling
 # ✅ FIXED: Proper sync retry + correct async context manager usage + input validation
@@ -12,7 +12,7 @@ import time
 from typing import Any, Callable, Optional, TypeVar, Final
 
 # DVMELTSS-M: Import centralized utilities
-from app.core.retry import retry_async, RetryConfig
+from app.core.retry import RetryConfig
 
 logger = logging.getLogger(__name__)
 
@@ -38,28 +38,31 @@ _LANGSMITH_TIMEOUT: Final = 30.0
 # Preferred (langsmith >= 0.1.48): langsmith.traceable
 # Legacy  (langsmith <  0.1.48):   langsmith.trace / langsmith.atrace
 
-_ls_traceable = None        # new decorator-based API
-_ls_trace = None            # legacy sync context manager
-_ls_atrace = None           # legacy async context manager
+_ls_traceable = None  # new decorator-based API
+_ls_trace = None  # legacy sync context manager
+_ls_atrace = None  # legacy async context manager
 _LANGSMITH_SYNC_AVAILABLE = False
 _LANGSMITH_ASYNC_AVAILABLE = False
 
 try:
-    from langsmith import traceable as _ls_traceable     # preferred API
+    from langsmith import traceable as _ls_traceable  # preferred API
+
     _LANGSMITH_SYNC_AVAILABLE = True
-    _LANGSMITH_ASYNC_AVAILABLE = True   # traceable handles both sync and async
+    _LANGSMITH_ASYNC_AVAILABLE = True  # traceable handles both sync and async
     logger.debug("langsmith.traceable available — using decorator API")
 except ImportError:
     # Fall back to legacy context manager API (langsmith < 0.1.48)
     try:
-        from langsmith import trace as _ls_trace          # type: ignore[assignment]
+        from langsmith import trace as _ls_trace  # type: ignore[assignment]
+
         _LANGSMITH_SYNC_AVAILABLE = True
         logger.debug("langsmith.trace available — using legacy context manager API")
     except ImportError:
         logger.debug("langsmith.trace not available — sync tracing disabled")
 
     try:
-        from langsmith import atrace as _ls_atrace        # type: ignore[assignment]
+        from langsmith import atrace as _ls_atrace  # type: ignore[assignment]
+
         _LANGSMITH_ASYNC_AVAILABLE = True
         logger.debug("langsmith.atrace available — async tracing via legacy API")
     except ImportError:
@@ -96,14 +99,14 @@ def traceable(
 ):
     """
     Decorator to add LangSmith tracing to any Python function.
-    
+
     Features:
     - Works with both sync and async functions
     - Gracefully degrades when LangSmith unavailable
     - Logs execution time at DEBUG level (lazy evaluation)
     - Preserves function signature and docstring
     - FIXED: Accepts correlation_id for distributed tracing
-    
+
     Args:
         name: Optional span name (defaults to function qualname)
         run_type: LangSmith run type ("chain", "tool", "llm", etc.)
@@ -111,10 +114,11 @@ def traceable(
         metadata: Optional dict of custom metadata
         project_name: Optional override for LangSmith project
         correlation_id: Request ID for distributed tracing
-        
+
     Returns:
         Decorated function that traces execution when LangSmith available
     """
+
     def decorator(fn: Callable[..., T]) -> Callable[..., T]:
         # ✅ Validate inputs at decorator application time
         is_valid, error = _validate_tracer_inputs(name, run_type, tags, metadata, correlation_id or "tracer_init")
@@ -122,25 +126,48 @@ def traceable(
             logger.warning(f"Invalid tracer inputs for {fn.__qualname__}: {error}")
             # Return original function without tracing
             return fn
-        
+
         span_name = name or fn.__qualname__
         span_tags = tags or []
         # FIXED: Merge correlation_id into metadata
-        span_metadata = {**(metadata or {}), **( {"correlation_id": correlation_id} if correlation_id else {} )}
+        span_metadata = {
+            **(metadata or {}),
+            **({"correlation_id": correlation_id} if correlation_id else {}),
+        }
 
         if asyncio.iscoroutinefunction(fn):
+
             @functools.wraps(fn)
             async def async_wrapper(*args: Any, **kwargs: Any) -> T:
                 return await _run_with_trace_async(
-                    fn, args, kwargs, span_name, run_type, span_tags, span_metadata, project_name, correlation_id
+                    fn,
+                    args,
+                    kwargs,
+                    span_name,
+                    run_type,
+                    span_tags,
+                    span_metadata,
+                    project_name,
+                    correlation_id,
                 )
+
             return async_wrapper
         else:
+
             @functools.wraps(fn)
             def sync_wrapper(*args: Any, **kwargs: Any) -> T:
                 return _run_with_trace_sync(
-                    fn, args, kwargs, span_name, run_type, span_tags, span_metadata, project_name, correlation_id
+                    fn,
+                    args,
+                    kwargs,
+                    span_name,
+                    run_type,
+                    span_tags,
+                    span_metadata,
+                    project_name,
+                    correlation_id,
                 )
+
             return sync_wrapper
 
     return decorator
@@ -159,12 +186,12 @@ def _run_with_trace_sync(
 ) -> T:
     """
     Execute sync function with LangSmith tracing wrapper.
-    
+
     Falls back to direct execution if tracing unavailable or fails.
     ✅ FIXED: Proper sync retry + resource cleanup.
     """
     corr_id = correlation_id or "trace_sync"
-    
+
     # Fast path: skip all overhead if tracing not available
     if not _LANGSMITH_SYNC_AVAILABLE:
         return fn(*args, **kwargs)
@@ -200,8 +227,8 @@ def _run_with_trace_sync(
                     last_error = e
                     if attempt < _LANGSMITH_RETRY_CONFIG.max_attempts - 1:
                         wait = min(
-                            _LANGSMITH_RETRY_CONFIG.backoff_base * (2 ** attempt),
-                            _LANGSMITH_RETRY_CONFIG.backoff_max
+                            _LANGSMITH_RETRY_CONFIG.backoff_base * (2**attempt),
+                            _LANGSMITH_RETRY_CONFIG.backoff_max,
                         )
                         time.sleep(wait)
                     else:
@@ -236,12 +263,12 @@ async def _run_with_trace_async(
 ) -> T:
     """
     Execute async function with LangSmith async tracing wrapper.
-    
+
     Uses async context manager to avoid blocking event loop.
     ✅ FIXED: Proper async context manager usage + timeout.
     """
     corr_id = correlation_id or "trace_async"
-    
+
     # Fast path: skip all overhead if tracing not available
     if not _LANGSMITH_ASYNC_AVAILABLE:
         return await fn(*args, **kwargs)
@@ -284,7 +311,9 @@ async def _run_with_trace_async(
         return result
 
     except asyncio.TimeoutError:
-        logger.warning(f"[Trace] async {name} timed out after {_LANGSMITH_TIMEOUT}s. Running without trace. | {corr_id}")
+        logger.warning(
+            f"[Trace] async {name} timed out after {_LANGSMITH_TIMEOUT}s. Running without trace. | {corr_id}"
+        )
         return await fn(*args, **kwargs)
     except Exception as e:
         logger.warning(f"[Trace] async {name} span failed: {e}. Running without trace. | {corr_id}")
@@ -330,10 +359,9 @@ __all__ = [
     "trace_llm",
     "get_tracer_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

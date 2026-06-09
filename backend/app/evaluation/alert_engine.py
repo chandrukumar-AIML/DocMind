@@ -1,9 +1,10 @@
-﻿# backend/app/evaluation/alert_engine.py
+# backend/app/evaluation/alert_engine.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 # ASCALE-FIX: E - Error propagation, L - Logging
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import smtplib
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ ALERT_LOG_PATH: Final = Path(".cache/alerts/alert_history.log")
 @dataclass
 class Alert:
     """A single evaluation alert."""
+
     metric: str
     value: float
     threshold: float
@@ -63,9 +65,9 @@ class AlertEngine:
         self.settings = settings
         # FIXED: Use config thresholds or defaults
         self.thresholds = thresholds or self.DEFAULT_THRESHOLDS
-        
+
         ALERT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        
+
         self._email_retry_config = RetryConfig(
             max_attempts=3,
             backoff_base=1.0,
@@ -113,7 +115,7 @@ class AlertEngine:
                     f"run_id: {run_id}",
                     domain="all",
                 )
-                
+
                 alert = Alert(
                     metric=threshold_key,
                     value=round(value, 4),
@@ -128,6 +130,7 @@ class AlertEngine:
                 self._log_alert(alert)
                 # FIXED: Use async retry for email
                 import asyncio
+
                 asyncio.create_task(self._send_email_alert(alert))
 
         if not triggered:
@@ -168,7 +171,12 @@ class AlertEngine:
         for attempt in range(cfg.max_attempts):
             try:
                 await asyncio.to_thread(
-                    self._do_send_email, alert, smtp_host, smtp_user, smtp_pass, to_email
+                    self._do_send_email,
+                    alert,
+                    smtp_host,
+                    smtp_user,
+                    smtp_pass,
+                    to_email,
                 )
                 logger.info(f"[{alert.correlation_id}] Alert email sent to {to_email}")
                 return
@@ -176,23 +184,28 @@ class AlertEngine:
                 last_error = e
                 if attempt < cfg.max_attempts - 1:
                     import random
-                    delay = min(cfg.backoff_base * (2 ** attempt), 5.0)
+
+                    delay = min(cfg.backoff_base * (2**attempt), 5.0)
                     await asyncio.sleep(delay * (0.5 + random.random()))
         logger.warning(f"[{alert.correlation_id}] Alert email failed after {cfg.max_attempts} retries: {last_error}")
 
-    def _do_send_email(self, alert: Alert, smtp_host: str, smtp_user: str, smtp_pass: str, to_email: str):
+    def _do_send_email(
+        self,
+        alert: Alert,
+        smtp_host: str,
+        smtp_user: str,
+        smtp_pass: str,
+        to_email: str,
+    ):
         """Actual SMTP sending logic (called by retry decorator)."""
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = (
-            f"[DocuMind AI] {alert.severity.upper()} — "
-            f"{alert.metric} dropped to {alert.value:.3f}"
-        )
+        msg["Subject"] = f"[DocuMind AI] {alert.severity.upper()} — " f"{alert.metric} dropped to {alert.value:.3f}"
         msg["From"] = smtp_user
         msg["To"] = to_email
 
         # FIXED: Scrub PII from email body
         safe_message = scrub_pii_for_evaluation(alert.message, domain="all")
-        
+
         html_body = f"""
 <h2>DocuMind AI RAGAs Alert</h2>
 <table border="1" cellpadding="6" style="border-collapse:collapse">
@@ -226,10 +239,9 @@ class AlertEngine:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["AlertEngine", "Alert"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

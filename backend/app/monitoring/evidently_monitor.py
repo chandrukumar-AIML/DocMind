@@ -1,4 +1,4 @@
-﻿# backend/app/monitoring/evidently_monitor.py
+# backend/app/monitoring/evidently_monitor.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Security
 # ASCALE-FIX: S - Separation, C - Coupling
 # ✅ FIXED: Proper async/sync bridge + input validation + safe DataFrame handling
@@ -11,17 +11,15 @@ import os
 import tempfile
 import time
 from dataclasses import dataclass, field
-from datetime import date, timedelta
-from typing import Final, Optional, Any, List
+from datetime import date
+from typing import Final, Optional, Any
 
 import numpy as np
 import pandas as pd
 
 # DVMELTSS-M: Import centralized utilities
-from app.config import get_settings
 from app.core.monitoring_utils import (
     get_quality_thresholds,
-    compute_mean,
     validate_monitoring_window,
     generate_monitoring_correlation_id,
 )
@@ -34,6 +32,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DriftReport:
     """Results from Evidently drift analysis."""
+
     run_date: str
     workspace_id: str
     n_current: int
@@ -87,7 +86,7 @@ def _validate_drift_inputs(
 class EvidentlyMonitor:
     """
     Uses Evidently AI to detect distribution drift in RAG metrics.
-    
+
     Features (DVMELTSS-V, BATMAN-A):
     - Configurable quality thresholds via settings
     - Async-safe statistical computations
@@ -115,18 +114,18 @@ class EvidentlyMonitor:
 
     def run(
         self,
-        current_hours: float = 168.0,      # 7 days
-        reference_hours: float = 336.0,    # 14 days (prior 7 days)
+        current_hours: float = 168.0,  # 7 days
+        reference_hours: float = 336.0,  # 14 days (prior 7 days)
         log_to_mlflow: bool = True,
         correlation_id: Optional[str] = None,
     ) -> DriftReport:
         """
         Run drift detection comparing current vs reference window.
-        
+
         ✅ FIXED: Proper async handling + input validation.
         """
         corr_id = correlation_id or generate_monitoring_correlation_id("drift")
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_drift_inputs(current_hours, reference_hours, self.workspace_id, corr_id)
         if not is_valid:
@@ -140,11 +139,11 @@ class EvidentlyMonitor:
                 quality_alerts=[f"Invalid inputs: {error}"],
                 correlation_id=corr_id,
             )
-        
+
         # FIXED: Validate windows using centralized utility
         current_hours = validate_monitoring_window(current_hours, min_hours=24, max_hours=720)
         reference_hours = validate_monitoring_window(reference_hours, min_hours=48, max_hours=1440)
-        
+
         report = DriftReport(
             run_date=date.today().isoformat(),
             workspace_id=self.workspace_id,
@@ -157,10 +156,10 @@ class EvidentlyMonitor:
         # ✅ FIXED: Use run_async_in_task for safe async execution
         async def _get_current():
             return await self.collector.get_recent_async(hours=current_hours, workspace_id=self.workspace_id)
-        
+
         async def _get_reference():
             return await self.collector.get_recent_async(hours=reference_hours, workspace_id=self.workspace_id)
-        
+
         try:
             current_metrics = run_async_in_task(_get_current, timeout=30.0)
             reference_metrics = run_async_in_task(_get_reference, timeout=30.0)
@@ -182,8 +181,7 @@ class EvidentlyMonitor:
                 f"{len(current_metrics)} samples (need ≥ 10)"
             )
             report.quality_alerts.append(
-                "Insufficient query volume for statistical drift detection "
-                f"({len(current_metrics)} samples)"
+                "Insufficient query volume for statistical drift detection " f"({len(current_metrics)} samples)"
             )
             return report
 
@@ -195,15 +193,13 @@ class EvidentlyMonitor:
                 workspace_id=self.workspace_id,
             )
             report.quality_alerts = self._check_quality_thresholds(current_stats)
-            report.recommendations = self._build_recommendations(
-                report.quality_alerts, {}
-            )
+            report.recommendations = self._build_recommendations(report.quality_alerts, {})
             return report
 
         # Convert to DataFrames
         current_df = self._metrics_to_df(current_metrics)
         reference_df = self._metrics_to_df(reference_metrics)
-        
+
         # ✅ Handle empty DataFrames
         if current_df.empty or reference_df.empty:
             logger.warning(f"[{corr_id}] Empty DataFrame after conversion — skipping drift analysis")
@@ -213,10 +209,7 @@ class EvidentlyMonitor:
         # Run Evidently drift detection
         column_drift = self._run_evidently(current_df, reference_df, corr_id)
         report.column_drift = column_drift
-        report.drifted_columns = [
-            col for col, result in column_drift.items()
-            if result.get("drift_detected", False)
-        ]
+        report.drifted_columns = [col for col, result in column_drift.items() if result.get("drift_detected", False)]
         report.drift_detected = len(report.drifted_columns) > 0
 
         # Check quality thresholds (using centralized config)
@@ -225,15 +218,11 @@ class EvidentlyMonitor:
             workspace_id=self.workspace_id,
         )
         report.quality_alerts = self._check_quality_thresholds(current_stats)
-        report.recommendations = self._build_recommendations(
-            report.quality_alerts, column_drift
-        )
+        report.recommendations = self._build_recommendations(report.quality_alerts, column_drift)
 
         # Log to MLflow with correlation_id
         if log_to_mlflow:
-            report.mlflow_run_id = self._log_to_mlflow(
-                report, current_df, reference_df, current_stats, corr_id
-            )
+            report.mlflow_run_id = self._log_to_mlflow(report, current_df, reference_df, current_stats, corr_id)
 
         logger.info(
             f"[{corr_id}] Evidently monitor: workspace={self.workspace_id} | "
@@ -248,29 +237,31 @@ class EvidentlyMonitor:
         # ✅ FIXED: Handle empty/None metrics
         if not metrics:
             return pd.DataFrame()
-        
+
         rows = []
         for m in metrics:
             if m is None:
                 continue
-            rows.append({
-                "latency_ms": m.latency_ms,
-                "confidence_score": m.confidence_score,
-                "relevance_score": m.relevance_score,
-                "answer_length": float(m.answer_length),
-                "retrieval_count": float(m.retrieval_count),
-                "retry_count": float(m.retry_count),
-                "web_search_used": float(m.web_search_used),
-                "is_grounded": float(m.is_grounded),
-                "crag_generate": float(m.crag_action == "generate"),
-                "crag_rewrite": float(m.crag_action == "rewrite"),
-                "crag_web_search": float(m.crag_action == "web_search"),
-                "faithfulness": m.faithfulness if m.faithfulness is not None else np.nan,
-            })
-        
+            rows.append(
+                {
+                    "latency_ms": m.latency_ms,
+                    "confidence_score": m.confidence_score,
+                    "relevance_score": m.relevance_score,
+                    "answer_length": float(m.answer_length),
+                    "retrieval_count": float(m.retrieval_count),
+                    "retry_count": float(m.retry_count),
+                    "web_search_used": float(m.web_search_used),
+                    "is_grounded": float(m.is_grounded),
+                    "crag_generate": float(m.crag_action == "generate"),
+                    "crag_rewrite": float(m.crag_action == "rewrite"),
+                    "crag_web_search": float(m.crag_action == "web_search"),
+                    "faithfulness": m.faithfulness if m.faithfulness is not None else np.nan,
+                }
+            )
+
         if not rows:
             return pd.DataFrame()
-            
+
         df = pd.DataFrame(rows)
         return df.dropna(subset=["latency_ms", "confidence_score"])
 
@@ -288,11 +279,13 @@ class EvidentlyMonitor:
             from evidently.metrics import ColumnDriftMetric
 
             # Build column-level report
-            report = Report(metrics=[
-                ColumnDriftMetric(column_name=col)
-                for col in self.MONITORED_COLUMNS
-                if col in current_df.columns and col in reference_df.columns
-            ])
+            report = Report(
+                metrics=[
+                    ColumnDriftMetric(column_name=col)
+                    for col in self.MONITORED_COLUMNS
+                    if col in current_df.columns and col in reference_df.columns
+                ]
+            )
             report.run(
                 current_data=current_df,
                 reference_data=reference_df,
@@ -301,8 +294,7 @@ class EvidentlyMonitor:
             # Extract results from report
             report_dict = report.as_dict()
             for metric_result in report_dict.get("metrics", []):
-                col = (metric_result.get("result", {})
-                       .get("column_name", ""))
+                col = metric_result.get("result", {}).get("column_name", "")
                 if not col:
                     continue
 
@@ -334,8 +326,13 @@ class EvidentlyMonitor:
         from scipy import stats
 
         results = {}
-        for col in ["latency_ms", "confidence_score", "relevance_score",
-                    "answer_length", "retrieval_count"]:
+        for col in [
+            "latency_ms",
+            "confidence_score",
+            "relevance_score",
+            "answer_length",
+            "retrieval_count",
+        ]:
             if col not in current_df.columns:
                 continue
             curr = current_df[col].dropna().values
@@ -343,7 +340,10 @@ class EvidentlyMonitor:
 
             # ✅ FIXED: Safe length checks for KS test
             if len(curr) < 5 or len(ref) < 5:
-                results[col] = {"drift_detected": False, "stattest_name": "ks_insufficient_data"}
+                results[col] = {
+                    "drift_detected": False,
+                    "stattest_name": "ks_insufficient_data",
+                }
                 continue
 
             try:
@@ -373,15 +373,11 @@ class EvidentlyMonitor:
             if metric in ("latency_ms_p95", "web_search_rate", "human_review_rate"):
                 # Higher = worse
                 if val > threshold:
-                    alerts.append(
-                        f"{metric}: {val:.3f} exceeds threshold {threshold}"
-                    )
+                    alerts.append(f"{metric}: {val:.3f} exceeds threshold {threshold}")
             else:
                 # Lower = worse
                 if val < threshold:
-                    alerts.append(
-                        f"{metric}: {val:.3f} below threshold {threshold}"
-                    )
+                    alerts.append(f"{metric}: {val:.3f} below threshold {threshold}")
 
         return alerts
 
@@ -417,17 +413,14 @@ class EvidentlyMonitor:
                 )
 
         # Drift-based recommendations
-        drifted = [col for col, r in column_drift.items()
-                   if r.get("drift_detected")]
+        drifted = [col for col, r in column_drift.items() if r.get("drift_detected")]
         if "latency_ms" in drifted:
             recommendations.append(
-                "Latency drift detected: system is getting slower. "
-                "Check ChromaDB collection size and FAISS index."
+                "Latency drift detected: system is getting slower. " "Check ChromaDB collection size and FAISS index."
             )
         if "confidence_score" in drifted:
             recommendations.append(
-                "Confidence drift detected: run RAGAs evaluation to identify "
-                "failing query categories."
+                "Confidence drift detected: run RAGAs evaluation to identify " "failing query categories."
             )
 
         # Deduplicate
@@ -444,6 +437,7 @@ class EvidentlyMonitor:
         """Log drift report to MLflow with correlation_id."""
         try:
             import mlflow
+
             mlflow.set_experiment("rag-monitoring")
             with mlflow.start_run(run_name=f"monitoring_{report.run_date}") as run:
                 # Log params
@@ -466,9 +460,7 @@ class EvidentlyMonitor:
                         mlflow.log_metric(f"drift_{col}", float(drift_score))
 
                 # Save report JSON as artifact
-                with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".json", delete=False
-                ) as f:
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
                     json.dump(report.to_dict() | {"window_stats": stats}, f, indent=2)
                     tmp = f.name
 
@@ -502,10 +494,9 @@ __all__ = [
     "DriftReport",
     "get_evidently_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

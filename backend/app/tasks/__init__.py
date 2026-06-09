@@ -12,6 +12,7 @@ Provides async task orchestration for:
 Public API:
 from app.tasks import celery_app, ingest_document, ProgressPublisher
 """
+
 from __future__ import annotations
 from typing import Any
 
@@ -20,13 +21,18 @@ __all__ = [
     # Celery App
     "celery_app",
     # Progress Tracking
-    "ProgressPublisher", "ProgressSubscriber", "TaskStatus", "ProgressEvent",
+    "ProgressPublisher",
+    "ProgressSubscriber",
+    "TaskStatus",
+    "ProgressEvent",
     # Queue Config
-    "get_queue_config", "QueueConfig",
+    "get_queue_config",
+    "QueueConfig",
     # Tasks
     "ingest_document",
     # Task Management
-    "TaskManager", "get_task_manager",
+    "TaskManager",
+    "get_task_manager",
     # Metadata helpers
     "get_tasks_metadata",
 ]
@@ -65,17 +71,17 @@ def __getattr__(name: str) -> Any:
         module_path, attr_name = _LAZY_IMPORTS[name]
         try:
             import importlib
-            module = importlib.import_module(module_path, package=__name__.rpartition('.')[0])
+
+            module = importlib.import_module(module_path, package=__name__.rpartition(".")[0])
             return getattr(module, attr_name)
         except ImportError as e:
-            raise AttributeError(
-                f"Failed to lazy-import '{name}' from '{module_path}': {e}"
-            ) from e
-    
+            raise AttributeError(f"Failed to lazy-import '{name}' from '{module_path}': {e}") from e
+
     if name == "get_tasks_metadata":
         from .celery_app import get_celery_metadata
+
         return get_celery_metadata
-    
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -91,24 +97,32 @@ def _reset_caches_for_tests() -> None:
     """Reset internal caches for clean pytest runs."""
     import importlib
     import sys
-    
+
     # Invalidate import caches
-    for mod_name in [".celery_app", ".ingest_tasks", ".progress", ".priority", ".manager"]:
+    for mod_name in [
+        ".celery_app",
+        ".ingest_tasks",
+        ".progress",
+        ".priority",
+        ".manager",
+    ]:
         try:
             importlib.invalidate_caches()
         except Exception:
             pass
-    
+
     # ✅ FIXED: Reset module-level singletons
     try:
         from . import manager
+
         if hasattr(manager.TaskManager, "_tasks"):
             manager.TaskManager._tasks.clear()
     except ImportError:
         pass
-    
+
     try:
         from . import celery_app
+
         if hasattr(celery_app, "tasks") and hasattr(celery_app.tasks, "registry"):
             celery_app.tasks.registry.clear()
     except ImportError:
@@ -118,13 +132,15 @@ def _reset_caches_for_tests() -> None:
 # DVMELTSS-L: Module initialization logging for observability
 __init_logged: bool = False
 
+
 def _log_module_init() -> None:
     """Log module load — idempotent to avoid spam in multi-worker setups."""
     global __init_logged
     if __init_logged:
         return
-    
+
     import logging
+
     logger = logging.getLogger(__name__)
     logger.debug(  # ✅ Use debug level to avoid prod log spam
         f"Tasks module loaded | version={__version__} | {__description__}"
@@ -142,7 +158,7 @@ def get_tasks_metadata() -> dict[str, Any]:
     from .celery_app import get_celery_metadata
     from .priority import get_priority_metadata
     from .manager import get_task_metadata
-    
+
     return {
         "version": __version__,
         "description": __description__,

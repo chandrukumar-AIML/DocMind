@@ -1,4 +1,4 @@
-﻿# backend/app/workspace/context.py
+# backend/app/workspace/context.py
 # DVMELTSS-FIX: V - Validate, M - Modular, S - Security
 # ASCALE-FIX: S - Separation, C - Coupling
 # ✅ FIXED: Proper immutable pattern + input validation + safe serialization
@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final, Optional, Any
+from typing import Optional, Any
 
 # DVMELTSS-M: Import centralized utilities
 from app.core.workspace_utils import validate_workspace_id, get_chroma_collection_name
@@ -20,6 +20,7 @@ class WorkspaceContext:
     Injected into every handler that needs workspace-aware operations.
     DVMELTSS-M: Frozen dataclass prevents runtime mutation.
     """
+
     workspace_id: str
     user: AuthenticatedUser
     correlation_id: Optional[str] = None
@@ -34,9 +35,8 @@ class WorkspaceContext:
         except Exception:
             # If validation fails, keep original but log warning
             import logging
-            logging.getLogger(__name__).warning(
-                f"Invalid workspace_id in context: {self.workspace_id}"
-            )
+
+            logging.getLogger(__name__).warning(f"Invalid workspace_id in context: {self.workspace_id}")
 
     @property
     def collection_name(self) -> str:
@@ -104,11 +104,12 @@ def workspace_context(
         Frozen WorkspaceContext instance
     """
     corr_id = correlation_id or "context_build"
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_context_inputs(user, correlation_id, corr_id)
     if not is_valid:
         import logging
+
         logging.getLogger(__name__).error(f"[{corr_id}] Invalid context inputs: {error}")
         # Return minimal safe context
         return WorkspaceContext(
@@ -122,6 +123,7 @@ def workspace_context(
         safe_workspace_id = validate_workspace_id(user.workspace_id)
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).warning(f"[{corr_id}] Invalid workspace_id: {e}")
         safe_workspace_id = user.workspace_id  # Keep original but log warning
 
@@ -148,10 +150,9 @@ __all__ = [
     "workspace_context",
     "get_workspace_context_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

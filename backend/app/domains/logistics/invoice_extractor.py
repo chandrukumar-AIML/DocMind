@@ -1,9 +1,8 @@
-﻿# backend/app/domains/logistics/invoice_extractor.py
+# backend/app/domains/logistics/invoice_extractor.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import Final, Optional
@@ -70,6 +69,7 @@ class LineItem:
 @dataclass
 class ExtractedInvoice:
     """Fully structured invoice data."""
+
     source_file: str
     invoice_number: Optional[str] = None
     invoice_date: Optional[str] = None
@@ -94,12 +94,14 @@ class ExtractedInvoice:
     @property
     def is_complete(self) -> bool:
         """Check if all critical fields were extracted."""
-        return all([
-            self.invoice_number,
-            self.invoice_date,
-            self.vendor_name,
-            self.total_amount > 0,
-        ])
+        return all(
+            [
+                self.invoice_number,
+                self.invoice_date,
+                self.vendor_name,
+                self.total_amount > 0,
+            ]
+        )
 
     def to_dict(self) -> dict:
         d = {
@@ -135,11 +137,13 @@ class InvoiceExtractor:
     def __init__(self, model: str = "gpt-4o"):
         # FIXED: Use centralized LLM pool
         self.llm = get_domain_llm(streaming=False, model_override=model)
-        self._llm_retry = retry_async(config=RetryConfig(
-            max_attempts=2,
-            backoff_base=0.5,
-            exceptions=(Exception,),
-        ))
+        self._llm_retry = retry_async(
+            config=RetryConfig(
+                max_attempts=2,
+                backoff_base=0.5,
+                exceptions=(Exception,),
+            )
+        )
 
     async def extract(
         self,
@@ -149,20 +153,18 @@ class InvoiceExtractor:
     ) -> ExtractedInvoice:
         """Extract invoice fields from document chunks."""
         corr_id = correlation_id or generate_domain_correlation_id("logistics")
-        
+
         # Combine first 3 chunks (invoices are usually 1-2 pages)
         text = "\n\n".join(c.page_content for c in chunks[:3])
 
         # FIXED: Use centralized prompt builder
         prompt = build_domain_prompt(INVOICE_PROMPT, text=text[:3000])
-        
+
         try:
             # FIXED: Apply retry + centralized JSON parsing
-            response = await self._llm_retry(
-                lambda: self.llm.ainvoke([{"role": "user", "content": prompt}])
-            )
+            response = await self._llm_retry(lambda: self.llm.ainvoke([{"role": "user", "content": prompt}]))
             data = safe_parse_llm_json(response.content, default={})
-            
+
             is_valid, error = validate_logistics_output(data)
             if not is_valid:
                 logger.warning(f"[{corr_id}] Invalid invoice output: {error}")
@@ -180,7 +182,12 @@ class InvoiceExtractor:
             ]
 
             # Compute confidence based on field completeness
-            critical_fields = ["invoice_number", "invoice_date", "vendor_name", "total_amount"]
+            critical_fields = [
+                "invoice_number",
+                "invoice_date",
+                "vendor_name",
+                "total_amount",
+            ]
             filled = sum(1 for f in critical_fields if data.get(f))
             confidence = filled / len(critical_fields)
 
@@ -213,10 +220,9 @@ class InvoiceExtractor:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["InvoiceExtractor", "ExtractedInvoice", "LineItem"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

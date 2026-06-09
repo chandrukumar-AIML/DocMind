@@ -12,6 +12,7 @@ Exposes:
 - AgentRAGChain: Public async API for query/stream
 - get_agent_graph / build_agent_graph: Graph compilation utilities
 """
+
 from __future__ import annotations
 from typing import Any
 
@@ -47,12 +48,11 @@ def __getattr__(name: str) -> Any:
         module_path, attr_name = _LAZY_IMPORTS[name]
         try:
             import importlib
-            module = importlib.import_module(module_path, package=__name__.rpartition('.')[0])
+
+            module = importlib.import_module(module_path, package=__name__.rpartition(".")[0])
             return getattr(module, attr_name)
         except ImportError as e:
-            raise AttributeError(
-                f"Failed to lazy-import '{name}' from '{module_path}': {e}"
-            ) from e
+            raise AttributeError(f"Failed to lazy-import '{name}' from '{module_path}': {e}") from e
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -64,13 +64,15 @@ def __dir__() -> list[str]:
 # DVMELTSS-L: Module initialization logging for observability
 __init_logged: bool = False
 
+
 def _log_module_init() -> None:
     """Log module load — idempotent to avoid spam in multi-worker setups."""
     global __init_logged
     if __init_logged:
         return
-    
+
     import logging
+
     logger = logging.getLogger(__name__)
     logger.debug(  # ✅ Use debug level to avoid prod log spam
         f"Agent module loaded | version={__version__} | arch={__agent_architecture__}"

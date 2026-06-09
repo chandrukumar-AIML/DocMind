@@ -3,6 +3,7 @@
 Webhook dispatcher: HMAC-SHA256 signed delivery with exponential backoff retry
 and PostgreSQL dead-letter queue for failed events.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -10,10 +11,9 @@ import hashlib
 import hmac
 import json
 import logging
-import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from sqlalchemy import text
@@ -25,12 +25,13 @@ logger = logging.getLogger(__name__)
 
 # Webhook delivery settings
 _MAX_RETRIES = 3
-_BASE_DELAY = 1.0          # seconds (doubles each attempt)
-_DELIVERY_TIMEOUT = 10.0   # seconds per HTTP call
+_BASE_DELAY = 1.0  # seconds (doubles each attempt)
+_DELIVERY_TIMEOUT = 10.0  # seconds per HTTP call
 _MAX_PAYLOAD_BYTES = 64 * 1024  # 64 KB safety cap
 
 
 # ── Schema bootstrap ──────────────────────────────────────────────────────
+
 
 async def ensure_webhook_schema() -> None:
     """Create webhooks and webhook_deliveries tables if they don't exist."""
@@ -40,7 +41,8 @@ async def ensure_webhook_schema() -> None:
             logger.warning("Webhook schema bootstrap skipped: not PostgreSQL")
             return
 
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS webhooks (
                 id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 workspace_id  VARCHAR(64)  NOT NULL,
@@ -53,9 +55,11 @@ async def ensure_webhook_schema() -> None:
                 created_at    TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 updated_at    TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             )
-        """))
+        """)
+        )
 
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS webhook_deliveries (
                 id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 webhook_id    UUID         NOT NULL,
@@ -69,7 +73,8 @@ async def ensure_webhook_schema() -> None:
                 delivered_at  TIMESTAMP WITH TIME ZONE,
                 created_at    TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             )
-        """))
+        """)
+        )
 
         # Indexes for fast lookups
         for idx_sql in [
@@ -84,6 +89,7 @@ async def ensure_webhook_schema() -> None:
 
 # ── Signature ─────────────────────────────────────────────────────────────
 
+
 def _sign_payload(payload_bytes: bytes, secret: str) -> str:
     """Return 'sha256=<hex>' HMAC-SHA256 signature (GitHub-style)."""
     sig = hmac.new(secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
@@ -91,6 +97,7 @@ def _sign_payload(payload_bytes: bytes, secret: str) -> str:
 
 
 # ── Core delivery ─────────────────────────────────────────────────────────
+
 
 async def _deliver_once(
     url: str,
@@ -115,7 +122,11 @@ async def _deliver_once(
         async with httpx.AsyncClient(timeout=_DELIVERY_TIMEOUT) as client:
             resp = await client.post(url, content=body, headers=headers)
             success = 200 <= resp.status_code < 300
-            return success, resp.status_code, None if success else f"HTTP {resp.status_code}"
+            return (
+                success,
+                resp.status_code,
+                None if success else f"HTTP {resp.status_code}",
+            )
     except httpx.TimeoutException:
         return False, None, "Delivery timeout"
     except Exception as e:
@@ -135,7 +146,8 @@ async def _log_delivery(
     """Persist delivery record (success or DLQ entry) to PostgreSQL."""
     try:
         async with async_engine.begin() as conn:
-            await conn.execute(text("""
+            await conn.execute(
+                text("""
                 INSERT INTO webhook_deliveries
                     (id, webhook_id, workspace_id, event_type, payload,
                      attempt, status, http_status, error_msg, delivered_at)
@@ -143,17 +155,19 @@ async def _log_delivery(
                     (:id, :webhook_id, :workspace_id, :event_type, CAST(:payload AS jsonb),
                      :attempt, :status, :http_status, :error_msg,
                      CASE WHEN :status = 'delivered' THEN NOW() ELSE NULL END)
-            """), {
-                "id": str(uuid.uuid4()),
-                "webhook_id": webhook_id,
-                "workspace_id": workspace_id,
-                "event_type": event_type,
-                "payload": json.dumps(payload, default=str),
-                "attempt": attempt,
-                "status": status,
-                "http_status": http_status,
-                "error_msg": error_msg,
-            })
+            """),
+                {
+                    "id": str(uuid.uuid4()),
+                    "webhook_id": webhook_id,
+                    "workspace_id": workspace_id,
+                    "event_type": event_type,
+                    "payload": json.dumps(payload, default=str),
+                    "attempt": attempt,
+                    "status": status,
+                    "http_status": http_status,
+                    "error_msg": error_msg,
+                },
+            )
     except Exception as e:
         logger.warning(f"Could not log webhook delivery: {e}")
 
@@ -179,15 +193,18 @@ async def dispatch_event(
     # Load matching webhooks
     try:
         async with async_engine.begin() as conn:
-            rows = await conn.execute(text("""
+            rows = await conn.execute(
+                text("""
                 SELECT id, url, secret FROM webhooks
                 WHERE workspace_id = :ws
                   AND is_active = TRUE
                   AND events @> CAST(:event_json AS jsonb)
-            """), {
-                "ws": workspace_id,
-                "event_json": json.dumps([event_type]),
-            })
+            """),
+                {
+                    "ws": workspace_id,
+                    "event_json": json.dumps([event_type]),
+                },
+            )
             hooks = rows.fetchall()
     except Exception as e:
         logger.warning(f"[{corr_id}] Could not load webhooks for dispatch: {e}")
@@ -207,26 +224,27 @@ async def dispatch_event(
                 delay = _BASE_DELAY * (2 ** (attempt - 2))
                 await asyncio.sleep(delay)
 
-            success, last_status, last_error = await _deliver_once(
-                url, secret, payload, delivery_id
-            )
+            success, last_status, last_error = await _deliver_once(url, secret, payload, delivery_id)
             if success:
                 break
             logger.warning(
-                f"[{corr_id}] Webhook {str(hook_id)[:8]} attempt {attempt}/{_MAX_RETRIES} "
-                f"failed: {last_error}"
+                f"[{corr_id}] Webhook {str(hook_id)[:8]} attempt {attempt}/{_MAX_RETRIES} " f"failed: {last_error}"
             )
 
         final_status = "delivered" if success else "failed"
         await _log_delivery(
-            str(hook_id), workspace_id, event_type, payload,
+            str(hook_id),
+            workspace_id,
+            event_type,
+            payload,
             _MAX_RETRIES if not success else 1,
-            final_status, last_status, last_error,
+            final_status,
+            last_status,
+            last_error,
         )
         if not success:
             logger.error(
-                f"[{corr_id}] Webhook {str(hook_id)[:8]} dead-lettered after "
-                f"{_MAX_RETRIES} attempts: {last_error}"
+                f"[{corr_id}] Webhook {str(hook_id)[:8]} dead-lettered after " f"{_MAX_RETRIES} attempts: {last_error}"
             )
 
 

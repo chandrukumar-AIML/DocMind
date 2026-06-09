@@ -1,0 +1,44 @@
+# backend/ruff.toml — Ruff linter configuration for DocuMind AI
+# Run: ruff check app/  (also used by CI: ruff check app/ --output-format=github)
+
+line-length = 120
+
+[lint]
+# Use the default "E, F" select. Do not add extra selects here — new rule
+# categories should be opted in deliberately with a dedicated cleanup pass.
+
+ignore = [
+  # F841 — "local variable assigned to but never used"
+  # Retry loops accumulate `last_error` across iterations and log it after the
+  # loop body. Ruff cannot trace cross-iteration value flow and flags every
+  # loop-body assignment as unused.
+  "F841",
+
+  # E712 — "avoid equality comparisons to True"
+  # SQLAlchemy 2.0 Core filter expressions use `.filter(col == True)` to emit
+  # `WHERE col = TRUE` SQL. Plain `.filter(col)` produces a different query.
+  # This is idiomatic ORM code, not a bug.
+  "E712",
+
+  # E402 — "module level import not at top of file"
+  # Guarded/deferred imports inside try-blocks (e.g. PaddleOCR on Windows)
+  # must follow the guard logic and cannot be hoisted to the top.
+  "E402",
+
+  # E731 — "do not assign a lambda expression, use a def"
+  # One lambda in agent/graph.py is used as a dataclass field default_factory
+  # and is cleaner inline than a standalone named function.
+  "E731",
+
+  # E741 — "ambiguous variable name 'l'"
+  # Parsing-utility loop variables; renaming deferred to a dedicated readability
+  # pass to avoid noisy diffs across 8 files.
+  "E741",
+]
+
+[lint.per-file-ignores]
+# __init__.py modules re-export submodule symbols to create a public API surface.
+# These names are "unused" inside __init__.py itself but imported by callers via
+# `from app.auth import create_access_token`. F401 suppression is the standard
+# pattern for package public-API modules.
+"**/__init__.py" = ["F401"]

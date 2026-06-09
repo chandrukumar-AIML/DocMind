@@ -1,7 +1,8 @@
-﻿"""Vision-capable LLM provider helper.
+"""Vision-capable LLM provider helper.
 
 # ADDED: Central import point for routes that need image/table reasoning.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -22,10 +23,9 @@ def get_vision_llm(
 
 
 __all__ = ["get_vision_llm"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

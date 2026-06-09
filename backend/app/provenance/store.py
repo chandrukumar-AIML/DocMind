@@ -1,4 +1,4 @@
-﻿# backend/app/provenance/store.py
+# backend/app/provenance/store.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, M - Modular
 # ASCALE-FIX: A - Async, S - Separation, E - Error propagation
 # ACID-INDEX: C - Constraints, I - Indexes, N - N+1, D - Data types
@@ -22,7 +22,7 @@ from sqlalchemy.orm import selectinload
 
 # DVMELTSS-M: Import centralized utilities
 from app.config import get_settings
-from app.core.time_utils import utcnow, format_iso
+from app.core.time_utils import format_iso
 from app.provenance.highlight import compute_highlight_color
 from .models import Base, Answer, Citation, DocumentStore
 
@@ -52,7 +52,7 @@ def get_engine() -> AsyncEngine:
     """
     settings = get_settings()
     version_key = _get_engine_version_key(settings)
-    
+
     if version_key not in _engines:
         db_url = getattr(settings, "database_url", "")
 
@@ -75,7 +75,7 @@ def get_engine() -> AsyncEngine:
             echo=False,
         )
         logger.info(f"PostgreSQL engine created: {db_url.split('@')[-1]}")
-    
+
     return _engines[version_key]
 
 
@@ -83,14 +83,14 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     """Get cached async session factory."""
     settings = get_settings()
     version_key = _get_engine_version_key(settings)
-    
+
     if version_key not in _session_factories:
         _session_factories[version_key] = async_sessionmaker(
             bind=get_engine(),
             expire_on_commit=False,
             class_=AsyncSession,
         )
-    
+
     return _session_factories[version_key]
 
 
@@ -197,8 +197,7 @@ class ProvenanceStore:
 
                     # Create citation records
                     for i, cit in enumerate(citations):
-                        confidence = float(cit.get("confidence_score",
-                                                  cit.get("rerank_score", 0.0)))
+                        confidence = float(cit.get("confidence_score", cit.get("rerank_score", 0.0)))
                         highlight_color = compute_highlight_color(confidence)
 
                         # FIXED: Safe page number conversion (handle 1-indexed input)
@@ -241,7 +240,7 @@ class ProvenanceStore:
     ) -> str:
         """Register a document for PDF viewer access."""
         corr_id = correlation_id or "doc_register"
-        
+
         # ✅ Validate inputs
         is_valid, error = self._validate_inputs(None, None, source_file, workspace_id, corr_id)
         if not is_valid:
@@ -295,13 +294,13 @@ class ProvenanceStore:
     ) -> Optional[dict]:
         """Get a single answer with all its citations."""
         corr_id = correlation_id or "provenance_get"
-        
+
         try:
             answer_uuid = uuid.UUID(answer_id)
         except ValueError:
             logger.warning(f"[{corr_id}] Invalid answer_id format: {answer_id}")
             return None
-            
+
         try:
             async with self._session_factory() as session:
                 # ✅ FIXED: Use selectinload to eagerly load citations
@@ -336,7 +335,7 @@ class ProvenanceStore:
         List answers with their citations, optionally filtered by source file.
         """
         corr_id = correlation_id or "list_answers"
-        
+
         # ✅ Validate inputs
         is_valid, error = self._validate_inputs(None, None, source_file, workspace_id, corr_id)
         if not is_valid:
@@ -355,10 +354,8 @@ class ProvenanceStore:
                 if source_file:
                     # Filter to answers that cited this document
                     # FIXED: Use efficient join with proper index
-                    stmt = stmt.join(Citation).where(
-                        Citation.source_file == source_file
-                    ).distinct()
-                    
+                    stmt = stmt.join(Citation).where(Citation.source_file == source_file).distinct()
+
                 results = await asyncio.wait_for(
                     session.scalars(stmt),
                     timeout=_DB_TIMEOUT,
@@ -384,7 +381,7 @@ class ProvenanceStore:
         Used by the PDF viewer to show which answers cited each page.
         """
         corr_id = correlation_id or "citations_doc"
-        
+
         # ✅ Validate inputs
         is_valid, error = self._validate_inputs(None, None, source_file, workspace_id, corr_id)
         if not is_valid:
@@ -428,12 +425,17 @@ class ProvenanceStore:
         Shows which pages are most frequently cited.
         """
         corr_id = correlation_id or "citation_stats"
-        
+
         # ✅ Validate inputs
         is_valid, error = self._validate_inputs(None, None, source_file, workspace_id, corr_id)
         if not is_valid:
             logger.error(f"[{corr_id}] Invalid inputs: {error}")
-            return {"source_file": source_file, "total_citations": 0, "pages": [], "correlation_id": corr_id}
+            return {
+                "source_file": source_file,
+                "total_citations": 0,
+                "pages": [],
+                "correlation_id": corr_id,
+            }
 
         try:
             async with self._session_factory() as session:
@@ -442,10 +444,13 @@ class ProvenanceStore:
                     Citation.source_file == source_file,
                     Citation.workspace_id == workspace_id,
                 )
-                total = await asyncio.wait_for(
-                    session.scalar(total_stmt),
-                    timeout=_DB_TIMEOUT,
-                ) or 0
+                total = (
+                    await asyncio.wait_for(
+                        session.scalar(total_stmt),
+                        timeout=_DB_TIMEOUT,
+                    )
+                    or 0
+                )
 
                 # Citations per page
                 page_stmt = (
@@ -483,10 +488,20 @@ class ProvenanceStore:
                 }
         except asyncio.TimeoutError:
             logger.error(f"[{corr_id}] Citation stats timed out after {_DB_TIMEOUT}s")
-            return {"source_file": source_file, "total_citations": 0, "pages": [], "correlation_id": corr_id}
+            return {
+                "source_file": source_file,
+                "total_citations": 0,
+                "pages": [],
+                "correlation_id": corr_id,
+            }
         except Exception as e:
             logger.error(f"[{corr_id}] Failed to get citation stats: {e}")
-            return {"source_file": source_file, "total_citations": 0, "pages": [], "correlation_id": corr_id}
+            return {
+                "source_file": source_file,
+                "total_citations": 0,
+                "pages": [],
+                "correlation_id": corr_id,
+            }
 
     async def search_citations(
         self,
@@ -500,12 +515,12 @@ class ProvenanceStore:
         ✅ FIXED: Use parameterized query to prevent SQL injection.
         """
         corr_id = correlation_id or "search_citations"
-        
+
         # ✅ Validate inputs
         if not isinstance(query_text, str) or not query_text.strip():
             logger.error(f"[{corr_id}] query_text must be a non-empty string")
             return []
-        
+
         is_valid, error = self._validate_inputs(None, None, None, workspace_id, corr_id)
         if not is_valid:
             logger.error(f"[{corr_id}] Invalid inputs: {error}")
@@ -552,7 +567,7 @@ class ProvenanceStore:
         Returns number of citations deleted.
         """
         corr_id = correlation_id or "delete_provenance"
-        
+
         # ✅ Validate inputs
         is_valid, error = self._validate_inputs(None, None, source_file, workspace_id, corr_id)
         if not is_valid:
@@ -563,12 +578,9 @@ class ProvenanceStore:
             async with self._session_factory() as session:
                 async with session.begin():
                     # ✅ FIXED: Delete citations first (foreign key constraint)
-                    stmt = (
-                        delete(Citation)
-                        .where(
-                            Citation.source_file == source_file,
-                            Citation.workspace_id == workspace_id,
-                        )
+                    stmt = delete(Citation).where(
+                        Citation.source_file == source_file,
+                        Citation.workspace_id == workspace_id,
                     )
                     result = await asyncio.wait_for(
                         session.execute(stmt),
@@ -577,12 +589,9 @@ class ProvenanceStore:
                     deleted = result.rowcount
 
                     # Also remove document store entry
-                    doc_stmt = (
-                        delete(DocumentStore)
-                        .where(
-                            DocumentStore.source_file == source_file,
-                            DocumentStore.workspace_id == workspace_id,
-                        )
+                    doc_stmt = delete(DocumentStore).where(
+                        DocumentStore.source_file == source_file,
+                        DocumentStore.workspace_id == workspace_id,
                     )
                     await session.execute(doc_stmt)
 
@@ -611,10 +620,7 @@ class ProvenanceStore:
             "latency_seconds": answer.latency_seconds,
             "created_at": format_iso(answer.created_at),
             "correlation_id": answer.correlation_id or correlation_id,
-            "citations": [
-                ProvenanceStore._citation_to_dict(c, correlation_id)
-                for c in (answer.citations or [])
-            ],
+            "citations": [ProvenanceStore._citation_to_dict(c, correlation_id) for c in (answer.citations or [])],
         }
 
     @staticmethod
@@ -655,10 +661,9 @@ __all__ = [
     "get_session_factory",
     "get_provenance_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

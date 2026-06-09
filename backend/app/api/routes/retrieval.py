@@ -1,4 +1,4 @@
-﻿# backend/app/api/routes/retrieval.py
+# backend/app/api/routes/retrieval.py
 # DVMELTSS-FIX: V/E/M/S + ASCALE-A/E + BATMAN-A
 # ✅ FIXED: Pydantic v2 config + input validation + proper sync wrappers + timeout handling
 
@@ -6,16 +6,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
-import uuid
 from typing import Annotated, Optional, Any, Final
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, ConfigDict
 
-from app.config import get_settings, lazy_settings as settings  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.ids import generate_correlation_id
-from app.core.exceptions import ValidationError, ServiceUnavailableError
 from app.auth.dependencies import get_current_user, require_admin, AuthenticatedUser
 from app.models import ErrorResponse
 from app.retrieval import HybridRetriever, RetrievalBenchmark, RETRIEVAL_PROFILES
@@ -40,7 +36,7 @@ class HybridSearchRequest(BaseModel):
     mode: str = Field(
         default="hybrid",
         pattern="^(hybrid|bm25_only|vector_only)$",
-        description="hybrid | bm25_only | vector_only"
+        description="hybrid | bm25_only | vector_only",
     )
     bm25_weight: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     vector_weight: Optional[float] = Field(default=None, ge=0.0, le=1.0)
@@ -51,12 +47,14 @@ class HybridSearchRequest(BaseModel):
     # ✅ FIXED: Pydantic v2 style config
     model_config = ConfigDict(
         json_schema_extra={
-            "examples": [{
-                "query": "What are the Q3 revenue risks?",
-                "k": 5,
-                "mode": "hybrid",
-                "document_type": "financial"
-            }]
+            "examples": [
+                {
+                    "query": "What are the Q3 revenue risks?",
+                    "k": 5,
+                    "mode": "hybrid",
+                    "document_type": "financial",
+                }
+            ]
         }
     )
 
@@ -71,7 +69,7 @@ class BenchmarkRequest(BaseModel):
         ...,
         min_length=1,
         max_length=100,
-        description="List of {query, relevant_chunk_ids} for evaluation"
+        description="List of {query, relevant_chunk_ids} for evaluation",
     )
     k: int = Field(default=3, ge=1, le=10)
     document_type: str = Field(default="general")
@@ -84,12 +82,12 @@ class BenchmarkRequest(BaseModel):
                 "ground_truth": [
                     {
                         "query": "What is the total revenue?",
-                        "relevant_chunk_ids": ["chunk_123", "chunk_456"]
+                        "relevant_chunk_ids": ["chunk_123", "chunk_456"],
                     }
                 ],
                 "k": 3,
                 "document_type": "financial",
-                "run_name": "q3_finance_benchmark"
+                "run_name": "q3_finance_benchmark",
             }
         }
     )
@@ -125,6 +123,7 @@ def _validate_retrieval_inputs(
 # PUBLIC: FastAPI Endpoints
 # ========================================================================
 
+
 @router.post(
     "/hybrid-search",
     summary="Hybrid BM25 + vector search with RRF fusion",
@@ -146,19 +145,23 @@ async def hybrid_search(
     """
     # ✅ Validate inputs
     is_valid, error = _validate_retrieval_inputs(
-        request.query, request.k, request.document_type, request.mode,
-        None, request.workspace_id, request.correlation_id or "hybrid_search"
+        request.query,
+        request.k,
+        request.document_type,
+        request.mode,
+        None,
+        request.workspace_id,
+        request.correlation_id or "hybrid_search",
     )
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     # DVMELTSS-S: Use user workspace unless admin override provided
     workspace_id = request.workspace_id or user.workspace_id
     corr_id = request.correlation_id or generate_correlation_id("hybrid_search")
 
     logger.info(
-        f"[{corr_id}] Hybrid search: user={user.user_id[:8]}... "
-        f"ws={workspace_id} mode={request.mode} k={request.k}"
+        f"[{corr_id}] Hybrid search: user={user.user_id[:8]}... " f"ws={workspace_id} mode={request.mode} k={request.k}"
     )
 
     try:
@@ -245,17 +248,22 @@ async def run_retrieval_benchmark(
     """
     Run comparative benchmark of all retrieval strategies.
     Results are automatically logged to MLflow.
-    
+
     WARNING: This is resource-intensive. Admin access required.
     """
     # ✅ Validate inputs
     is_valid, error = _validate_retrieval_inputs(
-        None, request.k, request.document_type, None,
-        request.ground_truth, request.workspace_id, "benchmark"
+        None,
+        request.k,
+        request.document_type,
+        None,
+        request.ground_truth,
+        request.workspace_id,
+        "benchmark",
     )
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     # DVMELTSS-S: Workspace isolation
     workspace_id = request.workspace_id or user.workspace_id
     corr_id = generate_correlation_id("benchmark")
@@ -289,7 +297,9 @@ async def run_retrieval_benchmark(
             "workspace_id": workspace_id,
             "status": "completed",
             "summary": summary,
-            "per_query": [r.to_metrics(k=request.k) if hasattr(r, "to_metrics") else {} for r in getattr(suite, "results", [])],
+            "per_query": [
+                r.to_metrics(k=request.k) if hasattr(r, "to_metrics") else {} for r in getattr(suite, "results", [])
+            ],
             "profiles": RETRIEVAL_PROFILES or {},
             "mlflow_logged": True,
         }
@@ -323,13 +333,13 @@ async def get_retrieval_profiles(
     """
     corr_id = generate_correlation_id("get_profiles")
     logger.debug(f"[{corr_id}] Profiles requested: user={user.user_id[:8]}...")
-    
+
     try:
         profiles = RETRIEVAL_PROFILES or {}
     except Exception as e:
         logger.warning(f"[{corr_id}] Failed to load profiles: {e}")
         profiles = {}
-    
+
     return {
         "correlation_id": corr_id,
         "workspace_id": user.workspace_id,
@@ -341,7 +351,11 @@ async def get_retrieval_profiles(
 def get_retrieval_metadata() -> dict[str, Any]:
     """✅ NEW: Return retrieval API metadata for monitoring."""
     return {
-        "endpoints": ["/retrieval/hybrid-search", "/retrieval/benchmark", "/retrieval/profiles"],
+        "endpoints": [
+            "/retrieval/hybrid-search",
+            "/retrieval/benchmark",
+            "/retrieval/profiles",
+        ],
         "timeouts": {
             "search_seconds": _SEARCH_TIMEOUT,
             "benchmark_seconds": _BENCHMARK_TIMEOUT,
@@ -358,10 +372,9 @@ def get_retrieval_metadata() -> dict[str, Any]:
 
 
 __all__ = ["router", "get_retrieval_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

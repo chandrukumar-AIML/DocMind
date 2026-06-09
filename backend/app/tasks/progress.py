@@ -1,4 +1,4 @@
-﻿# backend/app/tasks/progress.py
+# backend/app/tasks/progress.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, S - Security
 # BATMAN-FIX: A - True async Redis, T - Retry logic
 # ASCALE-FIX: E - Error propagation, L - Logging
@@ -6,18 +6,19 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Final, Optional
 
 # DVMELTSS-M: Import centralized utilities
 from app.config import get_settings
-from app.core.redis_utils import get_async_redis, safe_evalsha, sanitize_redis_key
-from app.core.celery_utils import run_async_in_task  # ✅ NEW: For safe async execution in Celery
+from app.core.redis_utils import get_async_redis, sanitize_redis_key
+from app.core.celery_utils import (
+    run_async_in_task,
+)  # ✅ NEW: For safe async execution in Celery
 from app.core.retry import retry_async, RetryConfig
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class TaskStatus(str, Enum):
 # ✅ NEW: Custom JSON encoder for ProgressEvent
 class _ProgressEventEncoder(json.JSONEncoder):
     """Handle non-serializable types in ProgressEvent details."""
+
     def default(self, obj: Any) -> Any:
         if isinstance(obj, (time.struct_time,)):
             return time.mktime(obj)
@@ -59,16 +61,17 @@ class ProgressEvent:
     Consumed by the WebSocket endpoint and forwarded to the browser.
     FIXED: Frozen for immutability + added correlation_id.
     """
+
     task_id: str
     status: str
     stage: str
     message: str
-    progress: float          # 0.0–100.0
+    progress: float  # 0.0–100.0
     timestamp: float
     filename: str = ""
     details: dict = field(default_factory=dict)
     correlation_id: Optional[str] = None
-    
+
     # Completion details
     page_count: int = 0
     chunk_count: int = 0
@@ -88,11 +91,13 @@ class ProgressEvent:
             "correlation_id": self.correlation_id,
         }
         if self.status == TaskStatus.COMPLETE:
-            d.update({
-                "page_count": self.page_count,
-                "chunk_count": self.chunk_count,
-                "latency_seconds": round(self.latency_seconds, 2),
-            })
+            d.update(
+                {
+                    "page_count": self.page_count,
+                    "chunk_count": self.chunk_count,
+                    "latency_seconds": round(self.latency_seconds, 2),
+                }
+            )
         if self.status == TaskStatus.FAILED:
             d["error"] = self.error
         # ✅ FIXED: Use custom encoder for non-serializable values
@@ -123,20 +128,20 @@ class ProgressPublisher:
     """
     Publishes task progress events to Redis.
     Used inside Celery tasks to report progress.
-    
+
     Each event is:
     1. Published to channel task:{task_id} (real-time WebSocket delivery)
     2. Stored as task_progress:{task_id} (catch-up for late subscribers)
     3. Added to task_history:{task_id} list (full event log)
-    
+
     FIXED: Uses async Redis via centralized utilities.
     """
-    
+
     CHANNEL_PREFIX: Final = "task"
     STATE_PREFIX: Final = "task_progress"
     HISTORY_PREFIX: Final = "task_history"
     TTL_SECONDS: Final = 600  # 10 minutes
-    
+
     # Retry config for Redis operations
     _REDIS_RETRY_CONFIG: Final = RetryConfig(
         max_attempts=3,
@@ -174,7 +179,7 @@ class ProgressPublisher:
         if not is_valid:
             logger.error(f"[{correlation_id or 'progress'}] Invalid inputs: {error}")
             return
-        
+
         event = ProgressEvent(
             task_id=task_id,
             status=str(status),
@@ -189,15 +194,15 @@ class ProgressPublisher:
         )
         event_json = event.to_json()
         corr_id = correlation_id or "progress_unknown"
-        
+
         try:
             redis = await self._get_redis()
-            
+
             # FIXED: Use centralized key sanitization
             channel_key = sanitize_redis_key(f"{self.CHANNEL_PREFIX}:{task_id}")
             state_key = sanitize_redis_key(f"{self.STATE_PREFIX}:{task_id}")
             history_key = sanitize_redis_key(f"{self.HISTORY_PREFIX}:{task_id}")
-            
+
             # FIXED: Use retry wrapper for Redis operations
             @retry_async(config=self._REDIS_RETRY_CONFIG)
             async def _publish():
@@ -207,9 +212,9 @@ class ProgressPublisher:
                 pipe.rpush(history_key, event_json)
                 pipe.expire(history_key, self.TTL_SECONDS)
                 await pipe.execute()
-            
+
             await _publish()
-            
+
         except Exception as e:
             logger.warning(f"[{corr_id}] Progress publish failed: {e}")
 
@@ -229,10 +234,20 @@ class ProgressPublisher:
         Sync wrapper for Celery tasks.
         ✅ FIXED: Use run_async_in_task helper for safe async execution.
         """
+
         async def _do_publish():
-            await self.publish_async(task_id, status, stage, message, progress, 
-                                   filename, details, correlation_id, **kwargs)
-        
+            await self.publish_async(
+                task_id,
+                status,
+                stage,
+                message,
+                progress,
+                filename,
+                details,
+                correlation_id,
+                **kwargs,
+            )
+
         # ✅ Use centralized helper to avoid deadlock in Celery
         run_async_in_task(_do_publish)
 
@@ -252,8 +267,10 @@ class ProgressPublisher:
         Sync wrapper for HTTP polling fallback.
         ✅ FIXED: Use run_async_in_task helper.
         """
+
         async def _do_get():
             return await self.get_current_state_async(task_id)
+
         return run_async_in_task(_do_get)
 
     async def get_history_async(self, task_id: str) -> list[dict]:
@@ -271,8 +288,10 @@ class ProgressPublisher:
         Sync wrapper.
         ✅ FIXED: Use run_async_in_task helper.
         """
+
         async def _do_get():
             return await self.get_history_async(task_id)
+
         return run_async_in_task(_do_get)
 
     def complete(
@@ -335,6 +354,7 @@ class ProgressSubscriber:
         ✅ FIXED: Handle connection errors gracefully.
         """
         import redis as redis_sync
+
         try:
             redis = redis_sync.from_url(self.redis_url, decode_responses=True)
             pubsub = redis.pubsub(ignore_subscribe_messages=True)
@@ -360,8 +380,10 @@ class ProgressSubscriber:
         Sync wrapper for HTTP polling.
         ✅ FIXED: Use run_async_in_task helper.
         """
+
         async def _do_get():
             return await self.get_current_state_async(task_id)
+
         return run_async_in_task(_do_get)
 
 
@@ -388,10 +410,9 @@ __all__ = [
     "ProgressEvent",
     "get_progress_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

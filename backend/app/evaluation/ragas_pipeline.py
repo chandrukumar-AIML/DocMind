@@ -1,4 +1,4 @@
-﻿# backend/app/evaluation/ragas_pipeline.py
+# backend/app/evaluation/ragas_pipeline.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, M - Modular
 # BATMAN-FIX: A - True async orchestration, T - Concurrent execution
 # ASCALE-FIX: L - Layered architecture, E - Error propagation
@@ -10,12 +10,12 @@ import inspect
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Final, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 # DVMELTSS-M: Import centralized utilities
 from app.config import get_settings
 from app.core.eval_utils import generate_eval_correlation_id
-from .ragas_dataset import DatasetManager, EvalDataset
+from .ragas_dataset import DatasetManager
 from .ragas_evaluator import RAGAsEvaluator, RAGAsSample, RAGAsReport
 from .rag_metrics import RAGMetricsCalculator
 from .alert_engine import AlertEngine
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class PipelineConfig:
     """Immutable pipeline configuration."""
+
     domain: str
     dataset_version: str = "latest"
     concurrency: int = 3
@@ -35,14 +36,16 @@ class PipelineConfig:
     enable_alerts: bool = True
     correlation_id: Optional[str] = None  # FIXED: Added to config
     mlflow_run_id: Optional[str] = None
-    
+
     # Alert thresholds (overrides defaults in AlertEngine)
-    alert_thresholds: Dict[str, Dict[str, float]] = field(default_factory=lambda: {
-        "faithfulness": {"warning": 0.75, "critical": 0.60},
-        "answer_relevancy": {"warning": 0.65, "critical": 0.50},
-        "context_precision": {"warning": 0.60, "critical": 0.45},
-        "context_recall": {"warning": 0.55, "critical": 0.40},
-    })
+    alert_thresholds: Dict[str, Dict[str, float]] = field(
+        default_factory=lambda: {
+            "faithfulness": {"warning": 0.75, "critical": 0.60},
+            "answer_relevancy": {"warning": 0.65, "critical": 0.50},
+            "context_precision": {"warning": 0.60, "critical": 0.45},
+            "context_recall": {"warning": 0.55, "critical": 0.40},
+        }
+    )
 
     def __post_init__(self):
         if self.concurrency < 1 or self.concurrency > 10:
@@ -54,6 +57,7 @@ class PipelineConfig:
 @dataclass
 class PipelineResult:
     """Aggregated output from a complete evaluation pipeline run."""
+
     config: PipelineConfig
     ragas_report: RAGAsReport
     retrieval_report: Optional[RetrievalEvalSuite] = None
@@ -87,7 +91,7 @@ class PipelineResult:
 class RAGAsPipeline:
     """
     End-to-end async evaluation pipeline for RAG systems.
-    
+
     Orchestrates:
     1. Dataset loading & validation
     2. RAG generation (sync or async rag_fn)
@@ -98,26 +102,26 @@ class RAGAsPipeline:
     """
 
     def __init__(
-        self, 
-        config: PipelineConfig, 
+        self,
+        config: PipelineConfig,
         openai_api_key: Optional[str] = None,
         correlation_id: Optional[str] = None,  # FIXED: Added param
     ):
         self.config = config
         self.correlation_id = correlation_id or config.correlation_id or generate_eval_correlation_id("pipeline")
-        
+
         settings = get_settings()
         api_key = openai_api_key or settings.openai_api_key
-        
+
         if not api_key:
             raise ValueError("OpenAI API key required for evaluation pipeline")
-            
+
         self.dataset_mgr = DatasetManager()
         self.evaluator = RAGAsEvaluator(model="gpt-4o", eval_model="gpt-4o")
         self.metrics_calc = RAGMetricsCalculator(openai_api_key=api_key)
         self.retrieval_eval = RetrievalEvaluator()
         self.alert_engine = AlertEngine()
-        
+
         logger.info(
             f"[{self.correlation_id}] RAGAsPipeline initialized: "
             f"domain={config.domain}, concurrency={config.concurrency}"
@@ -133,7 +137,7 @@ class RAGAsPipeline:
         corr_id = correlation_id or self.correlation_id
         start = time.perf_counter()
         total_samples, success, failed = 0, 0, 0
-        
+
         try:
             # 1️⃣ Load & validate dataset
             dataset = self.dataset_mgr.load(
@@ -143,23 +147,27 @@ class RAGAsPipeline:
             )
             if not dataset or not dataset.samples:
                 raise ValueError(f"No valid samples found for {self.config.domain} v{self.config.dataset_version}")
-                
+
             total_samples = len(dataset.samples)
             logger.info(f"[{corr_id}] Loaded dataset: {total_samples} samples")
-            
+
             # 2️⃣ Generate answers & contexts
             samples = await self._run_generation(
-                dataset.samples, rag_fn, correlation_id=corr_id  # FIXED: Propagate
+                dataset.samples,
+                rag_fn,
+                correlation_id=corr_id,  # FIXED: Propagate
             )
             success = sum(1 for s in samples if not s.error)
             failed = total_samples - success
-            
+
             if success == 0:
                 logger.error(f"[{corr_id}] All generation calls failed. Aborting evaluation.")
                 return PipelineResult(
                     config=self.config,
                     ragas_report=RAGAsReport(samples=[], domain=self.config.domain, correlation_id=corr_id),
-                    total_samples=total_samples, successful_evals=0, failed_evals=failed,
+                    total_samples=total_samples,
+                    successful_evals=0,
+                    failed_evals=failed,
                     correlation_id=corr_id,
                 )
 
@@ -172,15 +180,16 @@ class RAGAsPipeline:
                 concurrency=self.config.concurrency,
                 correlation_id=corr_id,  # FIXED: Propagate
             )
-            
+
             # 4️⃣ Optional retrieval benchmarking
             retrieval_report = None
             # FIXED: hasattr always True (field defined with default ""); check actual non-empty value
             if retrieve_fn and samples and any(s.ground_truth for s in samples):
                 logger.info(f"[{corr_id}] Running retrieval evaluation...")
                 gt_data = [
-                    {"query": s.question, "relevant_chunk_ids": s.ground_truth.split()} 
-                    for s in samples if s.ground_truth
+                    {"query": s.question, "relevant_chunk_ids": s.ground_truth.split()}
+                    for s in samples
+                    if s.ground_truth
                 ]
                 if gt_data:
                     retrieval_report = await self.retrieval_eval.evaluate(
@@ -242,12 +251,11 @@ class RAGAsPipeline:
                 try:
                     # Handle sync vs async rag_fn
                     if inspect.iscoroutinefunction(rag_fn):
-                        answer, contexts = await asyncio.wait_for(
-                            rag_fn(question), timeout=self.config.timeout_seconds
-                        )
+                        answer, contexts = await asyncio.wait_for(rag_fn(question), timeout=self.config.timeout_seconds)
                     else:
                         answer, contexts = await asyncio.wait_for(
-                            asyncio.to_thread(rag_fn, question), timeout=self.config.timeout_seconds
+                            asyncio.to_thread(rag_fn, question),
+                            timeout=self.config.timeout_seconds,
                         )
                     return RAGAsSample(
                         question=question,
@@ -259,29 +267,38 @@ class RAGAsPipeline:
                 except asyncio.TimeoutError:
                     logger.warning(f"[{correlation_id}] Generation timeout for: {question[:50]}...")
                     return RAGAsSample(
-                        question=question, answer="", contexts=[], ground_truth=ground_truth, 
-                        error="timeout", correlation_id=correlation_id
+                        question=question,
+                        answer="",
+                        contexts=[],
+                        ground_truth=ground_truth,
+                        error="timeout",
+                        correlation_id=correlation_id,
                     )
                 except Exception as e:
-                    logger.warning(f"[{correlation_id}] Generation failed for: {question[:50]}... -> {type(e).__name__}")
+                    logger.warning(
+                        f"[{correlation_id}] Generation failed for: {question[:50]}... -> {type(e).__name__}"
+                    )
                     return RAGAsSample(
-                        question=question, answer="", contexts=[], ground_truth=ground_truth, 
-                        error=str(e), correlation_id=correlation_id
+                        question=question,
+                        answer="",
+                        contexts=[],
+                        ground_truth=ground_truth,
+                        error=str(e),
+                        correlation_id=correlation_id,
                     )
 
         tasks = [process_sample(s) for s in raw_samples]
         for coro in asyncio.as_completed(tasks):
             results.append(await coro)
-            
+
         return results
 
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["RAGAsPipeline", "PipelineConfig", "PipelineResult"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

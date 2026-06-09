@@ -1,4 +1,4 @@
-﻿# backend/app/finetuning/dataset_generator.py
+# backend/app/finetuning/dataset_generator.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # BATMAN-FIX: A - True async, T - Batch processing, M - Memory safety
 # OWASP-FIX: 1 - Prompt escaping, 7 - Safe data handling
@@ -20,8 +20,6 @@ from pydantic import BaseModel, ValidationError, Field, ConfigDict
 # DVMELTSS-M: Import centralized utilities
 from app.config import get_settings
 from app.core.finetune_utils import (
-    load_model_safe,
-    hf_api_with_retry,
     generate_finetune_correlation_id,
     validate_domain,
 )
@@ -52,11 +50,13 @@ _MAX_RETRIES: Final = 3
 _RETRY_BASE_DELAY: Final = 1.0
 _RETRY_MAX_DELAY: Final = 30.0
 
+
 # DVMELTSS-V: Pydantic schemas for structured output
 # FIXED: Pydantic v2 — use model_config = ConfigDict() instead of class Config
 class QueryGenerationSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
     queries: list[str] = Field(..., min_length=1, max_length=10)
+
 
 class HardNegativeSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -68,12 +68,14 @@ class HardNegativeSchema(BaseModel):
 # -- IMMUTABLE DATA MODELS (DVMELTSS-M, V) ------------------------------
 # ========================================================================
 
+
 @dataclass  # FIXED: Removed frozen=True for Pydantic v2 compatibility
 class TrainingTriplet:
     """
     Training example for embedding fine-tuning.
     FIXED: Not frozen to allow safe mutation in __post_init__.
     """
+
     id: str
     anchor: str  # query/question
     positive: str  # relevant document chunk
@@ -85,7 +87,7 @@ class TrainingTriplet:
     def __post_init__(self):
         # DVMELTSS-V: Validate domain
         if self.domain not in _VALID_DOMAINS:
-            self.domain = 'general'  # Direct assignment (not frozen)
+            self.domain = "general"  # Direct assignment (not frozen)
         # Clamp text lengths
         if len(self.anchor) > _MAX_QUERY_LENGTH:
             self.anchor = self.anchor[:_MAX_QUERY_LENGTH]
@@ -110,6 +112,7 @@ class TrainingTriplet:
 @dataclass
 class TripletDataset:
     """Collection of training triplets with metadata."""
+
     domain: str
     triplets: list[TrainingTriplet] = field(default_factory=list)
     version: str = ""
@@ -122,10 +125,7 @@ class TripletDataset:
 
     def to_sentence_transformers_format(self) -> list[dict]:
         """Convert to sentence-transformers InputExample format."""
-        return [
-            {"texts": [t.anchor, t.positive, t.negative], "label": 1.0}
-            for t in self.triplets
-        ]
+        return [{"texts": [t.anchor, t.positive, t.negative], "label": 1.0} for t in self.triplets]
 
     def train_val_split(self, val_ratio: float = 0.1) -> tuple["TripletDataset", "TripletDataset"]:
         """Split into train and validation sets."""
@@ -133,13 +133,17 @@ class TripletDataset:
         random.shuffle(shuffled)
         n_val = max(1, int(len(shuffled) * val_ratio))
         train = TripletDataset(
-            domain=self.domain, triplets=shuffled[n_val:],
-            version=self.version, created_at=self.created_at,
+            domain=self.domain,
+            triplets=shuffled[n_val:],
+            version=self.version,
+            created_at=self.created_at,
             correlation_id=self.correlation_id,
         )
         val = TripletDataset(
-            domain=self.domain, triplets=shuffled[:n_val],
-            version=self.version, created_at=self.created_at,
+            domain=self.domain,
+            triplets=shuffled[:n_val],
+            version=self.version,
+            created_at=self.created_at,
             correlation_id=self.correlation_id,
         )
         return train, val
@@ -219,10 +223,11 @@ Return ONLY valid JSON matching this schema:
 # -- GENERATOR CLASS (DVMELTSS-V, BATMAN-A, OWASP-1) --------------------
 # ========================================================================
 
+
 class TripletDatasetGenerator:
     """
     Generates training triplets for embedding fine-tuning.
-    
+
     Features:
     - Centralized async LLM client via app.core.finetune_utils
     - Pydantic structured output validation
@@ -241,21 +246,24 @@ class TripletDatasetGenerator:
     def __init__(self, model: str = "gpt-4o", max_retries: int = _MAX_RETRIES):
         settings = get_settings()
         api_key = settings.openai_api_key
-        
+
         # FIXED: Use centralized OpenAI client with retry config
         from app.core.llm_pool import get_llm
+
         self.llm = get_llm(streaming=False, temperature_override=0.7)
         self.model = model
         self.max_retries = max_retries
-        
+
         # FIXED: Centralized retry config
-        self._llm_retry = retry_async(config=RetryConfig(
-            max_attempts=max_retries,
-            backoff_base=_RETRY_BASE_DELAY,
-            backoff_max=_RETRY_MAX_DELAY,
-            exceptions=(Exception,),
-        ))
-        
+        self._llm_retry = retry_async(
+            config=RetryConfig(
+                max_attempts=max_retries,
+                backoff_base=_RETRY_BASE_DELAY,
+                backoff_max=_RETRY_MAX_DELAY,
+                exceptions=(Exception,),
+            )
+        )
+
         logger.info(f"TripletDatasetGenerator initialized: model={model}, async=True")
 
     def _estimate_tokens(self, text: str) -> int:
@@ -273,25 +281,27 @@ class TripletDatasetGenerator:
     ) -> Optional[dict]:
         """DVMELTSS-E: Async LLM call with centralized retry + structured validation."""
         corr_id = correlation_id
-        
+
         # FIXED: Use centralized prompt escaping
         safe_prompt = escape_prompt_content(prompt)
-        
-        if self._estimate_tokens(safe_prompt) > _MAX_PROMPT_TOKENS:
-            safe_prompt = safe_prompt[:_MAX_PROMPT_TOKENS * 4]
 
-        @retry_async(config=RetryConfig(
-            max_attempts=self.max_retries,
-            backoff_base=_RETRY_BASE_DELAY,
-            backoff_max=_RETRY_MAX_DELAY,
-            exceptions=(Exception,),
-        ))
+        if self._estimate_tokens(safe_prompt) > _MAX_PROMPT_TOKENS:
+            safe_prompt = safe_prompt[: _MAX_PROMPT_TOKENS * 4]
+
+        @retry_async(
+            config=RetryConfig(
+                max_attempts=self.max_retries,
+                backoff_base=_RETRY_BASE_DELAY,
+                backoff_max=_RETRY_MAX_DELAY,
+                exceptions=(Exception,),
+            )
+        )
         async def _do_call():
             return await self.llm.ainvoke([{"role": "user", "content": safe_prompt}])
-        
+
         try:
             response = await _do_call()
-            content = response.content if hasattr(response, 'content') else str(response)
+            content = response.content if hasattr(response, "content") else str(response)
             if not content:
                 return None
 
@@ -319,6 +329,7 @@ class TripletDatasetGenerator:
     ) -> list[Document]:
         """Get chunks from ChromaDB filtered by domain."""
         from app.vectorstore.chroma_store import _get_chroma_client
+
         settings = get_settings()
         client = _get_chroma_client(settings.chroma_persist_dir)
 
@@ -359,7 +370,7 @@ class TripletDatasetGenerator:
         domain_context = self.DOMAIN_CONTEXT.get(domain, domain)
         # FIXED: Use centralized prompt escaping
         safe_chunk = escape_prompt_content(chunk_text[:_MAX_CHUNK_TEXT])
-        
+
         prompt = QUERY_GENERATION_PROMPT.format(
             domain=domain_context,
             n_queries=n_queries,
@@ -381,7 +392,8 @@ class TripletDatasetGenerator:
                 return []
 
             queries = [
-                q.strip() for q in data.get("queries", [])
+                q.strip()
+                for q in data.get("queries", [])
                 if q and _MIN_QUERY_LENGTH <= len(q.strip()) <= _MAX_QUERY_LENGTH
             ][:n_queries]
             return queries
@@ -404,18 +416,15 @@ class TripletDatasetGenerator:
 
         # Same-document candidates (hardest negatives)
         same_doc = [
-            c for c in all_chunks
+            c
+            for c in all_chunks
             if c.metadata.get("source_file") == source
             and c.page_content != positive_chunk.page_content
             and len(c.page_content) > 30
         ]
 
         # Cross-document candidates
-        cross_doc = [
-            c for c in all_chunks
-            if c.metadata.get("source_file") != source
-            and len(c.page_content) > 30
-        ]
+        cross_doc = [c for c in all_chunks if c.metadata.get("source_file") != source and len(c.page_content) > 30]
 
         # Prefer same-doc negatives
         candidates = (same_doc + cross_doc)[:n_candidates]
@@ -432,7 +441,7 @@ class TripletDatasetGenerator:
         candidates_text = "\n\n".join(
             f"[{i}] {escape_prompt_content(c.page_content[:200])}" for i, c in enumerate(candidates)
         )
-        
+
         prompt = HARD_NEGATIVE_PROMPT.format(
             query=safe_query,
             positive=safe_positive,
@@ -472,7 +481,7 @@ class TripletDatasetGenerator:
         BATMAN-A: Non-blocking, yields to event loop between chunks.
         """
         corr_id = correlation_id or generate_finetune_correlation_id("dataset_gen")
-        
+
         # DVMELTSS-V: Validate domain using centralized utility
         domain = validate_domain(domain, _VALID_DOMAINS)
 
@@ -494,7 +503,7 @@ class TripletDatasetGenerator:
         async def process_chunk(chunk: Document, i: int) -> list[TrainingTriplet]:
             async with semaphore:
                 chunk_triplets = []
-                
+
                 # Generate queries
                 queries = await self._generate_queries_async(
                     chunk_text=chunk.page_content,
@@ -517,30 +526,35 @@ class TripletDatasetGenerator:
 
                 # Create triplets
                 for query in queries:
-                    chunk_triplets.append(TrainingTriplet(
-                        id=str(uuid.uuid4())[:8],
-                        anchor=query,
-                        positive=chunk.page_content[:512],
-                        negative=hard_negative,
-                        domain=domain,
-                        source_file=chunk.metadata.get("source_file", ""),
-                        correlation_id=corr_id,  # FIXED: Propagate correlation_id
-                    ))
-                
+                    chunk_triplets.append(
+                        TrainingTriplet(
+                            id=str(uuid.uuid4())[:8],
+                            anchor=query,
+                            positive=chunk.page_content[:512],
+                            negative=hard_negative,
+                            domain=domain,
+                            source_file=chunk.metadata.get("source_file", ""),
+                            correlation_id=corr_id,  # FIXED: Propagate correlation_id
+                        )
+                    )
+
                 if (i + 1) % 20 == 0:
-                    logger.info(f"[{corr_id}] Progress: {i+1}/{len(chunks)} chunks | {len(triplets) + len(chunk_triplets)} triplets")
-                
+                    logger.info(
+                        f"[{corr_id}] Progress: {i+1}/{len(chunks)} chunks | {len(triplets) + len(chunk_triplets)} triplets"
+                    )
+
                 return chunk_triplets
 
         # Process chunks concurrently
         tasks = [process_chunk(c, i) for i, c in enumerate(chunks)]
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         for res in results:
             if isinstance(res, list):
                 triplets.extend(res)
 
         from datetime import datetime, timezone
+
         dataset = TripletDataset(
             domain=domain,
             triplets=triplets,
@@ -553,8 +567,7 @@ class TripletDatasetGenerator:
             dataset.save(save_path)
 
         logger.info(
-            f"[{corr_id}] Dataset generated: {dataset.size} triplets | "
-            f"domain={domain} | workspace={workspace_id}"
+            f"[{corr_id}] Dataset generated: {dataset.size} triplets | " f"domain={domain} | workspace={workspace_id}"
         )
         return dataset
 
@@ -572,22 +585,38 @@ class TripletDatasetGenerator:
         DVMELTSS-M: Prefer async version in new code.
         """
         import asyncio
+
         try:
             loop = asyncio.get_running_loop()
             return asyncio.run_coroutine_threadsafe(
-                self.generate_dataset_async(workspace_id, domain, max_chunks, queries_per_chunk, save_path, correlation_id),
-                loop
+                self.generate_dataset_async(
+                    workspace_id,
+                    domain,
+                    max_chunks,
+                    queries_per_chunk,
+                    save_path,
+                    correlation_id,
+                ),
+                loop,
             ).result()
         except RuntimeError:
-            return asyncio.run(self.generate_dataset_async(workspace_id, domain, max_chunks, queries_per_chunk, save_path, correlation_id))
+            return asyncio.run(
+                self.generate_dataset_async(
+                    workspace_id,
+                    domain,
+                    max_chunks,
+                    queries_per_chunk,
+                    save_path,
+                    correlation_id,
+                )
+            )
 
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["TripletDatasetGenerator", "TripletDataset", "TrainingTriplet"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

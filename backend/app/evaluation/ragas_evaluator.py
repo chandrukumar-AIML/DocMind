@@ -1,4 +1,4 @@
-﻿# backend/app/evaluation/ragas_evaluator.py
+# backend/app/evaluation/ragas_evaluator.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, M - Modular
 # BATMAN-FIX: A - True async, T - Concurrent execution
 # ASCALE-FIX: L - Layered, E - Error propagation
@@ -8,12 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import json
 import logging
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Final, List, Optional, Any
+from typing import Final, Optional, Any
 
 import numpy as np
 
@@ -40,6 +39,7 @@ class RAGAsSample:
     - contexts:      retrieved chunks used for generation
     - ground_truth:  reference answer (for recall computation)
     """
+
     question: str
     answer: str
     contexts: list[str]  # retrieved chunk texts
@@ -73,10 +73,10 @@ class RAGAsSample:
             "context_recall": 0.15,
         }
         return (
-            self.faithfulness * weights["faithfulness"] +
-            self.answer_relevancy * weights["answer_relevancy"] +
-            self.context_precision * weights["context_precision"] +
-            self.context_recall * weights["context_recall"]
+            self.faithfulness * weights["faithfulness"]
+            + self.answer_relevancy * weights["answer_relevancy"]
+            + self.context_precision * weights["context_precision"]
+            + self.context_recall * weights["context_recall"]
         )
 
     def to_dict(self) -> dict:
@@ -96,6 +96,7 @@ class RAGAsSample:
 @dataclass
 class RAGAsReport:
     """Aggregate report across all evaluated samples."""
+
     samples: list[RAGAsSample]
     dataset_name: str = ""
     eval_model: str = ""
@@ -171,6 +172,7 @@ class RAGAsEvaluator:
         self.eval_model = eval_model
 
         from app.vectorstore.embeddings import CachedOpenAIEmbeddings
+
         self._embedder = CachedOpenAIEmbeddings(
             api_key=settings.openai_api_key,
             cache_dir=".cache/eval_embeddings",
@@ -188,14 +190,14 @@ class RAGAsEvaluator:
         return True, ""
 
     async def evaluate_sample(
-        self, 
+        self,
         sample: RAGAsSample,
         correlation_id: Optional[str] = None,
     ) -> RAGAsSample:
         """Evaluate all four RAGAs metrics for a single sample."""
         corr_id = correlation_id or sample.correlation_id or generate_eval_correlation_id("ragas")
         sample.correlation_id = corr_id
-        
+
         start = time.perf_counter()
 
         # ✅ Validate sample
@@ -210,11 +212,20 @@ class RAGAsEvaluator:
             # Run all four metrics concurrently with timeout
             tasks = [
                 asyncio.wait_for(self._compute_faithfulness(sample, corr_id), timeout=_METRIC_TIMEOUT),
-                asyncio.wait_for(self._compute_answer_relevancy(sample, corr_id), timeout=_METRIC_TIMEOUT),
-                asyncio.wait_for(self._compute_context_precision(sample, corr_id), timeout=_METRIC_TIMEOUT),
-                asyncio.wait_for(self._compute_context_recall(sample, corr_id), timeout=_METRIC_TIMEOUT),
+                asyncio.wait_for(
+                    self._compute_answer_relevancy(sample, corr_id),
+                    timeout=_METRIC_TIMEOUT,
+                ),
+                asyncio.wait_for(
+                    self._compute_context_precision(sample, corr_id),
+                    timeout=_METRIC_TIMEOUT,
+                ),
+                asyncio.wait_for(
+                    self._compute_context_recall(sample, corr_id),
+                    timeout=_METRIC_TIMEOUT,
+                ),
             ]
-            
+
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             # ✅ Handle exceptions with per-metric logging
@@ -297,9 +308,7 @@ class RAGAsEvaluator:
             return 0.0
 
         # FIXED: Use centralized PII scrubbing
-        context_text = "\n\n".join(
-            scrub_pii_for_evaluation(c[:300], domain="all") for c in sample.contexts[:5]
-        )
+        context_text = "\n\n".join(scrub_pii_for_evaluation(c[:300], domain="all") for c in sample.contexts[:5])
         scrubbed_answer = scrub_pii_for_evaluation(sample.answer[:800], domain="all")
 
         prompt = f"""Extract all factual claims from the answer, then verify each
@@ -331,10 +340,10 @@ Return ONLY valid JSON:
                 default_value={"claims": [], "supported_count": 0, "total_count": 0},
                 correlation_id=corr_id,
             )
-            
+
             if not isinstance(data, dict):
                 return 0.5
-                
+
             total = int(data.get("total_count", 0))
             supported = int(data.get("supported_count", 0))
             sample.faithfulness_claims = data.get("claims", [])
@@ -357,7 +366,7 @@ Return ONLY valid JSON:
             return 0.0
 
         scrubbed_answer = scrub_pii_for_evaluation(sample.answer[:600], domain="all")
-        
+
         prompt = f"""Generate 3 different questions that this answer is responding to.
 Answer: {scrubbed_answer}
 Return ONLY valid JSON: {{"questions": ["q1", "q2", "q3"]}}"""
@@ -374,9 +383,9 @@ Return ONLY valid JSON: {{"questions": ["q1", "q2", "q3"]}}"""
                 default_value=[],
                 correlation_id=corr_id,
             )
-            
+
             gen_questions = [q for q in (data or []) if q and len(q.strip()) > 5][:3]
-            
+
             if not gen_questions:
                 return 0.5
 
@@ -384,23 +393,19 @@ Return ONLY valid JSON: {{"questions": ["q1", "q2", "q3"]}}"""
 
             # Embed original question and generated questions
             all_texts = [sample.question] + gen_questions
-            
+
             # ✅ FIXED: Check if embed_documents is async and handle accordingly
             if inspect.iscoroutinefunction(self._embedder.embed_documents):
                 embeddings = await self._embedder.embed_documents(all_texts)
             else:
                 # Run sync embed in thread
                 import sys
+
                 if sys.version_info >= (3, 9):
-                    embeddings = await asyncio.to_thread(
-                        lambda: self._embedder.embed_documents(all_texts)
-                    )
+                    embeddings = await asyncio.to_thread(lambda: self._embedder.embed_documents(all_texts))
                 else:
                     loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in Python 3.10+
-                    embeddings = await loop.run_in_executor(
-                        None,
-                        lambda: self._embedder.embed_documents(all_texts)
-                    )
+                    embeddings = await loop.run_in_executor(None, lambda: self._embedder.embed_documents(all_texts))
 
             if len(embeddings) < 2:
                 return 0.5
@@ -435,7 +440,7 @@ Return ONLY valid JSON: {{"questions": ["q1", "q2", "q3"]}}"""
             for i, ctx in enumerate(sample.contexts[:6])
         )
         scrubbed_answer = scrub_pii_for_evaluation(sample.answer[:400], domain="all")
-        
+
         prompt = f"""Question: {sample.question}
 Answer: {scrubbed_answer}
 Contexts:
@@ -459,10 +464,10 @@ Return ONLY valid JSON:
                 default_value={"verdicts": [], "useful_count": 0, "total_count": 0},
                 correlation_id=corr_id,
             )
-            
+
             if not isinstance(data, dict):
                 return 0.5
-                
+
             total = int(data.get("total_count", len(sample.contexts)))
             useful = int(data.get("useful_count", 0))
             sample.precision_verdicts = data.get("verdicts", [])
@@ -484,19 +489,18 @@ Return ONLY valid JSON:
         if not sample.ground_truth or not sample.contexts:
             return 0.5
 
-        context_text = "\n\n".join(
-            scrub_pii_for_evaluation(c[:300], domain="all") for c in sample.contexts[:5]
-        )
+        context_text = "\n\n".join(scrub_pii_for_evaluation(c[:300], domain="all") for c in sample.contexts[:5])
 
         sentences = [
-            s.strip() for s in re.split(r"(?<=[.!?])\s+", sample.ground_truth)
-            if s.strip() and len(s.strip()) > 10
+            s.strip() for s in re.split(r"(?<=[.!?])\s+", sample.ground_truth) if s.strip() and len(s.strip()) > 10
         ]
 
         if not sentences:
             return 0.5
 
-        sentences_text = "\n".join(f"[{i+1}] {scrub_pii_for_evaluation(s, domain='all')}" for i, s in enumerate(sentences))
+        sentences_text = "\n".join(
+            f"[{i+1}] {scrub_pii_for_evaluation(s, domain='all')}" for i, s in enumerate(sentences)
+        )
 
         prompt = f"""Reference sentences:
 {sentences_text}
@@ -519,13 +523,17 @@ Return ONLY valid JSON:
                 temperature=0.0,
                 response_format={"type": "json_object"},
                 extract_key=None,
-                default_value={"attributions": [], "attributed_count": 0, "total_count": 0},
+                default_value={
+                    "attributions": [],
+                    "attributed_count": 0,
+                    "total_count": 0,
+                },
                 correlation_id=corr_id,
             )
-            
+
             if not isinstance(data, dict):
                 return 0.5
-                
+
             total = int(data.get("total_count", len(sentences)))
             attributed = int(data.get("attributed_count", 0))
             sample.recall_attributions = data.get("attributions", [])
@@ -545,7 +553,12 @@ def get_evaluator_metadata() -> dict[str, Any]:
     return {
         "model": get_settings().openai_chat_model,
         "eval_model": "gpt-4o",
-        "metrics": ["faithfulness", "answer_relevancy", "context_precision", "context_recall"],
+        "metrics": [
+            "faithfulness",
+            "answer_relevancy",
+            "context_precision",
+            "context_recall",
+        ],
         "timeout_per_metric": _METRIC_TIMEOUT,
         "composite_weights": {
             "faithfulness": 0.35,
@@ -563,10 +576,9 @@ __all__ = [
     "RAGAsReport",
     "get_evaluator_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

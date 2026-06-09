@@ -1,12 +1,13 @@
 # backend/app/api/routes/compliance.py
 """Regulatory compliance checking API."""
+
 from __future__ import annotations
 
 import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -27,10 +28,7 @@ class ComplianceCheckRequest(BaseModel):
 @router.get("/regulations")
 async def list_supported_regulations() -> dict[str, Any]:
     return {
-        "regulations": {
-            code: info["name"]
-            for code, info in SUPPORTED_REGULATIONS.items()
-        },
+        "regulations": {code: info["name"] for code, info in SUPPORTED_REGULATIONS.items()},
         "total": len(SUPPORTED_REGULATIONS),
     }
 
@@ -46,7 +44,7 @@ async def run_compliance_check(
     if invalid:
         raise HTTPException(
             status_code=422,
-            detail=f"Unsupported regulations: {invalid}. Use GET /compliance/regulations for valid codes."
+            detail=f"Unsupported regulations: {invalid}. Use GET /compliance/regulations for valid codes.",
         )
 
     try:
@@ -74,7 +72,8 @@ async def get_compliance_history(
     corr_id = generate_correlation_id("comp-hist")
     try:
         async with async_engine.begin() as conn:
-            rows = await conn.execute(text("""
+            rows = await conn.execute(
+                text("""
                 SELECT id, regulations, scores, overall_score, violation_count_calc,
                        created_at
                 FROM (
@@ -86,19 +85,28 @@ async def get_compliance_history(
                     ORDER BY created_at DESC
                     LIMIT :lim
                 ) t
-            """), {"ws": user.workspace_id, "sf": source_file, "lim": min(limit, 100)})
+            """),
+                {"ws": user.workspace_id, "sf": source_file, "lim": min(limit, 100)},
+            )
             results = rows.fetchall()
-    except Exception as e:
+    except Exception:
         # Fallback without subquery if jsonb_array_length not available
         try:
             async with async_engine.begin() as conn:
-                rows = await conn.execute(text("""
+                rows = await conn.execute(
+                    text("""
                     SELECT id, regulations, scores, overall_score, NULL, created_at
                     FROM compliance_results
                     WHERE workspace_id = :ws AND source_file = :sf
                     ORDER BY created_at DESC
                     LIMIT :lim
-                """), {"ws": user.workspace_id, "sf": source_file, "lim": min(limit, 100)})
+                """),
+                    {
+                        "ws": user.workspace_id,
+                        "sf": source_file,
+                        "lim": min(limit, 100),
+                    },
+                )
                 results = rows.fetchall()
         except Exception as e2:
             raise HTTPException(status_code=500, detail=f"Failed to fetch history: {e2}")
@@ -127,12 +135,15 @@ async def get_compliance_result(
 ) -> dict[str, Any]:
     corr_id = generate_correlation_id("comp-result")
     async with async_engine.begin() as conn:
-        row = await conn.execute(text("""
+        row = await conn.execute(
+            text("""
             SELECT id, source_file, regulations, scores, violations,
                    recommendations, overall_score, created_at
             FROM compliance_results
             WHERE id = :id AND workspace_id = :ws
-        """), {"id": result_id, "ws": user.workspace_id})
+        """),
+            {"id": result_id, "ws": user.workspace_id},
+        )
         r = row.fetchone()
 
     if not r:

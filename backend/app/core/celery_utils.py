@@ -1,4 +1,4 @@
-﻿# backend/app/core/celery_utils.py
+# backend/app/core/celery_utils.py
 # DVMELTSS-FIX: M - Modular, A - Async-safe, E - Error handling
 # ASCALE-FIX: S - Separation, C - Coupling
 # BATMAN-FIX: A - True async for task orchestration
@@ -14,6 +14,7 @@ Centralizes:
 Usage:
     from app.core.celery_utils import get_running_loop_safe, propagate_correlation_id
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,7 +23,6 @@ import inspect
 import logging
 from typing import Any, Callable, Final, Optional
 
-from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,7 @@ def run_async_in_task(
     short-lived worker thread with its own event loop to avoid nested-loop
     runtime errors.
     """
+
     async def _run() -> Any:
         result = func(*args, **kwargs)
         if inspect.isawaitable(result):
@@ -97,8 +98,15 @@ def is_transient_error(exc: Exception) -> bool:
     Identify errors worth retrying (network, rate limit, temp issues).
     """
     transient_patterns = [
-        "rate limit", "timeout", "connection", "temporary",
-        "503", "502", "429", "redis", "broker"
+        "rate limit",
+        "timeout",
+        "connection",
+        "temporary",
+        "503",
+        "502",
+        "429",
+        "redis",
+        "broker",
     ]
     msg = str(exc).lower()
     return any(p in msg for p in transient_patterns)
@@ -111,12 +119,12 @@ def get_queue_for_file_size(
 ) -> str:
     """
     Determine Celery queue based on file size.
-    
+
     Args:
         file_size_mb: File size in megabytes
         high_threshold: Files > this go to high_priority
         bulk_threshold: Files > this go to bulk queue
-    
+
     Returns:
         Queue name: "high_priority", "default", or "bulk"
     """
@@ -135,10 +143,9 @@ __all__ = [
     "is_transient_error",
     "get_queue_for_file_size",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

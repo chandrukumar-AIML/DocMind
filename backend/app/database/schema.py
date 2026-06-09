@@ -1,15 +1,16 @@
-﻿"""Small idempotent schema repairs for local/dev databases.
+"""Small idempotent schema repairs for local/dev databases.
 
 The project currently uses SQLAlchemy ``create_all`` rather than migrations.
 ``create_all`` does not add columns to an existing table, so this keeps older
 local databases compatible with the current auth model without dropping data.
 
-✅ FIXED: 
+✅ FIXED:
 - updated_at now has DEFAULT + server_default for auto-timestamp
 - Optional index on updated_at for query performance
 - Dialect check for PostgreSQL-specific syntax
 - Extensible pattern for future column additions
 """
+
 from __future__ import annotations
 
 import logging
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 async def ensure_auth_schema() -> None:
     """
     Ensure columns required by auth routes exist on the users table.
-    
+
     Idempotent: safe to run multiple times.
     PostgreSQL-specific: uses IF NOT EXISTS syntax.
     """
@@ -34,7 +35,7 @@ async def ensure_auth_schema() -> None:
         if dialect != "postgresql":
             logger.warning(f"Schema repairs are PostgreSQL-specific; detected dialect: {dialect}")
             return
-        
+
         # Define columns to ensure (extensible pattern)
         columns_to_add = [
             {
@@ -51,7 +52,7 @@ async def ensure_auth_schema() -> None:
                 "index": True,
             },
         ]
-        
+
         # FIXED: SQLAlchemy inspection performs sync IO; run it through
         # AsyncConnection.run_sync so greenlet_spawn is active.
         def _get_existing_columns(sync_conn):
@@ -64,40 +65,38 @@ async def ensure_auth_schema() -> None:
 
         existing_columns = await conn.run_sync(_get_existing_columns)
         existing_indexes = await conn.run_sync(_get_existing_indexes)
-        
+
         for col in columns_to_add:
             col_name = col["name"]
             col_def = col["definition"]
-            
+
             if col_name in existing_columns:
                 logger.debug(f"Column 'users.{col_name}' already exists")
                 continue
-            
+
             # ✅ FIXED: Log what we're adding
             logger.info(f"Adding column 'users.{col_name}': {col['description']}")
-            
+
             stmt = text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col_name} {col_def}")
             await conn.execute(stmt)
-            
+
             # ✅ FIXED: Create index if specified (for updated_at sorting)
             if col.get("index"):
                 index_name = f"ix_users_{col_name}"
                 if index_name not in existing_indexes:
                     logger.info(f"Creating index '{index_name}' on users.{col_name}")
                     # ✅ FIXED: Use CREATE INDEX IF NOT EXISTS (not CONCURRENTLY inside transaction)
-                    await conn.execute(
-                        text(f"CREATE INDEX IF NOT EXISTS {index_name} ON users ({col_name})")
-                    )
+                    await conn.execute(text(f"CREATE INDEX IF NOT EXISTS {index_name} ON users ({col_name})"))
                 else:
                     logger.debug(f"Index '{index_name}' already exists")
-    
+
     logger.info("Auth database schema verified and repaired if needed")
 
 
 async def ensure_workspace_schema() -> None:
     """
     Example: Extend this pattern for workspace table repairs.
-    
+
     Add columns like:
     - max_documents, max_queries (if missing)
     - soft-delete columns (deleted_at, is_deleted)
@@ -176,23 +175,26 @@ async def ensure_provenance_schema() -> None:
                 col_name = col["name"]
                 if col_name not in existing_columns:
                     logger.info(f"Adding column '{table_name}.{col_name}'")
-                    await conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {col_name} {col['definition']}"))
+                    await conn.execute(
+                        text(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {col_name} {col['definition']}")
+                    )
 
                 if col.get("index"):
                     index_name = f"ix_{table_name}_{col_name}"
                     if index_name not in existing_indexes:
                         logger.info(f"Creating index '{index_name}' on {table_name}.{col_name}")
-                        await conn.execute(text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({col_name})"))
+                        await conn.execute(
+                            text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({col_name})")
+                        )
 
     logger.info("Provenance database schema verified and repaired if needed")
 
 
 # -- Module Exports ----------------------------------------------------
 __all__ = ["ensure_auth_schema", "ensure_workspace_schema", "ensure_provenance_schema"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

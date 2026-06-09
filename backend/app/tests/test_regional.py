@@ -3,6 +3,7 @@
 This module is pure (regex/string only — no DB, model, or network imports), so
 the tests run fast and deterministically without standing up the full app.
 """
+
 import pytest
 
 from app.core.regional_language_processor import (
@@ -19,32 +20,41 @@ from app.core.regional_language_processor import (
 
 
 class TestIndianIdValidation:
-    @pytest.mark.parametrize("pan,expected", [
-        ("ABCDE1234F", True),
-        ("abcde1234f", True),          # case-insensitive (upcased internally)
-        ("  ABCDE1234F  ", True),      # trimmed
-        ("INVALID", False),
-        ("ABCDE12345", False),         # wrong trailing char
-        ("ABC1234567", False),
-    ])
+    @pytest.mark.parametrize(
+        "pan,expected",
+        [
+            ("ABCDE1234F", True),
+            ("abcde1234f", True),  # case-insensitive (upcased internally)
+            ("  ABCDE1234F  ", True),  # trimmed
+            ("INVALID", False),
+            ("ABCDE12345", False),  # wrong trailing char
+            ("ABC1234567", False),
+        ],
+    )
     def test_validate_pan(self, pan, expected):
         assert validate_pan(pan) is expected
 
-    @pytest.mark.parametrize("gstin,expected", [
-        ("27AAPFU0939F1ZV", True),
-        ("BADGSTIN", False),
-        ("", False),
-    ])
+    @pytest.mark.parametrize(
+        "gstin,expected",
+        [
+            ("27AAPFU0939F1ZV", True),
+            ("BADGSTIN", False),
+            ("", False),
+        ],
+    )
     def test_validate_gstin(self, gstin, expected):
         assert validate_gstin(gstin) is expected
 
-    @pytest.mark.parametrize("aadhaar,expected", [
-        ("2345 6789 0123", True),
-        ("2345-6789-0123", True),
-        ("234567890123", True),
-        ("1234 5678 9012", False),     # must not start with 0 or 1
-        ("2345 6789", False),          # too short
-    ])
+    @pytest.mark.parametrize(
+        "aadhaar,expected",
+        [
+            ("2345 6789 0123", True),
+            ("2345-6789-0123", True),
+            ("234567890123", True),
+            ("1234 5678 9012", False),  # must not start with 0 or 1
+            ("2345 6789", False),  # too short
+        ],
+    )
     def test_validate_aadhaar(self, aadhaar, expected):
         assert validate_aadhaar(aadhaar) is expected
 

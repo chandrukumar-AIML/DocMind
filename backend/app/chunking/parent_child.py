@@ -12,7 +12,7 @@ import logging
 import re
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncIterator, Dict, List, Optional, Tuple, Any, Final, TYPE_CHECKING
@@ -29,7 +29,7 @@ from app.core.exceptions import ValidationError
 
 # DVMELTSS-M: Proper TYPE_CHECKING guard for circular imports
 if TYPE_CHECKING:
-    from app.ocr.vision_analyzer import EnrichedDocument, TextBlock
+    from app.ocr.vision_analyzer import EnrichedDocument
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +51,14 @@ CHUNK_ID_HASH_LENGTH: Final = 32  # 32-char hex = 128-bit SHA256 prefix
 # -- CHUNK METADATA MODEL (ACID-D: Typed, indexable schema) -------------
 # ========================================================================
 
+
 @dataclass(frozen=True)
 class ChunkMetadata:
     """
     Strongly-typed metadata for vector store indexing.
     ACID-I: Fields designed for efficient filtering + indexing.
     """
+
     chunk_id: str
     parent_id: Optional[str]  # None for parent chunks
     chunk_type: str  # "parent" | "child"
@@ -70,18 +72,18 @@ class ChunkMetadata:
     char_count: int
     tags: List[str]  # Normalized list — internal representation
     child_index: Optional[int] = None  # Only for child chunks
-    
+
     def to_dict(self, for_vector_store: bool = True) -> Dict[str, Any]:
         """
         Convert to dict for LangChain Document metadata — JSON-serializable.
-        
+
         Args:
-            for_vector_store: If True, serialize tags as comma-string 
+            for_vector_store: If True, serialize tags as comma-string
                               (Pinecone/Chroma/FAISS compatible)
         """
         # FIXED: Vector-store-compatible tag serialization
         tags_value = ",".join(self.tags) if for_vector_store and self.tags else self.tags
-        
+
         result = {
             "chunk_id": self.chunk_id,
             "parent_id": self.parent_id,
@@ -99,7 +101,7 @@ class ChunkMetadata:
         if self.child_index is not None:
             result["child_index"] = self.child_index
         return result
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ChunkMetadata":
         """
@@ -114,7 +116,7 @@ class ChunkMetadata:
             tags = [str(t).strip() for t in tags_raw if t]
         else:
             tags = []
-        
+
         return cls(
             chunk_id=data.get("chunk_id", ""),  # ✅ FIXED: Safe .get() with default
             parent_id=data.get("parent_id"),
@@ -137,12 +139,14 @@ class ChunkMetadata:
 # ========================================================================
 # ✅ FIXED: Define at module level so Pylance can see them (not inside TYPE_CHECKING guard)
 
+
 class _MinimalBlock:
     """Minimal mock block for text-only chunking fallback."""
+
     def __init__(self, text: str, page_num: int = 0, block_type: str = "paragraph"):
         self.text = text
         self.page_num = page_num
-        self.line_num = 0  
+        self.line_num = 0
         self.block_type = block_type
         self.language = "en"
         self.confidence = 1.0
@@ -150,12 +154,18 @@ class _MinimalBlock:
 
 class _MinimalOCR:
     """Minimal mock OCR result for text-only chunking fallback."""
-    def __init__(self, block: _MinimalBlock | None = None, blocks: list[_MinimalBlock] | None = None):
+
+    def __init__(
+        self,
+        block: _MinimalBlock | None = None,
+        blocks: list[_MinimalBlock] | None = None,
+    ):
         self.all_blocks = blocks if blocks is not None else [block or _MinimalBlock("")]
 
 
 class _MinimalEnriched:
     """Minimal mock enriched document for text-only chunking fallback."""
+
     def __init__(self, ocr: _MinimalOCR | None = None, ocr_result: _MinimalOCR | None = None):
         self.ocr_result = ocr_result or ocr or _MinimalOCR()
         self.metadata = None
@@ -171,16 +181,17 @@ MockEnriched = _MinimalEnriched
 # -- MAIN CHUNKER CLASS (BATMAN-A: Async-safe, memory-efficient) ---------
 # ========================================================================
 
+
 class ParentChildChunker:
     """
     Async-safe parent-child chunker for RAG pipelines.
-    
+
     Strategy (BATMAN-B, M):
     - Parent chunks: Large context (1000-2000 chars) for semantic understanding
     - Child chunks: Small retrieval units (200-400 chars) for precise matching
     - Each child references parent via parent_id for context expansion at query time
     - Processes in batches to yield to event loop — non-blocking in FastAPI
-    
+
     Benefits:
     - Precise retrieval via small child chunks
     - Rich context via parent expansion during answer generation
@@ -191,15 +202,15 @@ class ParentChildChunker:
     def __init__(self, settings: Optional[Any] = None):
         """
         Initialize chunkers with configurable sizes.
-        
+
         Args:
             settings: App settings object (uses get_settings() if None)
-            
+
         Raises:
             ValidationError: If chunk sizes are invalid
         """
         cfg = settings or get_settings()
-        
+
         # DVMELTSS-V: Validate chunk sizes early
         is_valid, error = self._validate_chunk_sizes(
             getattr(cfg, "rag_chunk_size_child", 300),
@@ -209,7 +220,7 @@ class ParentChildChunker:
         )
         if not is_valid:
             raise ValidationError(error)
-        
+
         # Child splitter: small chunks for precise retrieval
         self.child_splitter = RecursiveCharacterTextSplitter(
             chunk_size=getattr(cfg, "rag_chunk_size_child", 300),
@@ -218,7 +229,7 @@ class ParentChildChunker:
             length_function=len,
             is_separator_regex=False,
         )
-        
+
         # Parent splitter: large chunks for context
         self.parent_splitter = RecursiveCharacterTextSplitter(
             chunk_size=getattr(cfg, "rag_chunk_size_parent", 1500),
@@ -227,19 +238,21 @@ class ParentChildChunker:
             length_function=len,
             is_separator_regex=False,
         )
-        
+
         # BATMAN-M: Memory guards
         self.max_blocks = getattr(cfg, "rag_max_blocks_per_doc", DEFAULT_MAX_BLOCKS)
         self.max_chunks = getattr(cfg, "rag_max_chunks_per_doc", DEFAULT_MAX_CHUNKS_PER_DOC)
         self.max_parent_cache = getattr(cfg, "rag_max_parent_cache", DEFAULT_MAX_PARENT_CACHE)
-        
+
         # BATMAN-T: Retry config for OCR formatter
-        self._formatter_retry = retry_async(config=RetryConfig(
-            max_attempts=2,
-            backoff_base=0.05,
-            exceptions=(Exception,),
-        ))
-        
+        self._formatter_retry = retry_async(
+            config=RetryConfig(
+                max_attempts=2,
+                backoff_base=0.05,
+                exceptions=(Exception,),
+            )
+        )
+
         logger.info(
             f"ParentChildChunker initialized: "
             f"child={getattr(cfg, 'rag_chunk_size_child', 300)}±{getattr(cfg, 'rag_chunk_overlap_child', 50)}, "
@@ -258,11 +271,20 @@ class ParentChildChunker:
         if child_overlap < 0 or parent_overlap < 0:
             return False, "Overlap values cannot be negative"
         if child_overlap >= child_size:
-            return False, f"Child overlap ({child_overlap}) must be < child size ({child_size})"
+            return (
+                False,
+                f"Child overlap ({child_overlap}) must be < child size ({child_size})",
+            )
         if parent_overlap >= parent_size:
-            return False, f"Parent overlap ({parent_overlap}) must be < parent size ({parent_size})"
+            return (
+                False,
+                f"Parent overlap ({parent_overlap}) must be < parent size ({parent_size})",
+            )
         if child_size >= parent_size:
-            return False, f"Child size ({child_size}) must be < parent size ({parent_size})"
+            return (
+                False,
+                f"Child size ({child_size}) must be < parent size ({parent_size})",
+            )
         return True, None
 
     @staticmethod
@@ -331,9 +353,10 @@ class ParentChildChunker:
         Format block text with retry + graceful fallback.
         DVMELTSS-E: Never let formatter failure stop entire document.
         """
+
         async def _do_format():
             return EnrichedTextFormatter.format_block(block, enriched)
-        
+
         try:
             # FIXED: Apply retry decorator to async function
             return await self._formatter_retry(_do_format)()
@@ -354,41 +377,41 @@ class ParentChildChunker:
     ) -> AsyncIterator[Tuple[Document, Document]]:
         """
         Async generator: yield (child, parent) chunk pairs one-by-one.
-        
+
         BATMAN-A: Non-blocking — yields control to event loop every BATCH_SIZE chunks.
         BATMAN-M: Memory-safe — bounded parent cache + stream to vector store directly.
         DVMELTSS-L: All logs include correlation_id for tracing.
-        
+
         Args:
             enriched: EnrichedDocument with OCR results + Vision analyses
             source_file: Original filename for metadata
             tags: Optional list of tags for filtering
             correlation_id: Request ID for distributed tracing
-            
+
         Yields:
             Tuple[Document, Document]: (child_chunk, parent_chunk) pairs
-            
+
         Raises:
             ValidationError: If enriched document is invalid or empty
         """
         corr_id = correlation_id or str(uuid.uuid4())[:8]
-        
+
         # === Input validation ===
         if not enriched or not hasattr(enriched, "ocr_result"):
             raise ValidationError("Invalid enriched document: missing ocr_result")
-        
+
         # ✅ FIXED: Safe iteration check for all_blocks
         blocks = getattr(enriched.ocr_result, "all_blocks", None)
         if not blocks or not hasattr(blocks, "__iter__"):
             raise ValidationError(f"[{corr_id}] No OCR blocks found in {source_file}")
-        
+
         tags = tags or []
         ingest_ts = datetime.now(timezone.utc).isoformat()
-        
+
         # Extract document-level metadata
         doc_type = getattr(enriched.metadata, "document_type", "unknown") if enriched.metadata else "unknown"
         doc_language = getattr(enriched.metadata, "language", "en") or "en"
-        
+
         # Apply memory guards
         blocks_list = list(blocks)  # Convert to list for safe iteration
         if len(blocks_list) > self.max_blocks:
@@ -396,16 +419,16 @@ class ParentChildChunker:
                 f"[{corr_id}] Limiting to {self.max_blocks}/{len(blocks_list)} blocks "
                 f"for {source_file} (memory guard)"
             )
-            blocks_list = blocks_list[:self.max_blocks]
-        
+            blocks_list = blocks_list[: self.max_blocks]
+
         chunk_count = 0
         # ✅ FIXED: Bounded OrderedDict with FIFO eviction
         parent_cache: OrderedDict[str, Document] = OrderedDict()
-        
+
         # Process blocks in batches to yield to event loop (BATMAN-A)
         for batch_start in range(0, len(blocks_list), CHUNK_BATCH_SIZE):
-            batch = blocks_list[batch_start:batch_start + CHUNK_BATCH_SIZE]
-            
+            batch = blocks_list[batch_start : batch_start + CHUNK_BATCH_SIZE]
+
             for i, block in enumerate(batch, start=batch_start):
                 try:
                     # FIXED: Safe formatting with retry + fallback
@@ -414,20 +437,20 @@ class ParentChildChunker:
                     # Ultimate fallback if retry also fails
                     logger.error(f"[{corr_id}] Block {i} formatting failed after retry: {e}")
                     text = getattr(block, "text", "")
-                
+
                 # Skip empty or very short blocks — log for audit (DVMELTSS-L)
                 if not text or len(text.strip()) < 8:
                     logger.debug(f"[{corr_id}] Skipping empty block {i} in {source_file}")
                     continue
-                
+
                 # FIXED: Generate deterministic parent ID
                 parent_id = self._generate_chunk_id(text, source_file, getattr(block, "page_num", 0), 0)
-                
+
                 # Build base metadata — FIXED: pass corr_id for internal tracing
                 base_meta = self._build_base_metadata(
                     block, source_file, doc_language, doc_type, ingest_ts, tags, corr_id
                 )
-                
+
                 # === Create parent chunk ===
                 parent_meta = ChunkMetadata(
                     chunk_id=parent_id,
@@ -437,15 +460,17 @@ class ParentChildChunker:
                     char_count=len(text),
                 )
                 parent_doc = Document(page_content=text, metadata=parent_meta.to_dict())
-                
+
                 # ✅ FIXED: Bounded cache with FIFO eviction using OrderedDict
                 if parent_id not in parent_cache:
                     if len(parent_cache) >= self.max_parent_cache:
                         # Evict oldest (first inserted) item
                         oldest_key, _ = parent_cache.popitem(last=False)
-                        logger.debug(f"[{corr_id}] Evicted parent {oldest_key[:8]}... from cache (max={self.max_parent_cache})")
+                        logger.debug(
+                            f"[{corr_id}] Evicted parent {oldest_key[:8]}... from cache (max={self.max_parent_cache})"
+                        )
                     parent_cache[parent_id] = parent_doc
-                
+
                 # === Create child chunks from parent text ===
                 try:
                     child_texts = self.child_splitter.split_text(text)
@@ -455,12 +480,12 @@ class ParentChildChunker:
                         f"Using parent as single child."
                     )
                     child_texts = [text]
-                
+
                 for j, child_text in enumerate(child_texts):
                     # Skip empty child chunks
                     if not child_text.strip():
                         continue
-                    
+
                     # Memory guard: stop if max chunks reached
                     if chunk_count >= self.max_chunks:
                         logger.warning(
@@ -472,10 +497,10 @@ class ParentChildChunker:
                             if p:  # ✅ Safe check for None
                                 yield None, p
                         return
-                    
+
                     # FIXED: Generate deterministic child ID
                     child_id = self._generate_chunk_id(child_text, source_file, getattr(block, "page_num", 0), j)
-                    
+
                     child_meta = ChunkMetadata(
                         chunk_id=child_id,
                         parent_id=parent_id,  # Link to parent
@@ -485,7 +510,7 @@ class ParentChildChunker:
                         char_count=len(child_text),
                     )
                     child_doc = Document(page_content=child_text, metadata=child_meta.to_dict())
-                    
+
                     # ✅ FIXED: Safe parent lookup with fallback
                     parent = parent_cache.get(parent_id)
                     if parent:
@@ -495,12 +520,12 @@ class ParentChildChunker:
                         # Fallback: yield child with None parent (shouldn't happen with bounded cache)
                         logger.warning(f"[{corr_id}] Parent {parent_id[:8]}... not in cache — yielding child only")
                         yield child_doc, None
-                    
+
                     chunk_count += 1
-            
+
             # BATMAN-A: Yield control to event loop after each batch
             await asyncio.sleep(0)
-        
+
         logger.info(
             f"[{corr_id}] Chunked {source_file}: "
             f"{len(blocks_list)}/{len(enriched.ocr_result.all_blocks)} blocks -> "
@@ -517,17 +542,18 @@ class ParentChildChunker:
     ) -> Tuple[List[Document], List[Document]]:
         """
         ⚠️ DEPRECATED: Use async `chunk_enriched_document()` in new code.
-        
+
         Sync wrapper for legacy code — runs async generator to completion.
         DVMELTSS-M: Uses asyncio.to_thread() to avoid blocking event loop.
         """
         import warnings
+
         warnings.warn(
             "chunk_enriched_document_sync is deprecated. Use async version instead.",
             DeprecationWarning,
             stacklevel=2,
         )
-        
+
         # FIXED: Safe async-to-sync bridge using ThreadPoolExecutor
         async def _collect():
             children, parents = [], []
@@ -539,9 +565,10 @@ class ParentChildChunker:
                     parents.append(parent)
                     seen_parents.add(parent.metadata["chunk_id"])
             return children, parents
-        
+
         # Run in thread to avoid blocking main event loop
         import concurrent.futures
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(lambda: asyncio.run(_collect()))
             return future.result()
@@ -557,17 +584,17 @@ class ParentChildChunker:
     ) -> AsyncIterator[Tuple[Document, Document]]:
         """
         Async generator: chunk plain text without OCR enrichment (fallback mode).
-        
+
         DVMELTSS-M: Reuses main async logic via mock enrichment — no code duplication.
         """
         if not text or not text.strip():
             raise ValidationError("Cannot chunk empty text")
-        
+
         # ✅ FIXED: Use module-level mock classes (defined above)
         mock_block = _MinimalBlock(text, page_num, block_type)
         mock_ocr = _MinimalOCR(mock_block)
         mock_enriched = _MinimalEnriched(mock_ocr)
-        
+
         # Delegate to main async logic
         return self.chunk_enriched_document(
             enriched=mock_enriched,  # type: ignore[arg-type]
@@ -580,35 +607,36 @@ class ParentChildChunker:
     @dataclass
     class ChunkingStats:
         """Incremental stats — O(1) update per chunk, no O(n) recomputation."""
+
         child_count: int = 0
         parent_count: int = 0
         total_child_chars: int = 0
         total_parent_chars: int = 0
         min_child_chars: int = float("inf")
         max_child_chars: int = 0
-        
+
         def update_child(self, char_count: int):
             self.child_count += 1
             self.total_child_chars += char_count
             self.min_child_chars = min(self.min_child_chars, char_count)
             self.max_child_chars = max(self.max_child_chars, char_count)
-        
+
         def update_parent(self, char_count: int):
             self.parent_count += 1
             self.total_parent_chars += char_count
-        
+
         @property
         def avg_child_chars(self) -> float:
             return round(self.total_child_chars / self.child_count, 1) if self.child_count > 0 else 0.0
-        
+
         @property
         def avg_parent_chars(self) -> float:
             return round(self.total_parent_chars / self.parent_count, 1) if self.parent_count > 0 else 0.0
-        
+
         @property
         def children_per_parent(self) -> float:
             return round(self.child_count / self.parent_count, 2) if self.parent_count > 0 else 0.0
-        
+
         @property
         def memory_estimate_mb(self) -> float:
             # Rough estimate: 1 char ≈ 1 byte + 50% overhead for metadata/Python objects
@@ -659,10 +687,10 @@ if __name__ == "__main__":
     import asyncio
     import sys
     from pathlib import Path
-    
+
     # 🔧 ROBUST PATH SETUP: Works for both `python -m` and direct `python file.py`
     current_file = Path(__file__).resolve()
-    
+
     # Detect backend root: look for 'backend' in path or requirements.txt
     for parent in current_file.parents:
         if parent.name == "backend" and (parent / "requirements.txt").exists():
@@ -671,28 +699,29 @@ if __name__ == "__main__":
     else:
         # Fallback: assume script is 3 levels below backend
         backend_root = current_file.parents[2]
-    
+
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
         print(f"🔧 Added to sys.path: {backend_root}", file=sys.stderr)
-    
+
     # Verify app module is importable
     try:
         import app
+
         print(f"✅ App module loaded from: {app.__file__}", file=sys.stderr)
     except ImportError as e:
         print(f"❌ Failed to import app: {e}", file=sys.stderr)
         sys.exit(1)
-    
+
     async def run_tests():
         print("🔍 Testing ParentChildChunker module (app/chunking/parent_child.py)")
         print("=" * 70)
-        
+
         try:
             # -- Test 1: ChunkMetadata serialization ----------------------
             print("\n📌 Test 1: ChunkMetadata (serialize ↔ deserialize)")
             from app.chunking.parent_child import ChunkMetadata
-            
+
             meta = ChunkMetadata(
                 chunk_id="test-abc123",
                 parent_id="parent-xyz789",
@@ -708,35 +737,42 @@ if __name__ == "__main__":
                 tags=["finance", "Q1", "approved"],
                 child_index=2,
             )
-            
+
             meta_dict = meta.to_dict(for_vector_store=True)
             assert isinstance(meta_dict["tags"], str), "Tags should be comma-string for vector store"
             assert "finance,Q1,approved" in meta_dict["tags"], "Tags serialization failed"
             print(f"   ✅ to_dict(for_vector_store=True): tags='{meta_dict['tags']}'")
-            
+
             meta_internal = meta.to_dict(for_vector_store=False)
             assert isinstance(meta_internal["tags"], list), "Tags should be list internally"
             print(f"   ✅ to_dict(for_vector_store=False): tags={meta_internal['tags']}")
-            
+
             meta_restored = ChunkMetadata.from_dict(meta_dict)
-            assert meta_restored.tags == ["finance", "Q1", "approved"], "Tag parsing failed"
+            assert meta_restored.tags == [
+                "finance",
+                "Q1",
+                "approved",
+            ], "Tag parsing failed"
             print(f"   ✅ from_dict: tags restored as list={meta_restored.tags}")
-            
+
             # -- Test 2: Chunker initialization ---------------------------
             print("\n📌 Test 2: ParentChildChunker initialization")
             from app.chunking.parent_child import ParentChildChunker
-            
+
             chunker = ParentChildChunker()
-            print(f"   ✅ Initialized: child={chunker.child_splitter._chunk_size}, parent={chunker.parent_splitter._chunk_size}")
-            
+            print(
+                f"   ✅ Initialized: child={chunker.child_splitter._chunk_size}, parent={chunker.parent_splitter._chunk_size}"
+            )
+
             is_valid, err = chunker._validate_chunk_sizes(300, 50, 1500, 200)
             assert is_valid and err is None, "Valid config should pass"
-            print(f"   ✅ Config validation: PASS")
-            
+            print("   ✅ Config validation: PASS")
+
             # -- Test 3: Text-only chunking (async generator) -------------
             print("\n📌 Test 3: chunk_text_only (async generator)")
-            
-            sample_text = """
+
+            sample_text = (
+                """
             Invoice #INV-2025-001
             Date: May 10, 2026
             Client: Acme Corp
@@ -746,46 +782,48 @@ if __name__ == "__main__":
             Subtotal: $1000
             Tax (10%): $100
             Total: $1100
-            """ * 3
-            
+            """
+                * 3
+            )
+
             child_docs = []
             parent_docs = []
             seen_parent_ids = set()
-            
+
             async for child, parent in chunker.chunk_text_only(
                 text=sample_text,
                 source_file="test_invoice.pdf",
                 page_num=1,
                 block_type="structured",
                 tags=["test", "invoice"],
-                correlation_id="test-run-001"
+                correlation_id="test-run-001",
             ):
                 if child:
                     child_docs.append(child)
                 if parent and parent.metadata["chunk_id"] not in seen_parent_ids:
                     parent_docs.append(parent)
                     seen_parent_ids.add(parent.metadata["chunk_id"])
-            
+
             print(f"   ✅ Generated: {len(child_docs)} children, {len(parent_docs)} parents")
             assert len(child_docs) > 0 and len(parent_docs) > 0, "Should generate chunks"
-            
+
             # Verify parent-child linking
             for child in child_docs[:3]:
                 parent_id = child.metadata.get("parent_id")
-                assert parent_id in seen_parent_ids, f"Child has invalid parent_id"
+                assert parent_id in seen_parent_ids, "Child has invalid parent_id"
                 print(f"   ✅ Child {child.metadata['chunk_id'][:8]}... -> Parent {parent_id[:8]}...")
-            
+
             # Verify metadata format
             first_child = child_docs[0]
             assert first_child.metadata["source_file"] == "test_invoice.pdf"
             assert "test,invoice" in first_child.metadata["tags"]
-            print(f"   ✅ Metadata format verified (vector-store compatible)")
-            
+            print("   ✅ Metadata format verified (vector-store compatible)")
+
             # -- Test 4: Edge cases ---------------------------------------
             print("\n📌 Test 4: Edge cases")
-            
+
             from app.core.exceptions import ValidationError
-            
+
             # Empty text -> should raise ValidationError
             try:
                 async for _ in chunker.chunk_text_only(text="", source_file="empty.txt"):
@@ -793,33 +831,34 @@ if __name__ == "__main__":
                 print("   ❌ Empty text should raise ValidationError")
             except ValidationError:
                 print("   ✅ Empty text correctly rejected")
-            
+
             # Filename sanitization
             meta_sanitized = chunker._sanitize_filename("my doc@#$%.pdf")
             assert "@" not in meta_sanitized and "#" not in meta_sanitized
             print(f"   ✅ Filename sanitization: 'my doc@#$%.pdf' -> '{meta_sanitized}'")
-            
+
             # -- Test 5: Deterministic chunk IDs --------------------------
             print("\n📌 Test 5: Deterministic chunk IDs")
             id1 = chunker._generate_chunk_id("same content", "file.pdf", 1, 0)
             id2 = chunker._generate_chunk_id("same content", "file.pdf", 1, 0)
             id3 = chunker._generate_chunk_id("different", "file.pdf", 1, 0)
-            
+
             assert id1 == id2, "Same input should produce same ID"
             assert id1 != id3, "Different content should produce different ID"
-            assert len(id1) == 32, f"ID should be 32-char hex"
+            assert len(id1) == 32, "ID should be 32-char hex"
             print(f"   ✅ Deterministic IDs: '{id1[:8]}...' (32-char SHA256 prefix)")
-            
+
             print("\n" + "=" * 70)
             print("✅ ALL TESTS PASSED! ParentChildChunker module verified.")
             return True
-            
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
-    
+
     # Run async tests
     success = asyncio.run(run_tests())
     sys.exit(0 if success else 1)

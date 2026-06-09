@@ -1,4 +1,4 @@
-﻿# backend/app/finetuning/embedding_updater.py
+# backend/app/finetuning/embedding_updater.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # BATMAN-FIX: A - True async, M - Memory safety, T - Batch processing
 # ACID-INDEX: E - Error handling (backup before destructive ops)
@@ -10,7 +10,7 @@ import dataclasses
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Optional, Callable
 
@@ -42,6 +42,7 @@ class ReembedResult:
     Immutable result of a re-embedding run.
     DVMELTSS-M: Frozen dataclass prevents runtime mutation.
     """
+
     workspace_id: str
     model_id: str
     chunks_processed: int = 0
@@ -71,7 +72,7 @@ class ReembedResult:
 class EmbeddingUpdater:
     """
     Re-embeds all documents in a workspace with a new embedding model.
-    
+
     Features (DVMELTSS-E, BATMAN-M, ACID-E):
     - Backup-before-delete safety for destructive vector store operations
     - Memory-safe batch encoding with progress tracking
@@ -101,13 +102,13 @@ class EmbeddingUpdater:
         try:
             collection = client.get_collection(collection_name)
             total = collection.count()
-            
+
             if total < _MIN_CHUNKS_FOR_BACKUP:
                 logger.debug(f"Skipping backup: only {total} chunks")
                 return True
 
             logger.info(f"Backing up {total} chunks to {backup_path}...")
-            
+
             # Export in batches to avoid memory spike
             batch_size = 500
             with open(backup_path, "w") as f:
@@ -118,13 +119,18 @@ class EmbeddingUpdater:
                         include=["documents", "metadatas", "embeddings", "ids"],
                     )
                     for i in range(len(batch["ids"])):
-                        f.write(json.dumps({
-                            "id": batch["ids"][i],
-                            "document": batch["documents"][i],
-                            "metadata": batch["metadatas"][i],
-                            "embedding": batch["embeddings"][i],
-                        }) + "\n")
-            
+                        f.write(
+                            json.dumps(
+                                {
+                                    "id": batch["ids"][i],
+                                    "document": batch["documents"][i],
+                                    "metadata": batch["metadatas"][i],
+                                    "embedding": batch["embeddings"][i],
+                                }
+                            )
+                            + "\n"
+                        )
+
             logger.info(f"Backup complete: {backup_path}")
             return True
         except Exception as e:
@@ -147,9 +153,9 @@ class EmbeddingUpdater:
         """
         embeddings = []
         failed = 0
-        
+
         for i in range(0, len(texts), batch_size):
-            batch = texts[i:i+batch_size]
+            batch = texts[i : i + batch_size]
             try:
                 # Run blocking encode in thread to avoid event loop freeze
                 loop = asyncio.get_running_loop()
@@ -160,21 +166,21 @@ class EmbeddingUpdater:
                         batch_size=min(32, len(batch)),
                         show_progress_bar=False,
                         normalize_embeddings=True,
-                    )
+                    ),
                 )
                 embeddings.extend(vecs.tolist())
                 processed += len(batch)
-                
+
                 if progress_cb:
                     progress_cb(processed, total)
-                    
+
             except Exception as e:
                 logger.error(f"[{correlation_id}] Batch encode failed: {e}")
                 failed += len(batch)
-                
+
             # Yield control to event loop
             await asyncio.sleep(0)
-            
+
         return embeddings, processed, failed
 
     async def update_async(
@@ -198,7 +204,7 @@ class EmbeddingUpdater:
         try:
             # Validate model path
             safe_path = self._validate_model_path(model_path)
-            
+
             # FIXED: Use centralized safe model loader
             logger.info(f"[{corr_id}] Loading fine-tuned model: {safe_path}")
             ft_model = await load_model_safe(safe_path, max_dim=_MAX_EMBEDDING_DIM)
@@ -207,6 +213,7 @@ class EmbeddingUpdater:
 
             # Get ChromaDB client + collection
             from app.vectorstore.chroma_store import _get_chroma_client
+
             client = _get_chroma_client(self.settings.chroma_persist_dir)
 
             collection_name = f"docs_{self.workspace_id}"
@@ -250,12 +257,17 @@ class EmbeddingUpdater:
             all_embeddings = []
             processed = 0
             failed = 0
-            
+
             for i in range(0, len(all_texts), _MAX_BATCH_SIZE):
-                batch_texts = all_texts[i:i+_MAX_BATCH_SIZE]
+                batch_texts = all_texts[i : i + _MAX_BATCH_SIZE]
                 batch_embeds, proc, fail = await self._encode_batch_async(
-                    ft_model, batch_texts, _MAX_BATCH_SIZE,
-                    progress_cb, total, processed, corr_id
+                    ft_model,
+                    batch_texts,
+                    _MAX_BATCH_SIZE,
+                    progress_cb,
+                    total,
+                    processed,
+                    corr_id,
                 )
                 all_embeddings.extend(batch_embeds)
                 processed = proc
@@ -266,10 +278,10 @@ class EmbeddingUpdater:
 
             # Delete and recreate collection with new embeddings
             logger.info(f"[{corr_id}] Replacing ChromaDB collection with fine-tuned vectors...")
-            
+
             # Delete old collection
             client.delete_collection(collection_name)
-            
+
             # Create new collection
             new_collection = client.create_collection(
                 name=collection_name,
@@ -280,10 +292,10 @@ class EmbeddingUpdater:
             insert_size = 500
             for i in range(0, len(all_ids), insert_size):
                 new_collection.add(
-                    ids=all_ids[i:i+insert_size],
-                    embeddings=all_embeddings[i:i+insert_size],
-                    documents=all_texts[i:i+insert_size],
-                    metadatas=all_metas[i:i+insert_size],
+                    ids=all_ids[i : i + insert_size],
+                    embeddings=all_embeddings[i : i + insert_size],
+                    documents=all_texts[i : i + insert_size],
+                    metadatas=all_metas[i : i + insert_size],
                 )
 
             logger.info(f"[{corr_id}] ChromaDB updated: {len(all_ids)} chunks with new vectors")
@@ -291,6 +303,7 @@ class EmbeddingUpdater:
             # Rebuild FAISS index
             logger.info(f"[{corr_id}] Rebuilding FAISS index...")
             from app.vectorstore.store_manager import VectorStoreManager
+
             store = VectorStoreManager()
             store.faiss._rebuild_from_chroma()
             logger.info(f"[{corr_id}] FAISS rebuilt.")
@@ -315,21 +328,25 @@ class EmbeddingUpdater:
         # FIXED: Log re-embedding metrics to MLflow (was missing entirely)
         try:
             from app.observability.mlflow_logger import MLflowLogger
+
             _ml = MLflowLogger()
             with _ml.start_run(
                 run_name=f"reembed_{self.workspace_id}",
                 tags={"workspace_id": self.workspace_id, "model_path": str(model_path)},
                 correlation_id=corr_id,
             ):
-                _ml._safe_log_metrics({
-                    "reembed_chunks_processed": result.chunks_processed,
-                    "reembed_chunks_failed": result.chunks_failed,
-                    "reembed_duration_seconds": round(result.duration_seconds, 2),
-                    "reembed_throughput_chunks_per_sec": round(
-                        result.chunks_processed / max(result.duration_seconds, 0.001), 2
-                    ),
-                    "reembed_success": 1.0 if result.is_successful else 0.0,
-                })
+                _ml._safe_log_metrics(
+                    {
+                        "reembed_chunks_processed": result.chunks_processed,
+                        "reembed_chunks_failed": result.chunks_failed,
+                        "reembed_duration_seconds": round(result.duration_seconds, 2),
+                        "reembed_throughput_chunks_per_sec": round(
+                            result.chunks_processed / max(result.duration_seconds, 0.001),
+                            2,
+                        ),
+                        "reembed_success": 1.0 if result.is_successful else 0.0,
+                    }
+                )
                 _ml._safe_log_param("reembed_workspace_id", self.workspace_id)
                 _ml._safe_log_param("reembed_model_path", str(model_path))
         except Exception as _mle:
@@ -354,11 +371,11 @@ class EmbeddingUpdater:
         DVMELTSS-M: Prefer async version in new code.
         """
         import asyncio
+
         try:
             loop = asyncio.get_running_loop()
             return asyncio.run_coroutine_threadsafe(
-                self.update_async(model_path, progress_cb, correlation_id),
-                loop
+                self.update_async(model_path, progress_cb, correlation_id), loop
             ).result()
         except RuntimeError:
             return asyncio.run(self.update_async(model_path, progress_cb, correlation_id))
@@ -366,10 +383,9 @@ class EmbeddingUpdater:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["EmbeddingUpdater", "ReembedResult"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

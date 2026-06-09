@@ -1,5 +1,6 @@
 # backend/app/api/routes/superadmin.py
 """Superadmin API — all routes require is_superuser=True."""
+
 from __future__ import annotations
 
 import logging
@@ -21,12 +22,12 @@ router = APIRouter(prefix="/superadmin")
 def _guard(user: AuthenticatedUser) -> AuthenticatedUser:
     """Inline superadmin guard — raises 403 if not superuser."""
     if not user.is_superuser:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Superadmin access required.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Superadmin access required.")
     return user
 
 
 # ── Overview ──────────────────────────────────────────────────────────────────
+
 
 @router.get("/overview")
 async def overview(user: AuthenticatedUser = Depends(require_superadmin)):
@@ -37,6 +38,7 @@ async def overview(user: AuthenticatedUser = Depends(require_superadmin)):
 
 
 # ── Workspace management ──────────────────────────────────────────────────────
+
 
 @router.get("/workspaces")
 async def list_workspaces(
@@ -91,6 +93,7 @@ async def create_workspace(
     if body.send_invite:
         try:
             from app.core.invite_manager import create_invite, send_invite_email
+
             raw_token, inv = await create_invite(
                 email=body.client_email,
                 workspace_id=ws["id"],
@@ -126,7 +129,10 @@ async def update_limits(
 ):
     result = await sa.update_workspace_limits(
         workspace_id,
-        body.max_docs, body.max_queries_per_day, body.max_storage_gb, body.plan,
+        body.max_docs,
+        body.max_queries_per_day,
+        body.max_storage_gb,
+        body.plan,
     )
     if not result:
         raise HTTPException(status_code=404, detail="Workspace not found")
@@ -158,6 +164,7 @@ async def reactivate_workspace(
 
 # ── Impersonation ─────────────────────────────────────────────────────────────
 
+
 @router.post("/workspace/{workspace_id}/impersonate")
 async def impersonate(
     workspace_id: str,
@@ -176,6 +183,7 @@ async def impersonate(
 
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
+
 @router.get("/workspace/{workspace_id}/audit-log")
 async def audit_log(
     workspace_id: str,
@@ -190,6 +198,7 @@ async def audit_log(
 
 
 # ── Billing ───────────────────────────────────────────────────────────────────
+
 
 @router.get("/workspace/{workspace_id}/billing")
 async def workspace_billing(
@@ -219,6 +228,7 @@ async def billing_export(
 
 # ── System ────────────────────────────────────────────────────────────────────
 
+
 @router.get("/system/health")
 async def system_health(user: AuthenticatedUser = Depends(require_superadmin)):
     return await sa.get_system_health()
@@ -235,6 +245,7 @@ async def flush_cache(user: AuthenticatedUser = Depends(require_superadmin)):
 
 
 # ── Stats (legacy alias) ──────────────────────────────────────────────────────
+
 
 @router.get("/stats")
 async def stats_alias(user: AuthenticatedUser = Depends(require_superadmin)):

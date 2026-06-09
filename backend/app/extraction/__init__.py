@@ -13,13 +13,17 @@ from typing import Any
 # DVMELTSS-M: Explicit public API surface
 __all__ = [
     # Tables
-    "TableExtractor", "ExtractedTable",
+    "TableExtractor",
+    "ExtractedTable",
     # Charts
-    "ChartExtractor", "ExtractedChart",
+    "ChartExtractor",
+    "ExtractedChart",
     # Forms
-    "FormExtractor", "ExtractedForm",
+    "FormExtractor",
+    "ExtractedForm",
     # Pipeline
-    "ExtractionPipeline", "ExtractionBundle",
+    "ExtractionPipeline",
+    "ExtractionBundle",
     # Test utilities
     "reset_extraction_caches",  # ✅ NEW
 ]
@@ -52,13 +56,12 @@ def __getattr__(name: str) -> Any:
         module_path, attr_name = _LAZY_IMPORTS[name]
         try:
             import importlib
-            module = importlib.import_module(module_path, package=__name__.rpartition('.')[0])
+
+            module = importlib.import_module(module_path, package=__name__.rpartition(".")[0])
             return getattr(module, attr_name)
         except ImportError as e:
-            raise AttributeError(
-                f"Failed to lazy-import '{name}' from '{module_path}': {e}"
-            ) from e
-    
+            raise AttributeError(f"Failed to lazy-import '{name}' from '{module_path}': {e}") from e
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -74,12 +77,12 @@ def __dir__() -> list[str]:
 def reset_extraction_caches() -> None:
     """
     ✅ NEW: Reset internal caches & singletons for clean pytest runs.
-    
+
     Actually resets LRU caches and module singletons (not just invalidate_caches).
     """
     import sys
     import importlib
-    
+
     # Reset any LRU caches in extraction modules
     for mod_name in [
         "app.extraction.table_extractor",
@@ -97,7 +100,7 @@ def reset_extraction_caches() -> None:
                         obj.cache_clear()
                     except Exception:
                         pass
-    
+
     # Invalidate import cache (secondary effect)
     importlib.invalidate_caches()
 
@@ -105,13 +108,15 @@ def reset_extraction_caches() -> None:
 # -- Module init logging (idempotent) ------------------------------------
 __init_logged: bool = False
 
+
 def _log_module_init() -> None:
     """Log module load — idempotent to avoid spam in multi-worker setups."""
     global __init_logged
     if __init_logged:
         return
-    
+
     import logging
+
     logger = logging.getLogger(__name__)
     logger.debug(  # ✅ Use debug level to avoid prod log spam
         f"Extraction module loaded | version={__version__} | {__description__}"

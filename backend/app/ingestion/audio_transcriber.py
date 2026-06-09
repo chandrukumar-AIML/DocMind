@@ -1,4 +1,4 @@
-﻿# backend/app/ingest/audio_transcriber.py
+# backend/app/ingest/audio_transcriber.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # BATMAN-FIX: A - True async, M - Memory safety, T - Batch processing
 # OWASP-FIX: 3 - Credential safety, 9 - File handling
@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, Optional, Any
 
-import numpy as np
 from openai import AsyncOpenAI, RateLimitError, APITimeoutError, APIConnectionError
 from pydub import AudioSegment
 
@@ -49,6 +48,7 @@ _WHISPER_TIMEOUT: Final = 300
 @dataclass  # FIXED: Removed frozen=True for safe __post_init__ mutation
 class TranscriptSegment:
     """Transcription segment with timing and speaker."""
+
     start: float
     end: float
     text: str
@@ -65,6 +65,7 @@ class TranscriptSegment:
 @dataclass
 class TranscriptionResult:
     """Complete transcription of an audio/video file."""
+
     source_file: str
     full_text: str
     segments: list[TranscriptSegment] = field(default_factory=list)
@@ -122,7 +123,7 @@ def _chunk_text_by_words(text: str, max_words: int) -> list[str]:
     words = text.split()
     chunks = []
     for i in range(0, len(words), max_words):
-        chunks.append(" ".join(words[i:i + max_words]))
+        chunks.append(" ".join(words[i : i + max_words]))
     return chunks or [text]
 
 
@@ -180,12 +181,14 @@ class AudioTranscriber:
         self.hf_token = getattr(settings, "huggingface_token", "")
         self.max_retries = max_retries
         # FIXED: Centralized retry config
-        self._llm_retry = retry_async(config=RetryConfig(
-            max_attempts=max_retries,
-            backoff_base=_RETRY_BASE_DELAY,
-            backoff_max=_RETRY_MAX_DELAY,
-            exceptions=(Exception,),
-        ))
+        self._llm_retry = retry_async(
+            config=RetryConfig(
+                max_attempts=max_retries,
+                backoff_base=_RETRY_BASE_DELAY,
+                backoff_max=_RETRY_MAX_DELAY,
+                exceptions=(Exception,),
+            )
+        )
         logger.info(f"AudioTranscriber initialized: model={model}, async=True")
 
     def _validate_audio_file(self, file_path: Path) -> tuple[bool, Optional[str]]:
@@ -214,20 +217,18 @@ class AudioTranscriber:
     ) -> TranscriptionResult:
         """Async: Call OpenAI Whisper API and parse verbose JSON response."""
         corr_id = correlation_id
-        
+
         for attempt in range(self.max_retries + 1):
             try:
                 loop = asyncio.get_running_loop()
-                
+
                 # ✅ FIXED: Read bytes and wrap in file-like object for OpenAI API
-                audio_bytes = await loop.run_in_executor(
-                    None, lambda: audio_path.read_bytes()
-                )
-                
+                audio_bytes = await loop.run_in_executor(None, lambda: audio_path.read_bytes())
+
                 # OpenAI API expects file-like object, not raw bytes
                 audio_file = io.BytesIO(audio_bytes)
                 audio_file.name = audio_path.name  # Set name for API
-                
+
                 kwargs = dict(
                     model=self.whisper_model,
                     file=audio_file,
@@ -236,66 +237,75 @@ class AudioTranscriber:
                 )
                 if self.language:
                     kwargs["language"] = self.language
-                
+
                 # ✅ FIXED: Add timeout to API call
                 response = await asyncio.wait_for(
                     self.client.audio.transcriptions.create(**kwargs),
                     timeout=_WHISPER_TIMEOUT,
                 )
-                
+
                 full_text = response.text or ""
                 segments = []
                 duration = 0.0
                 raw_segments = getattr(response, "segments", []) or []
-                
+
                 for seg in raw_segments:
                     start = float(getattr(seg, "start", 0))
                     end = float(getattr(seg, "end", 0))
                     text = str(getattr(seg, "text", "")).strip()
                     if text:
-                        segments.append(TranscriptSegment(
-                            start=start, end=end, text=text, correlation_id=corr_id
-                        ))
+                        segments.append(TranscriptSegment(start=start, end=end, text=text, correlation_id=corr_id))
                     duration = max(duration, end)
-                
+
                 language = getattr(response, "language", "en") or "en"
-                
+
                 logger.info(
                     f"[{corr_id}] Whisper: {source_file} | "
                     f"{len(segments)} segments | {duration:.1f}s | lang={language}"
                 )
-                
+
                 return TranscriptionResult(
-                    source_file=source_file, full_text=full_text, segments=segments,
-                    language=language, duration_sec=duration, model_used=self.whisper_model,
+                    source_file=source_file,
+                    full_text=full_text,
+                    segments=segments,
+                    language=language,
+                    duration_sec=duration,
+                    model_used=self.whisper_model,
                     correlation_id=corr_id,
                 )
-                
+
             except asyncio.TimeoutError:
                 logger.error(f"[{corr_id}] Whisper API call timed out after {_WHISPER_TIMEOUT}s")
                 return TranscriptionResult(
-                    source_file=source_file, full_text="",
+                    source_file=source_file,
+                    full_text="",
                     error=f"Whisper API timeout after {_WHISPER_TIMEOUT}s",
-                    model_used=self.whisper_model, correlation_id=corr_id,
+                    model_used=self.whisper_model,
+                    correlation_id=corr_id,
                 )
             except (RateLimitError, APITimeoutError, APIConnectionError) as e:
                 err = classify_openai_error(e)
                 if err.error_type == "quota":
                     logger.warning(f"[{corr_id}] Whisper: quota exceeded")
                     return TranscriptionResult(
-                        source_file=source_file, full_text="", error="OpenAI quota exceeded",
-                        model_used=self.whisper_model, correlation_id=corr_id,
+                        source_file=source_file,
+                        full_text="",
+                        error="OpenAI quota exceeded",
+                        model_used=self.whisper_model,
+                        correlation_id=corr_id,
                     )
                 if attempt < self.max_retries:
-                    wait = min(_RETRY_BASE_DELAY * (2 ** attempt), _RETRY_MAX_DELAY)
+                    wait = min(_RETRY_BASE_DELAY * (2**attempt), _RETRY_MAX_DELAY)
                     logger.warning(f"[{corr_id}] Whisper retry {attempt+1} in {wait}s: {err.error_type}")
                     await asyncio.sleep(wait)
                 else:
                     logger.error(f"[{corr_id}] Whisper failed after retries: {err.error_type}")
                     return TranscriptionResult(
-                        source_file=source_file, full_text="",
+                        source_file=source_file,
+                        full_text="",
                         error=f"Whisper API error: {err.error_type}",
-                        model_used=self.whisper_model, correlation_id=corr_id,
+                        model_used=self.whisper_model,
+                        correlation_id=corr_id,
                     )
             except Exception as e:
                 logger.error(f"[{corr_id}] Whisper unexpected error: {type(e).__name__}: {e}")
@@ -303,77 +313,84 @@ class AudioTranscriber:
                     await asyncio.sleep(_RETRY_BASE_DELAY)
                 else:
                     return TranscriptionResult(
-                        source_file=source_file, full_text="",
+                        source_file=source_file,
+                        full_text="",
                         error=f"Whisper error: {type(e).__name__}",
-                        model_used=self.whisper_model, correlation_id=corr_id,
+                        model_used=self.whisper_model,
+                        correlation_id=corr_id,
                     )
-        
+
         return TranscriptionResult(
-            source_file=source_file, full_text="", error="Max retries exceeded",
-            model_used=self.whisper_model, correlation_id=corr_id,
+            source_file=source_file,
+            full_text="",
+            error="Max retries exceeded",
+            model_used=self.whisper_model,
+            correlation_id=corr_id,
         )
 
     async def _transcribe_large_file_async(
-        self, audio_path: Path, source_file: str, correlation_id: str,
+        self,
+        audio_path: Path,
+        source_file: str,
+        correlation_id: str,
     ) -> TranscriptionResult:
         """Async: Split audio into chunks and transcribe each."""
         corr_id = correlation_id
-        
+
         try:
             loop = asyncio.get_running_loop()
-            
+
             # ✅ FIXED: Use functools.partial for safe arg passing in executor
-            audio = await loop.run_in_executor(
-                None, functools.partial(AudioSegment.from_file, str(audio_path))
-            )
-            
+            audio = await loop.run_in_executor(None, functools.partial(AudioSegment.from_file, str(audio_path)))
+
             duration_s = len(audio) / 1000
             all_segs: list[TranscriptSegment] = []
             all_text = []
             time_offset = 0.0
-            
+
             with tempfile.TemporaryDirectory() as tmp_dir:
                 chunk_paths = []
                 try:
                     for i, start_ms in enumerate(range(0, len(audio), _CHUNK_DURATION_SEC * 1000)):
-                        chunk = audio[start_ms:start_ms + _CHUNK_DURATION_SEC * 1000]
+                        chunk = audio[start_ms : start_ms + _CHUNK_DURATION_SEC * 1000]
                         chunk_path = Path(tmp_dir) / f"chunk_{i:03d}.mp3"
-                        
+
                         # ✅ FIXED: Use functools.partial for safe arg passing
                         await loop.run_in_executor(
-                            None, functools.partial(chunk.export, str(chunk_path), format="mp3")
+                            None,
+                            functools.partial(chunk.export, str(chunk_path), format="mp3"),
                         )
                         chunk_paths.append(chunk_path)
-                    
+
                     semaphore = asyncio.Semaphore(3)
-                    
+
                     async def transcribe_chunk(path: Path, offset: float) -> TranscriptionResult:
                         async with semaphore:
-                            result = await self._whisper_transcribe_async(
-                                path, f"{source_file}[chunk]", corr_id
-                            )
+                            result = await self._whisper_transcribe_async(path, f"{source_file}[chunk]", corr_id)
                             adjusted_segs = [
                                 TranscriptSegment(
-                                    start=seg.start + offset, end=seg.end + offset,
-                                    text=seg.text, correlation_id=corr_id
+                                    start=seg.start + offset,
+                                    end=seg.end + offset,
+                                    text=seg.text,
+                                    correlation_id=corr_id,
                                 )
                                 for seg in result.segments
                             ]
                             result.segments = adjusted_segs
                             return result
-                    
+
                     tasks = [
                         transcribe_chunk(path, time_offset + i * _CHUNK_DURATION_SEC)
                         for i, path in enumerate(chunk_paths)
                     ]
                     results = await asyncio.gather(*tasks, return_exceptions=True)
-                    
+
                     for i, res in enumerate(results):
                         if isinstance(res, TranscriptionResult) and res.full_text:
                             all_text.append(res.full_text)
                             all_segs.extend(res.segments)
                         time_offset += _CHUNK_DURATION_SEC - _CHUNK_OVERLAP_SEC
-                        
+
                 finally:
                     for path in chunk_paths:
                         if path.exists():
@@ -381,72 +398,89 @@ class AudioTranscriber:
                                 path.unlink()
                             except OSError:
                                 pass
-            
+
             return TranscriptionResult(
-                source_file=source_file, full_text=" ".join(all_text), segments=all_segs,
-                duration_sec=duration_s, model_used=self.whisper_model, correlation_id=corr_id,
+                source_file=source_file,
+                full_text=" ".join(all_text),
+                segments=all_segs,
+                duration_sec=duration_s,
+                model_used=self.whisper_model,
+                correlation_id=corr_id,
             )
-            
+
         except Exception as e:
             logger.error(f"[{corr_id}] Large file transcription failed: {e}")
             return TranscriptionResult(
-                source_file=source_file, full_text="",
+                source_file=source_file,
+                full_text="",
                 error=f"Chunking error: {type(e).__name__}",
-                model_used=self.whisper_model, correlation_id=corr_id,
+                model_used=self.whisper_model,
+                correlation_id=corr_id,
             )
 
     async def _add_speaker_labels_async(
-        self, result: TranscriptionResult, audio_path: Path, correlation_id: str,
+        self,
+        result: TranscriptionResult,
+        audio_path: Path,
+        correlation_id: str,
     ) -> TranscriptionResult:
         """Async: Add speaker labels using pyannote.audio."""
         corr_id = correlation_id
-        
+
         if not self.hf_token:
             logger.warning(f"[{corr_id}] HF token not set — skipping diarization")
             return result
-        
+
         try:
             from pyannote.audio import Pipeline as PyannotePipeline
-            
+
             logger.info(f"[{corr_id}] Running speaker diarization...")
-            
+
             diarization_pipeline = PyannotePipeline.from_pretrained(
-                "pyannote/speaker-diarization-3.1", use_auth_token=self.hf_token,
+                "pyannote/speaker-diarization-3.1",
+                use_auth_token=self.hf_token,
             )
-            
+
             loop = asyncio.get_running_loop()
-            
+
             # ✅ FIXED: Use functools.partial for safe arg passing
-            diarization = await loop.run_in_executor(
-                None, functools.partial(diarization_pipeline, str(audio_path))
-            )
-            
+            diarization = await loop.run_in_executor(None, functools.partial(diarization_pipeline, str(audio_path)))
+
             speaker_turns: list[tuple[float, float, str]] = []
             for turn, _, speaker in diarization.itertracks(yield_label=True):
                 speaker_turns.append((turn.start, turn.end, speaker))
-            
+
             labelled_segments = []
             for seg in result.segments:
                 seg_mid = (seg.start + seg.end) / 2
                 speaker = self._find_speaker(seg_mid, speaker_turns)
-                labelled_segments.append(TranscriptSegment(
-                    start=seg.start, end=seg.end, text=seg.text,
-                    speaker=speaker, correlation_id=corr_id
-                ))
-            
-            full_text = "\n".join(
-                f"{s.speaker}: {s.text}" if s.speaker else s.text
-                for s in labelled_segments
+                labelled_segments.append(
+                    TranscriptSegment(
+                        start=seg.start,
+                        end=seg.end,
+                        text=seg.text,
+                        speaker=speaker,
+                        correlation_id=corr_id,
+                    )
+                )
+
+            full_text = "\n".join(f"{s.speaker}: {s.text}" if s.speaker else s.text for s in labelled_segments)
+
+            logger.info(
+                f"[{corr_id}] Diarization complete: {len(set(s for s in labelled_segments if s.speaker))} speakers"
             )
-            
-            logger.info(f"[{corr_id}] Diarization complete: {len(set(s for s in labelled_segments if s.speaker))} speakers")
-            
+
             return TranscriptionResult(
-                source_file=result.source_file, full_text=full_text, segments=labelled_segments,
-                language=result.language, duration_sec=result.duration_sec,
-                model_used=result.model_used, has_speakers=True, correlation_id=corr_id,
+                source_file=result.source_file,
+                full_text=full_text,
+                segments=labelled_segments,
+                language=result.language,
+                duration_sec=result.duration_sec,
+                model_used=result.model_used,
+                has_speakers=True,
+                correlation_id=corr_id,
             )
-            
+
         except ImportError:
             logger.warning(f"[{corr_id}] pyannote.audio not installed — skipping diarization")
             return result
@@ -475,7 +509,7 @@ class AudioTranscriber:
     ) -> TranscriptionResult:
         """Async version: Transcribe an audio or video file."""
         corr_id = correlation_id or generate_ingest_correlation_id("audio")
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_transcribe_inputs(file_path, file_bytes, correlation_id, corr_id)
         if not is_valid:
@@ -486,40 +520,43 @@ class AudioTranscriber:
                 error=error,
                 correlation_id=corr_id,
             )
-        
+
         file_path_obj = Path(file_path) if isinstance(file_path, str) else file_path
-        
+
         if not file_path_obj.exists():
             return TranscriptionResult(
-                source_file=str(file_path_obj), full_text="",
-                error=f"File not found: {file_path_obj}", correlation_id=corr_id,
+                source_file=str(file_path_obj),
+                full_text="",
+                error=f"File not found: {file_path_obj}",
+                correlation_id=corr_id,
             )
-        
+
         if file_bytes is None:
             loop = asyncio.get_running_loop()
             file_bytes = await loop.run_in_executor(None, lambda: file_path_obj.read_bytes())
-        
+
         is_valid, error = self._validate_audio_file(file_path_obj)
         if not is_valid:
             return TranscriptionResult(
-                source_file=str(file_path_obj), full_text="", error=error, correlation_id=corr_id,
+                source_file=str(file_path_obj),
+                full_text="",
+                error=error,
+                correlation_id=corr_id,
             )
-        
+
         size_mb = len(file_bytes) / 1024 / 1024
         logger.info(f"[{corr_id}] Transcribing: {file_path_obj.name} | {size_mb:.1f}MB")
-        
+
         async with _temp_audio_file(file_bytes) as audio_path:
             if size_mb > _WHISPER_MAX_FILE_MB:
                 result = await self._transcribe_large_file_async(audio_path, file_path_obj.name, corr_id)
             else:
                 result = await self._whisper_transcribe_async(audio_path, file_path_obj.name, corr_id)
-            
-            use_diarization = (
-                enable_diarization if enable_diarization is not None else self.enable_diarization
-            )
+
+            use_diarization = enable_diarization if enable_diarization is not None else self.enable_diarization
             if use_diarization and result.segments and not result.error:
                 result = await self._add_speaker_labels_async(result, audio_path, corr_id)
-        
+
         return result
 
     def transcribe(
@@ -533,8 +570,10 @@ class AudioTranscriber:
         Sync wrapper — prefers async version in new code.
         ✅ FIXED: Use run_async_in_task helper to avoid deadlock.
         """
+
         async def _do_transcribe():
             return await self.transcribe_async(file_path, file_bytes, enable_diarization, correlation_id)
+
         return run_async_in_task(_do_transcribe)
 
 
@@ -565,10 +604,9 @@ __all__ = [
     "TranscriptSegment",
     "get_audio_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

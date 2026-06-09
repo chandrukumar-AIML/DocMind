@@ -1,19 +1,24 @@
-﻿# backend/app/versioning/models.py
+# backend/app/versioning/models.py
 # DVMELTSS-FIX: V - Validate, M - Modular, S - Security
 # ASCALE-FIX: S - Separation, C - Coupling
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Final, Optional
 from pydantic import BaseModel, Field, ConfigDict
+
 # DVMELTSS-M: Import centralized utilities
 from app.core.schema_utils import CorrelationIdField
+
 # DVMELTSS-S: Valid version statuses
 _VALID_STATUSES: Final = frozenset({"draft", "published", "archived", "deleted"})
+
+
 @dataclass
 class DiffResult:
     """
     Structured result of document diff computation.
     """
+
     document_id: str
     has_changes: bool
     similarity_ratio: float
@@ -23,6 +28,7 @@ class DiffResult:
     change_summary: str
     correlation_id: Optional[str] = None  # FIXED: Added for tracing
     error: Optional[str] = None
+
     def __post_init__(self):
         # DVMELTSS-V: Clamp similarity ratio
         if not (0.0 <= self.similarity_ratio <= 1.0):
@@ -30,11 +36,14 @@ class DiffResult:
         # Clamp summary length
         if len(self.change_summary) > 500:
             self.change_summary = self.change_summary[:497] + "..."
+
+
 @dataclass
 class VersionMetadata:
     """
     Metadata for a single document version.
     """
+
     version_id: str
     document_id: str
     created_at: str  # ISO 8601
@@ -43,10 +52,12 @@ class VersionMetadata:
     status: str = "draft"
     parent_version_id: Optional[str] = None
     correlation_id: Optional[str] = None  # FIXED: Added for tracing
+
     def __post_init__(self):
         # DVMELTSS-V: Validate status
         if self.status not in _VALID_STATUSES:
             self.status = "draft"
+
     def to_dict(self) -> dict:
         """Serialize for storage/API."""
         return {
@@ -59,8 +70,11 @@ class VersionMetadata:
             "parent_version_id": self.parent_version_id,
             "correlation_id": self.correlation_id,
         }
+
+
 class DiffResultModel(BaseModel):
     """Pydantic model for API responses."""
+
     document_id: str
     has_changes: bool
     similarity_ratio: float = Field(ge=0.0, le=1.0)
@@ -84,8 +98,11 @@ class DiffResultModel(BaseModel):
             }
         }
     )
+
+
 class VersionComparison(BaseModel):
     """Side-by-side version comparison for API."""
+
     version_a_id: str
     version_b_id: str
     created_at_a: str
@@ -108,12 +125,13 @@ class VersionComparison(BaseModel):
             }
         }
     )
+
+
 # DVMELTSS-M: Explicit module exports
 __all__ = ["DiffResult", "VersionMetadata", "DiffResultModel", "VersionComparison"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

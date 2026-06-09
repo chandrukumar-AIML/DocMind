@@ -1,5 +1,6 @@
 # backend/app/core/esign_handler.py
 """E-Signature handler: DocuSign API primary + in-app canvas fallback."""
+
 from __future__ import annotations
 
 import asyncio
@@ -8,7 +9,6 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -27,7 +27,8 @@ async def ensure_esign_schema() -> None:
     async with async_engine.begin() as conn:
         if conn.dialect.name != "postgresql":
             return
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS esign_requests (
                 id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 workspace_id    VARCHAR(64) NOT NULL,
@@ -42,10 +43,9 @@ async def ensure_esign_schema() -> None:
                 created_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 completed_at    TIMESTAMP WITH TIME ZONE
             )
-        """))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_esign_workspace ON esign_requests(workspace_id)"
-        ))
+        """)
+        )
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_esign_workspace ON esign_requests(workspace_id)"))
     logger.info("E-sign schema verified")
 
 
@@ -82,23 +82,26 @@ async def create_esign_request(
             logger.warning(f"[{corr_id}] DocuSign envelope creation failed, using in-app: {e}")
 
     async with async_engine.begin() as conn:
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             INSERT INTO esign_requests
                 (id, workspace_id, source_file, envelope_id, signers,
                  callback_url, provider, created_by)
             VALUES
                 (:id, :ws, :sf, :env_id, CAST(:signers AS jsonb),
                  :cb, :prov, :by)
-        """), {
-            "id": req_id,
-            "ws": workspace_id,
-            "sf": source_file,
-            "env_id": envelope_id,
-            "signers": json.dumps(signers),
-            "cb": callback_url,
-            "prov": provider,
-            "by": created_by,
-        })
+        """),
+            {
+                "id": req_id,
+                "ws": workspace_id,
+                "sf": source_file,
+                "env_id": envelope_id,
+                "signers": json.dumps(signers),
+                "cb": callback_url,
+                "prov": provider,
+                "by": created_by,
+            },
+        )
 
     return {
         "request_id": req_id,
@@ -124,20 +127,24 @@ async def _create_docusign_envelope(
     # Build signer list for DocuSign
     ds_signers = []
     for i, signer in enumerate(signers):
-        ds_signers.append({
-            "email": signer.get("email"),
-            "name": signer.get("name", f"Signer {i+1}"),
-            "recipientId": str(i + 1),
-            "routingOrder": str(signer.get("order", i + 1)),
-            "tabs": {
-                "signHereTabs": [{
-                    "anchorString": "/sig/",
-                    "anchorUnits": "pixels",
-                    "anchorXOffset": "20",
-                    "anchorYOffset": "10",
-                }]
-            },
-        })
+        ds_signers.append(
+            {
+                "email": signer.get("email"),
+                "name": signer.get("name", f"Signer {i+1}"),
+                "recipientId": str(i + 1),
+                "routingOrder": str(signer.get("order", i + 1)),
+                "tabs": {
+                    "signHereTabs": [
+                        {
+                            "anchorString": "/sig/",
+                            "anchorUnits": "pixels",
+                            "anchorXOffset": "20",
+                            "anchorYOffset": "10",
+                        }
+                    ]
+                },
+            }
+        )
 
     # Read document
     try:
@@ -151,18 +158,22 @@ async def _create_docusign_envelope(
 
     envelope_def = {
         "emailSubject": "Please sign this document",
-        "documents": [{
-            "documentBase64": doc_b64,
-            "name": doc_name,
-            "fileExtension": "pdf",
-            "documentId": "1",
-        }],
+        "documents": [
+            {
+                "documentBase64": doc_b64,
+                "name": doc_name,
+                "fileExtension": "pdf",
+                "documentId": "1",
+            }
+        ],
         "recipients": {"signers": ds_signers},
         "status": "sent",
         "eventNotification": {
             "url": callback_url,
             "envelopeEvents": [{"envelopeEventStatusCode": "completed"}],
-        } if callback_url else {},
+        }
+        if callback_url
+        else {},
     }
 
     url = f"{_DOCUSIGN_BASE_URL}/accounts/{account_id}/envelopes"
@@ -185,12 +196,15 @@ async def handle_docusign_callback(payload: dict) -> None:
         return
 
     async with async_engine.begin() as conn:
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             UPDATE esign_requests
             SET status = :status,
                 completed_at = CASE WHEN :status = 'completed' THEN NOW() ELSE NULL END
             WHERE envelope_id = :env_id
-        """), {"status": status, "env_id": envelope_id})
+        """),
+            {"status": status, "env_id": envelope_id},
+        )
 
     logger.info(f"DocuSign callback: envelope {envelope_id} → {status}")
 
@@ -203,11 +217,14 @@ async def record_inapp_signature(
 ) -> dict[str, Any]:
     """Record an in-app canvas signature."""
     async with async_engine.begin() as conn:
-        result = await conn.execute(text("""
+        result = await conn.execute(
+            text("""
             UPDATE esign_requests
             SET status = 'completed', completed_at = NOW()
             WHERE id = :id AND workspace_id = :ws
-        """), {"id": request_id, "ws": workspace_id})
+        """),
+            {"id": request_id, "ws": workspace_id},
+        )
         if result.rowcount == 0:
             raise ValueError(f"E-sign request {request_id} not found")
 

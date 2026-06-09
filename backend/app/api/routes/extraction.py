@@ -1,4 +1,4 @@
-﻿# backend/app/api/routes/extraction.py
+# backend/app/api/routes/extraction.py
 # DVMELTSS-FIX: V/E/M/S + ASCALE-L + BATMAN-A
 # ✅ FIXED: Proper RateLimiter usage + input validation + safe pandas operations + timeout handling
 
@@ -7,19 +7,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-import time
-import uuid
 from typing import Annotated, Optional, Any, Final
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
-from app.config import get_settings, lazy_settings as settings  # [OK] FIXED: lazy proxy avoids import-time crash
+from app.config import (
+    lazy_settings as settings,
+)  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.ids import generate_correlation_id
 from app.auth.dependencies import get_current_user, AuthenticatedUser
 from app.models import ErrorResponse
 from app.vectorstore.store_manager import VectorStoreManager
-from app.cache import get_cache
 from app.core.vision_llm import get_vision_llm
 from app.middleware.rate_limiter import RateLimiter  # FIXED: actual module path
 
@@ -45,8 +44,8 @@ class TableQueryRequest(BaseModel):
     question: Optional[str] = Field(default=None, max_length=500)
     filter_col: Optional[str] = Field(default=None, max_length=64)
     filter_value: Optional[str] = Field(default=None, max_length=200)
-    
-    @field_validator('filter_col', 'filter_value', mode='before')
+
+    @field_validator("filter_col", "filter_value", mode="before")
     @classmethod
     def strip_strings(cls, v: Any) -> Any:
         return v.strip() if isinstance(v, str) else v
@@ -102,8 +101,8 @@ def _get_cache_key(workspace_id: str, item_type: str, item_id: str) -> str:
 
 
 async def _validate_table_exists(
-    workspace_id: str, 
-    table_id: str, 
+    workspace_id: str,
+    table_id: str,
     vector_store: VectorStoreManager,
     corr_id: str,
 ) -> bool:
@@ -143,15 +142,15 @@ async def get_extraction_stats(
 ) -> ExtractionStatsResponse:
     corr_id = (request.headers.get("X-Correlation-ID") if request else None) or generate_correlation_id("extract_stats")
     workspace_id = user.workspace_id if user else "default"
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_extraction_inputs(None, source_file, None, None, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     # ✅ FIXED: Use vector store to get actual extraction counts
     vector_store = VectorStoreManager(workspace_id=workspace_id)
-    
+
     try:
         # Search for tables
         table_docs, _ = await asyncio.wait_for(
@@ -163,7 +162,7 @@ async def get_extraction_stats(
             ),
             timeout=_CACHE_TIMEOUT,
         )
-        
+
         # Search for charts
         chart_docs, _ = await asyncio.wait_for(
             vector_store.search_documents_async(
@@ -180,7 +179,7 @@ async def get_extraction_stats(
     except Exception as e:
         logger.error(f"[{corr_id}] Extraction stats failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve extraction stats")
-    
+
     tables = [
         {
             "table_id": d.metadata.get("table_id", d.id) if hasattr(d, "metadata") else d.id,
@@ -190,9 +189,10 @@ async def get_extraction_stats(
             "type": d.metadata.get("table_type", "data") if hasattr(d, "metadata") else "data",
             "summary": (d.metadata.get("summary", "") or "")[:100] if hasattr(d, "metadata") else "",
         }
-        for d in table_docs if d is not None
+        for d in table_docs
+        if d is not None
     ]
-    
+
     charts = [
         {
             "chart_id": d.metadata.get("chart_id", d.id) if hasattr(d, "metadata") else d.id,
@@ -201,9 +201,10 @@ async def get_extraction_stats(
             "title": d.metadata.get("title") if hasattr(d, "metadata") else None,
             "takeaway": (d.metadata.get("key_takeaway", "") or "")[:100] if hasattr(d, "metadata") else "",
         }
-        for d in chart_docs if d is not None
+        for d in chart_docs
+        if d is not None
     ]
-    
+
     return ExtractionStatsResponse(
         source_file=source_file,
         workspace_id=workspace_id,
@@ -227,17 +228,17 @@ async def get_table(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> TableQueryResponse:
     corr_id = request.headers.get("X-Correlation-ID") or generate_correlation_id("get_table")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_extraction_inputs(table_id, None, None, None, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     # ✅ FIXED: Validate table exists in vector store
     vector_store = VectorStoreManager(workspace_id=user.workspace_id)
     if not await _validate_table_exists(user.workspace_id, table_id, vector_store, corr_id):
         raise HTTPException(status_code=404, detail=f"Table not found: {table_id}")
-    
+
     # ✅ FIXED: Fetch from vector store instead of in-memory cache
     try:
         docs, _ = await asyncio.wait_for(
@@ -254,10 +255,10 @@ async def get_table(
     except Exception as e:
         logger.error(f"[{corr_id}] Table fetch failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve table")
-    
+
     if not docs:
         raise HTTPException(status_code=404, detail=f"Table not found: {table_id}")
-    
+
     doc = docs[0]
     return TableQueryResponse(
         table_id=table_id,
@@ -286,18 +287,23 @@ async def query_table(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> TableQueryResponse:
     corr_id = request.headers.get("X-Correlation-ID") or generate_correlation_id("query_table")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_extraction_inputs(
-        table_id, None, request_body.operation, request_body.filter_col, request_body.filter_value, corr_id
+        table_id,
+        None,
+        request_body.operation,
+        request_body.filter_col,
+        request_body.filter_value,
+        corr_id,
     )
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     # ✅ FIXED: Proper rate limiting using RateLimiter.check_async with workspace-scoped key
     rate_limiter = RateLimiter()
     rate_key = f"extract_query:{user.workspace_id}:{user.user_id}"
-    
+
     try:
         rate_result = await asyncio.wait_for(
             rate_limiter.check_async(
@@ -317,12 +323,12 @@ async def query_table(
             )
     except Exception as e:
         logger.warning(f"[{corr_id}] Rate limit check failed: {e} — allowing request (fail-open)")
-    
+
     # ✅ FIXED: Validate table exists in vector store
     vector_store = VectorStoreManager(workspace_id=user.workspace_id)
     if not await _validate_table_exists(user.workspace_id, table_id, vector_store, corr_id):
         raise HTTPException(status_code=404, detail=f"Table not found: {table_id}")
-    
+
     # ✅ FIXED: Fetch from vector store
     try:
         docs, _ = await asyncio.wait_for(
@@ -339,106 +345,124 @@ async def query_table(
     except Exception as e:
         logger.error(f"[{corr_id}] Table fetch failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve table")
-    
+
     if not docs:
         raise HTTPException(status_code=404, detail=f"Table not found: {table_id}")
-    
+
     doc = docs[0]
     markdown = doc.metadata.get("markdown", "") if hasattr(doc, "metadata") else ""
     json_data = doc.metadata.get("json_data", {}) if hasattr(doc, "metadata") else {}
-    
+
     if request_body.operation == "view":
         return TableQueryResponse(table_id=table_id, markdown=markdown, answer=None, correlation_id=corr_id)
-    
+
     if request_body.operation == "describe" and request_body.question:
         # ✅ FIXED: Use centralized LLM pool with timeout
         try:
             llm = get_vision_llm(model_override=settings.openai_chat_model, timeout=30.0)
-            
+
             prompt = (
                 f"Answer this question about the table. Return direct answer only.\n\n"
                 f"Table:\n{markdown[:1500]}\n\n"
                 f"Question: {request_body.question}"
             )
-            
+
             # ✅ FIXED: Use asyncio.wait_for for proper timeout
             response = await asyncio.wait_for(
                 llm.ainvoke([{"role": "user", "content": prompt}]),
                 timeout=_LLM_TIMEOUT,
             )
             answer = response.content if hasattr(response, "content") else str(response)
-            
+
         except asyncio.TimeoutError:
             logger.warning(f"[{corr_id}] Table LLM query timed out after {_LLM_TIMEOUT}s")
             answer = "Table description timed out. Please try again."
         except Exception as e:
             logger.error(f"[{corr_id}] Table LLM query failed: {e}")
             answer = "Failed to describe table."
-            
+
         return TableQueryResponse(table_id=table_id, markdown=markdown, answer=answer, correlation_id=corr_id)
-    
+
     # Pandas operations (sum, max, min, filter) — ✅ FIXED: Safe mode + regex escaping
     import pandas as pd
-    
+
     records = json_data.get("records", []) if isinstance(json_data, dict) else []
     if not records:
-        return TableQueryResponse(table_id=table_id, markdown=markdown, answer="No data available.", correlation_id=corr_id)
-    
+        return TableQueryResponse(
+            table_id=table_id,
+            markdown=markdown,
+            answer="No data available.",
+            correlation_id=corr_id,
+        )
+
     try:
         # ✅ FIXED: Limit DataFrame size to prevent memory abuse
         if len(records) > _MAX_PANDAS_ROWS:
             logger.warning(f"[{corr_id}] Table has {len(records)} rows, limiting to {_MAX_PANDAS_ROWS}")
             records = records[:_MAX_PANDAS_ROWS]
-        
+
         df = pd.DataFrame(records)
-        
+
         if request_body.operation in ("sum", "max", "min") and request_body.filter_col:
             col = request_body.filter_col
             if col not in df.columns:
                 raise HTTPException(status_code=400, detail=f"Column not found: {col}")
-            
+
             # ✅ FIXED: Safe numeric conversion with proper regex pattern
             numeric = pd.to_numeric(
-                df[col].astype(str).str.replace(r'[,$%]', '', regex=True), 
-                errors="coerce"
+                df[col].astype(str).str.replace(r"[,$%]", "", regex=True),
+                errors="coerce",
             )
-            
+
             if request_body.operation == "sum":
                 answer = f"{col} sum: {numeric.sum():.2f}"
             elif request_body.operation == "max":
                 answer = f"{col} max: {numeric.max():.2f}"
             else:
                 answer = f"{col} min: {numeric.min():.2f}"
-            return TableQueryResponse(table_id=table_id, markdown=markdown, answer=answer, correlation_id=corr_id)
-            
+            return TableQueryResponse(
+                table_id=table_id,
+                markdown=markdown,
+                answer=answer,
+                correlation_id=corr_id,
+            )
+
         if request_body.operation == "filter" and request_body.filter_col and request_body.filter_value:
             col = request_body.filter_col
             if col not in df.columns:
                 raise HTTPException(status_code=400, detail=f"Column not found: {col}")
-            
+
             # ✅ FIXED: Safe None checks + escape regex special chars in filter_value
             safe_value = re.escape(request_body.filter_value) if request_body.filter_value else ""
             filtered = df[df[col].astype(str).str.contains(safe_value, case=False, na=False, regex=True)]
-            
+
             # ✅ FIXED: Fallback if tabulate not installed
             try:
                 from tabulate import tabulate
+
                 answer = tabulate(filtered.head(20), headers="keys", tablefmt="pipe", showindex=False)
             except ImportError:
                 # Simple fallback: CSV-like format
                 header = "| " + " | ".join(str(c) for c in filtered.columns) + " |"
                 sep = "| " + " | ".join(["---"] * len(filtered.columns)) + " |"
-                rows = ["| " + " | ".join(str(v) for v in row) + " |" for row in filtered.head(20).itertuples(index=False)]
+                rows = [
+                    "| " + " | ".join(str(v) for v in row) + " |" for row in filtered.head(20).itertuples(index=False)
+                ]
                 answer = "\n".join([header, sep] + rows)
-            
-            return TableQueryResponse(table_id=table_id, markdown=markdown, answer=answer, correlation_id=corr_id)
-            
+
+            return TableQueryResponse(
+                table_id=table_id,
+                markdown=markdown,
+                answer=answer,
+                correlation_id=corr_id,
+            )
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"[{corr_id}] Table pandas operation failed: {e}")
         raise HTTPException(status_code=400, detail=f"Query operation failed: {str(e)}")
-    
+
     return TableQueryResponse(table_id=table_id, markdown=markdown, answer=None, correlation_id=corr_id)
 
 
@@ -452,6 +476,7 @@ async def export_tables_xlsx(
 ):
     """Download all tables from the document as a single Excel workbook (one sheet per table)."""
     from fastapi.responses import Response
+
     corr_id = generate_correlation_id("export_tables")
     filename_safe = source_file.split("/")[-1].split("\\")[-1]
 
@@ -564,10 +589,11 @@ async def extract_form_fields(
 
     try:
         llm = get_vision_llm(timeout=30.0)
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=501, detail="Vision LLM not available")
 
     import json as _json
+
     all_fields = []
 
     for doc in figure_docs[:5]:
@@ -584,13 +610,20 @@ async def extract_form_fields(
         )
         try:
             response = await asyncio.wait_for(
-                llm.ainvoke([{
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
-                        {"type": "text", "text": prompt},
-                    ],
-                }]),
+                llm.ainvoke(
+                    [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+                                },
+                                {"type": "text", "text": prompt},
+                            ],
+                        }
+                    ]
+                ),
                 timeout=_LLM_TIMEOUT,
             )
             raw = response.content if hasattr(response, "content") else str(response)
@@ -644,7 +677,10 @@ async def aggregate_cross_document(
             table_docs, _ = await asyncio.wait_for(
                 vector_store.search_documents_async(
                     query="",
-                    filters={"source_file": sf.split("/")[-1].split("\\")[-1], "block_type": "table"},
+                    filters={
+                        "source_file": sf.split("/")[-1].split("\\")[-1],
+                        "block_type": "table",
+                    },
                     limit=20,
                     correlation_id=corr_id,
                 ),
@@ -727,10 +763,9 @@ def get_extraction_metadata() -> dict[str, Any]:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["router", "get_extraction_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

@@ -1,11 +1,12 @@
 # backend/app/api/routes/templates.py
 """Extraction template builder API: create, list, extract, and view results."""
+
 from __future__ import annotations
 
 import json
 import logging
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -14,7 +15,8 @@ from sqlalchemy import text
 from app.auth.dependencies import get_current_user, AuthenticatedUser
 from app.core.ids import generate_correlation_id
 from app.core.template_extractor import (
-    BUILTIN_TEMPLATES, ensure_template_schema, run_extraction, get_template,
+    BUILTIN_TEMPLATES,
+    run_extraction,
 )
 from app.database.engine import async_engine
 
@@ -25,6 +27,7 @@ _VALID_FIELD_TYPES = {"string", "number", "date", "boolean", "list", "email", "p
 
 
 # ── Pydantic models ────────────────────────────────────────────
+
 
 class TemplateField(BaseModel):
     name: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-z_][a-z0-9_]*$")
@@ -44,6 +47,7 @@ class ExtractionRunRequest(BaseModel):
 
 
 # ── Endpoints ─────────────────────────────────────────────────
+
 
 @router.get("/builtins")
 async def list_builtins() -> dict[str, Any]:
@@ -75,24 +79,27 @@ async def create_template(
         if field.type not in _VALID_FIELD_TYPES:
             raise HTTPException(
                 status_code=422,
-                detail=f"Invalid field type '{field.type}'. Valid: {_VALID_FIELD_TYPES}"
+                detail=f"Invalid field type '{field.type}'. Valid: {_VALID_FIELD_TYPES}",
             )
 
     tmpl_id = str(uuid.uuid4())
     try:
         async with async_engine.begin() as conn:
-            await conn.execute(text("""
+            await conn.execute(
+                text("""
                 INSERT INTO extraction_templates
                     (id, workspace_id, name, fields, is_builtin, created_by)
                 VALUES
                     (:id, :ws, :name, CAST(:fields AS jsonb), FALSE, :by)
-            """), {
-                "id": tmpl_id,
-                "ws": user.workspace_id,
-                "name": req.name,
-                "fields": json.dumps([f.model_dump() for f in req.fields]),
-                "by": user.user_id,
-            })
+            """),
+                {
+                    "id": tmpl_id,
+                    "ws": user.workspace_id,
+                    "name": req.name,
+                    "fields": json.dumps([f.model_dump() for f in req.fields]),
+                    "by": user.user_id,
+                },
+            )
     except Exception as e:
         logger.error(f"[{corr_id}] Failed to create template: {e}")
         raise HTTPException(status_code=500, detail="Failed to create template")
@@ -107,13 +114,16 @@ async def list_templates(
     corr_id = generate_correlation_id("tpl-list")
     try:
         async with async_engine.begin() as conn:
-            rows = await conn.execute(text("""
+            rows = await conn.execute(
+                text("""
                 SELECT id, name, is_builtin, created_at,
                        jsonb_array_length(fields) as field_count
                 FROM extraction_templates
                 WHERE workspace_id = :ws
                 ORDER BY created_at DESC
-            """), {"ws": user.workspace_id})
+            """),
+                {"ws": user.workspace_id},
+            )
             templates = rows.fetchall()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list templates: {e}")
@@ -150,17 +160,20 @@ async def extract_with_template(
         template_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{user.workspace_id}:{req.template_id}"))
         try:
             async with async_engine.begin() as conn:
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     INSERT INTO extraction_templates (id, workspace_id, name, slug, fields, is_builtin)
                     VALUES (:id, :ws, :name, :slug, CAST(:fields AS jsonb), TRUE)
                     ON CONFLICT (id) DO NOTHING
-                """), {
-                    "id": template_id,
-                    "ws": user.workspace_id,
-                    "name": builtin["name"],
-                    "slug": req.template_id,
-                    "fields": json.dumps(builtin["fields"]),
-                })
+                """),
+                    {
+                        "id": template_id,
+                        "ws": user.workspace_id,
+                        "name": builtin["name"],
+                        "slug": req.template_id,
+                        "fields": json.dumps(builtin["fields"]),
+                    },
+                )
         except Exception as e:
             logger.warning(f"[{corr_id}] Could not seed builtin template: {e}")
 
@@ -183,14 +196,17 @@ async def get_extraction_results(
     corr_id = generate_correlation_id("tpl-results")
     try:
         async with async_engine.begin() as conn:
-            rows = await conn.execute(text("""
+            rows = await conn.execute(
+                text("""
                 SELECT er.id, et.name, er.fields, er.confidence, er.created_at
                 FROM extraction_results er
                 JOIN extraction_templates et ON er.template_id = et.id
                 WHERE er.workspace_id = :ws AND er.source_file = :sf
                 ORDER BY er.created_at DESC
                 LIMIT 50
-            """), {"ws": user.workspace_id, "sf": source_file})
+            """),
+                {"ws": user.workspace_id, "sf": source_file},
+            )
             results = rows.fetchall()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch results: {e}")

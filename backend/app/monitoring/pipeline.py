@@ -1,4 +1,4 @@
-﻿# backend/app/monitoring/monitoring_pipeline.py
+# backend/app/monitoring/monitoring_pipeline.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, A - Async orchestration
 # BATMAN-FIX: A - True async, T - Concurrency control
 # ASCALE-FIX: L - Layered architecture, E - Error propagation
@@ -30,6 +30,7 @@ _STEP_TIMEOUT: int = 120
 @dataclass
 class MonitoringRunResult:
     """Complete result of a monitoring pipeline run."""
+
     run_id: str
     workspace_id: str
     started_at: str
@@ -49,7 +50,7 @@ class MonitoringRunResult:
 
     # Error
     error: Optional[str] = None
-    
+
     # FIXED: Added correlation_id for tracing
     correlation_id: Optional[str] = None
 
@@ -57,9 +58,7 @@ class MonitoringRunResult:
     def is_healthy(self) -> bool:
         stats = self.window_stats
         faith = stats.get("faithfulness_mean")
-        return (
-            not self.drift_report or not self.drift_report.drift_detected
-        ) and (faith is None or faith >= 0.70)
+        return (not self.drift_report or not self.drift_report.drift_detected) and (faith is None or faith >= 0.70)
 
     def to_dict(self) -> dict:
         """Serialize for API responses."""
@@ -102,7 +101,7 @@ class MonitoringPipeline:
     4. Trigger auto-improvement if needed
     5. Send alerts
     6. Persist daily stats
-    
+
     Features (DVMELTSS-A, BATMAN-T, ASCALE-L):
     - Fully async orchestration with proper error handling
     - Correlation ID propagation across all components
@@ -116,13 +115,13 @@ class MonitoringPipeline:
         self.alert_engine = AlertEngine()
 
     async def run_async(
-        self, 
+        self,
         log_to_mlflow: bool = True,
         correlation_id: Optional[str] = None,
     ) -> MonitoringRunResult:
         """
         Async: Execute the complete monitoring pipeline.
-        
+
         ✅ FIXED: Non-blocking drift detection + input validation + graceful degradation.
         """
         run_id = str(uuid.uuid4())[:8]
@@ -147,10 +146,7 @@ class MonitoringPipeline:
             correlation_id=corr_id,
         )
 
-        logger.info(
-            f"[{corr_id}] Monitoring pipeline starting: "
-            f"workspace={self.workspace_id} | run_id={run_id}"
-        )
+        logger.info(f"[{corr_id}] Monitoring pipeline starting: " f"workspace={self.workspace_id} | run_id={run_id}")
 
         try:
             # -- Step 1: Window statistics -------------------------------------
@@ -188,6 +184,7 @@ class MonitoringPipeline:
                 monitor = EvidentlyMonitor(workspace_id=self.workspace_id)
                 # ✅ FIXED: Run sync monitor.run() in thread to avoid blocking event loop
                 import sys
+
                 if sys.version_info >= (3, 9):
                     drift_report = await asyncio.wait_for(
                         asyncio.to_thread(
@@ -206,7 +203,7 @@ class MonitoringPipeline:
                             lambda: monitor.run(
                                 log_to_mlflow=log_to_mlflow,
                                 correlation_id=corr_id,
-                            )
+                            ),
                         ),
                         timeout=_STEP_TIMEOUT,
                     )
@@ -290,8 +287,10 @@ class MonitoringPipeline:
         Sync wrapper.
         ✅ FIXED: Use run_async_in_task helper to avoid deadlock.
         """
+
         async def _do_run():
             return await self.run_async(*args, **kwargs)
+
         return run_async_in_task(_do_run)
 
 
@@ -300,7 +299,12 @@ def get_pipeline_metadata() -> dict[str, Any]:
     return {
         "step_timeout_seconds": _STEP_TIMEOUT,
         "default_hours": 24.0,
-        "components": ["MetricsCollector", "EvidentlyMonitor", "AlertEngine", "AutoImprover"],
+        "components": [
+            "MetricsCollector",
+            "EvidentlyMonitor",
+            "AlertEngine",
+            "AutoImprover",
+        ],
         "async_safe": True,
         "graceful_degradation": True,
     }
@@ -312,10 +316,9 @@ __all__ = [
     "MonitoringRunResult",
     "get_pipeline_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

@@ -9,21 +9,38 @@ import datetime
 import logging
 import os
 import re
-import uuid
 from pathlib import Path
 from typing import Annotated, Optional, Any, Final
 
 from fastapi import (
-    APIRouter, Depends, HTTPException, Request, status, Query, 
-    Path as FastAPIPath, BackgroundTasks
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    status,
+    Query,
+    Path as FastAPIPath,
+    BackgroundTasks,
 )
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
-from app.config import get_settings, lazy_settings as settings  # [OK] FIXED: lazy proxy avoids import-time crash
+from app.config import (
+    lazy_settings as settings,
+)  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.ids import generate_correlation_id
-from app.auth.dependencies import get_current_user, require_editor, require_admin, AuthenticatedUser
-from app.models import DocumentListResponse, DocumentMetaResponse, DocumentMetadata, ErrorResponse, PaginationParams
+from app.auth.dependencies import (
+    get_current_user,
+    require_editor,
+    require_admin,
+    AuthenticatedUser,
+)
+from app.models import (
+    DocumentListResponse,
+    DocumentMetaResponse,
+    ErrorResponse,
+    PaginationParams,
+)
 from app.vectorstore.store_manager import VectorStoreManager
 from app.workspace.store_manager import WorkspaceManager
 from app.monitoring.metrics_collector import record_document_operation
@@ -50,13 +67,13 @@ class DocumentQueryParams(BaseModel):
     language: Optional[str] = Field(default=None, pattern="^[a-z]{2,3}$")
     chunk_type: Optional[str] = Field(default=None)
     search: Optional[str] = Field(default=None, max_length=200)
-    
-    @field_validator('page_max')
+
+    @field_validator("page_max")
     @classmethod
     def validate_page_range(cls, v: Optional[int], info) -> Optional[int]:
-        page_min = info.data.get('page_min')
+        page_min = info.data.get("page_min")
         if v is not None and page_min is not None and v < page_min:
-            raise ValueError('page_max must be >= page_min')
+            raise ValueError("page_max must be >= page_min")
         return v
 
 
@@ -90,9 +107,9 @@ async def _list_documents(
     try:
         # ✅ FIXED: Use correct method signature
         vector_store = VectorStoreManager(workspace_id=workspace_id)
-        
+
         filters = {k: v for k, v in params.model_dump().items() if v is not None and k != "search"}
-        
+
         # ✅ FIXED: VectorStoreManager.search_documents_async() is the correct method
         docs, total = await asyncio.wait_for(
             vector_store.search_documents_async(
@@ -104,7 +121,7 @@ async def _list_documents(
             ),
             timeout=30.0,  # Add timeout for search operation
         )
-        
+
         items = []
         for d in docs:
             if d is None:
@@ -116,15 +133,20 @@ async def _list_documents(
                     source_file=metadata.get("source_file", "unknown"),
                     document_type=metadata.get("document_type", metadata.get("file_type", "unknown")),
                     language=metadata.get("language", "en"),
-                    page_count=max(int(metadata.get("page_count") or metadata.get("page_number") or 0), 0),
+                    page_count=max(
+                        int(metadata.get("page_count") or metadata.get("page_number") or 0),
+                        0,
+                    ),
                     chunk_count=max(int(metadata.get("chunk_count") or 1), 0),
-                    mean_ocr_confidence=float(metadata.get("mean_ocr_confidence") or metadata.get("ocr_confidence") or 0.0),
+                    mean_ocr_confidence=float(
+                        metadata.get("mean_ocr_confidence") or metadata.get("ocr_confidence") or 0.0
+                    ),
                     ingest_timestamp=str(metadata.get("ingest_timestamp") or metadata.get("created_at") or ""),
                     tags=metadata.get("tags") or [],
                     correlation_id=correlation_id,
                 )
             )
-        
+
         return DocumentListResponse(
             documents=items,
             total_count=total,
@@ -207,6 +229,7 @@ async def find_duplicates(
         raise HTTPException(status_code=500, detail=f"Failed to list documents: {e}")
     import hashlib
     from collections import defaultdict
+
     file_hashes: dict[str, set] = defaultdict(set)
     for doc in docs:
         if not doc:
@@ -249,16 +272,16 @@ async def list_documents(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ):
     corr_id = request.headers.get("X-Correlation-ID") or generate_correlation_id("list_docs")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_document_inputs(None, params.source_file, params.workspace_id, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     # ✅ FIXED: Proper rate limiting using RateLimiter.check_async with workspace-scoped key
     rate_limiter = RateLimiter()
     rate_key = f"docs_list:{user.workspace_id}:{user.user_id}"
-    
+
     try:
         rate_result = await asyncio.wait_for(
             rate_limiter.check_async(
@@ -278,13 +301,16 @@ async def list_documents(
             )
     except Exception as e:
         logger.warning(f"[{corr_id}] Rate limit check failed: {e} — allowing request (fail-open)")
-    
+
     workspace_id = params.workspace_id or user.workspace_id
-    if workspace_id != user.workspace_id and user.role not in ["admin", "workspace_admin"]:
+    if workspace_id != user.workspace_id and user.role not in [
+        "admin",
+        "workspace_admin",
+    ]:
         raise HTTPException(status_code=403, detail="Access denied to this workspace")
-    
+
     logger.info(f"[{corr_id}] List docs: workspace={workspace_id} filters={params.model_dump()}")
-    
+
     return await _list_documents(workspace_id, params, pagination, corr_id)
 
 
@@ -305,16 +331,16 @@ async def get_document(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ):
     corr_id = request.headers.get("X-Correlation-ID") or generate_correlation_id("get_doc")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_document_inputs(document_id, None, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     # ✅ FIXED: Proper rate limiting using RateLimiter.check_async
     rate_limiter = RateLimiter()
     rate_key = f"docs_get:{user.workspace_id}:{user.user_id}"
-    
+
     try:
         rate_result = await asyncio.wait_for(
             rate_limiter.check_async(
@@ -334,10 +360,10 @@ async def get_document(
             )
     except Exception as e:
         logger.warning(f"[{corr_id}] Rate limit check failed: {e} — allowing request (fail-open)")
-    
+
     # ✅ FIXED: Use correct method signature
     vector_store = VectorStoreManager(workspace_id=user.workspace_id)
-    
+
     try:
         doc = await asyncio.wait_for(
             vector_store.get_document_by_id_async(document_id, correlation_id=corr_id),
@@ -348,7 +374,7 @@ async def get_document(
     except Exception as e:
         logger.error(f"[{corr_id}] Get document failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve document")
-    
+
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -384,16 +410,16 @@ async def delete_document(
     user: Annotated[AuthenticatedUser, Depends(require_editor)],
 ):
     corr_id = request.headers.get("X-Correlation-ID") or generate_correlation_id("delete_doc")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_document_inputs(None, source_file, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     # ✅ FIXED: Proper rate limiting for write operations
     rate_limiter = RateLimiter()
     rate_key = f"docs_delete:{user.workspace_id}:{user.user_id}"
-    
+
     try:
         rate_result = await asyncio.wait_for(
             rate_limiter.check_async(
@@ -413,23 +439,23 @@ async def delete_document(
             )
     except Exception as e:
         logger.warning(f"[{corr_id}] Rate limit check failed: {e} — allowing request (fail-open)")
-    
+
     # ✅ Path traversal protection
     sanitized = Path(source_file).name
     if sanitized != source_file:
         logger.warning(f"[{corr_id}] Path traversal attempt blocked: '{source_file}'")
         raise HTTPException(status_code=400, detail="Invalid filename: path traversal not allowed")
-    
+
     if not sanitized or sanitized.startswith("."):
         raise HTTPException(status_code=400, detail="Invalid filename: hidden files not allowed")
-    
+
     logger.info(f"[{corr_id}] Delete request: doc={sanitized} user={user.user_id[:8]}...")
-    
+
     success = await _delete_document(sanitized, user.workspace_id, corr_id)
-    
+
     if not success:
         raise HTTPException(status_code=404, detail="Document not found")
-    
+
     record_document_operation(
         workspace_id=user.workspace_id,
         correlation_id=corr_id,
@@ -456,14 +482,15 @@ async def serve_document_file(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ):
     corr_id = request.headers.get("X-Correlation-ID") or generate_correlation_id("serve_file")
-    
+
     # ✅ Path traversal protection
     safe_name = Path(source_file).name
     if safe_name != source_file:
         raise HTTPException(status_code=400, detail="Invalid file path")
-    
+
     # ✅ FIXED: Safe upload_dir access with fallback
     import tempfile as _tf
+
     upload_dir = getattr(settings, "upload_dir", None) or str(Path(_tf.gettempdir()) / "docmind_uploads")
     file_path = Path(upload_dir) / user.workspace_id / safe_name
 
@@ -473,11 +500,11 @@ async def serve_document_file(
     except ValueError:
         logger.warning(f"[{corr_id}] Path escape attempt: {file_path}")
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
     # ✅ FIXED: Safe file existence check + read permission
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {safe_name}")
-    
+
     try:
         # Check read permission
         if not file_path.is_file() or not os.access(file_path, os.R_OK):
@@ -485,15 +512,13 @@ async def serve_document_file(
     except Exception as e:
         logger.error(f"[{corr_id}] File access check failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to access file")
-    
+
     return FileResponse(
         path=str(file_path),
         media_type="application/pdf" if source_file.endswith(".pdf") else "application/octet-stream",
         filename=safe_name,
         headers={"X-Correlation-ID": corr_id},
     )
-
-
 
 
 @router.get(
@@ -565,16 +590,16 @@ async def reindex_document(
     background_tasks: BackgroundTasks,
 ):
     corr_id = request.headers.get("X-Correlation-ID") or generate_correlation_id("reindex")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_document_inputs(document_id, None, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     # ✅ FIXED: Proper rate limiting for write operations
     rate_limiter = RateLimiter()
     rate_key = f"docs_reindex:{user.workspace_id}:{user.user_id}"
-    
+
     try:
         rate_result = await asyncio.wait_for(
             rate_limiter.check_async(
@@ -594,9 +619,9 @@ async def reindex_document(
             )
     except Exception as e:
         logger.warning(f"[{corr_id}] Rate limit check failed: {e} — allowing request (fail-open)")
-    
+
     logger.info(f"[{corr_id}] Reindex queued: doc={document_id}")
-    
+
     async def _do_reindex():
         try:
             # ✅ FIXED: Use correct method signature
@@ -639,9 +664,9 @@ async def reindex_document(
                 user_id=user.user_id,
             )
             # Don't re-raise — background task failures are logged but don't affect response
-    
+
     background_tasks.add_task(_do_reindex)
-    
+
     return {
         "document_id": document_id,
         "status": "queued",
@@ -669,20 +694,26 @@ async def create_workspace(
     user: Annotated[AuthenticatedUser, Depends(require_admin)],
 ):
     corr_id = request.headers.get("X-Correlation-ID") or generate_correlation_id("create_ws")
-    
+
     # ✅ Validate inputs
     workspace_name = body.get("name", "").strip().lower().replace(" ", "_")
     if not workspace_name or len(workspace_name) > 64:
-        raise HTTPException(status_code=400, detail="Invalid workspace name (1-64 chars, alphanumeric + underscore)")
-    
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid workspace name (1-64 chars, alphanumeric + underscore)",
+        )
+
     # ✅ Validate workspace name format
-    if not re.match(r'^[a-z0-9_]+$', workspace_name):
-        raise HTTPException(status_code=400, detail="Workspace name must contain only lowercase letters, numbers, and underscores")
-    
+    if not re.match(r"^[a-z0-9_]+$", workspace_name):
+        raise HTTPException(
+            status_code=400,
+            detail="Workspace name must contain only lowercase letters, numbers, and underscores",
+        )
+
     # ✅ FIXED: Proper rate limiting for admin operations
     rate_limiter = RateLimiter()
     rate_key = f"ws_create:{user.workspace_id}:{user.user_id}"
-    
+
     try:
         rate_result = await asyncio.wait_for(
             rate_limiter.check_async(
@@ -702,10 +733,10 @@ async def create_workspace(
             )
     except Exception as e:
         logger.warning(f"[{corr_id}] Rate limit check failed: {e} — allowing request (fail-open)")
-    
+
     # ✅ FIXED: Use correct import + method signature
     manager = WorkspaceManager()
-    
+
     try:
         exists = await asyncio.wait_for(
             manager.workspace_exists_async(workspace_name),
@@ -714,10 +745,10 @@ async def create_workspace(
     except Exception as e:
         logger.error(f"[{corr_id}] Workspace check failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to check workspace existence")
-    
+
     if exists:
         raise HTTPException(status_code=409, detail="Workspace already exists")
-    
+
     try:
         await asyncio.wait_for(
             manager.create_workspace_async(
@@ -730,9 +761,9 @@ async def create_workspace(
     except Exception as e:
         logger.error(f"[{corr_id}] Workspace creation failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to create workspace")
-    
+
     logger.info(f"[{corr_id}] Workspace created: {workspace_name} by {user.user_id[:8]}...")
-    
+
     return {
         "workspace_id": workspace_name,
         "created_by": user.user_id,
@@ -744,7 +775,15 @@ async def create_workspace(
 def get_document_metadata() -> dict[str, Any]:
     """✅ NEW: Return document API metadata for monitoring."""
     return {
-        "allowed_extensions": [".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp"],
+        "allowed_extensions": [
+            ".pdf",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".tiff",
+            ".tif",
+            ".bmp",
+        ],
         "max_page_limit": 100,
         "rate_limits": {
             "read": {"endpoint_group": "query", "default_limit": "100/hour"},
@@ -768,10 +807,9 @@ if __name__ == "__main__":
     import sys
     import os
     from pathlib import Path
-    from unittest.mock import AsyncMock, MagicMock, patch
     from fastapi import Request, HTTPException
     from fastapi.responses import FileResponse
-    
+
     # 🔧 ROBUST PATH SETUP
     current_file = Path(__file__).resolve()
     for parent in current_file.parents:
@@ -780,67 +818,68 @@ if __name__ == "__main__":
             break
     else:
         backend_root = current_file.parents[2]
-    
+
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
-    
+
     # Set test JWT secret for auth dependencies
     if not os.getenv("JWT_SECRET_KEY"):
         os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-local-testing-only-do-not-use-in-prod-1234567890"
-    
+
     async def run_tests():
         print("🔍 Testing Documents Routes module (app/api/routes/documents.py)")
         print("=" * 70)
-        
+
         try:
             from app.api.routes.documents import (
-                DocumentQueryParams, _validate_document_inputs,
-                get_document_metadata, router
+                DocumentQueryParams,
+                _validate_document_inputs,
+                get_document_metadata,
+                router,
             )
-            from app.models import PaginationParams, DocumentMetaResponse, DocumentMetadata
-            from app.auth.models import UserRole
-            
+            from app.models import DocumentMetaResponse, DocumentMetadata
+
             # -- Test 1: Pydantic model validation -------------------------
             print("\n📌 Test 1: DocumentQueryParams (validation)")
-            
+
             params = DocumentQueryParams(
                 workspace_id="ws-123",
                 source_file="test.pdf",
                 page_min=1,
                 page_max=10,
                 language="en",
-                search="invoice"
+                search="invoice",
             )
             assert params.workspace_id == "ws-123"
-            print(f"   ✅ DocumentQueryParams: valid inputs accepted")
-            
+            print("   ✅ DocumentQueryParams: valid inputs accepted")
+
             try:
                 DocumentQueryParams(page_min=10, page_max=5)
                 print("   ❌ Should reject page_max < page_min")
             except ValueError as e:
                 if "page_max must be >=" in str(e):
-                    print(f"   ✅ DocumentQueryParams: rejected invalid page range")
-            
+                    print("   ✅ DocumentQueryParams: rejected invalid page range")
+
             try:
                 DocumentQueryParams(language="ENGLISH")
                 print("   ❌ Should reject invalid language format")
             except Exception:
-                print(f"   ✅ DocumentQueryParams: rejected invalid language format")
-            
+                print("   ✅ DocumentQueryParams: rejected invalid language format")
+
             # -- Test 2: Helper function validation -----------------------
             print("\n📌 Test 2: _validate_document_inputs (pure logic)")
-            
+
             is_valid, error = _validate_document_inputs("doc-123", "test.pdf", "ws-456", "test-corr")
             assert is_valid is True
-            print(f"   ✅ _validate_document_inputs: valid inputs accepted")
-            
+            print("   ✅ _validate_document_inputs: valid inputs accepted")
+
             is_valid, error = _validate_document_inputs(123, None, None, "test-corr")  # type: ignore
             assert is_valid is False
-            print(f"   ✅ _validate_document_inputs: rejected non-string document_id")
-            
+            print("   ✅ _validate_document_inputs: rejected non-string document_id")
+
             # -- Test 3: Response models (serialization) ------------------
             print("\n📌 Test 3: Response models (Pydantic serialization)")
-            
+
             # DocumentMetaResponse
             meta_resp = DocumentMetaResponse(
                 source_file="test.pdf",
@@ -851,12 +890,12 @@ if __name__ == "__main__":
                 mean_ocr_confidence=0.95,
                 ingest_timestamp="2026-05-10T12:00:00Z",
                 tags=["invoice", "test"],
-                correlation_id="test-corr"
+                correlation_id="test-corr",
             )
             meta_dict = meta_resp.model_dump()
             assert "source_file" in meta_dict
-            print(f"   ✅ DocumentMetaResponse: serializes to dict")
-            
+            print("   ✅ DocumentMetaResponse: serializes to dict")
+
             # ✅ FIXED: DocumentMetadata with ALL required fields
             doc_meta = DocumentMetadata(
                 id="doc-123",
@@ -872,21 +911,25 @@ if __name__ == "__main__":
                 created_at="2026-05-10T12:00:00Z",
                 word_count=150,
                 preview="This is a preview...",
-                correlation_id="test-corr"
+                correlation_id="test-corr",
             )
             assert doc_meta.id == "doc-123"
             assert doc_meta.filename == "test.pdf"
-            print(f"   ✅ DocumentMetadata: created with all required fields")
-            
+            print("   ✅ DocumentMetadata: created with all required fields")
+
             # -- Test 4: Endpoint signatures (async/await ready) ---------
             print("\n📌 Test 4: Endpoint signatures (FastAPI compatible)")
             import inspect
-            
+
             from app.api.routes.documents import (
-                list_documents, get_document, delete_document,
-                serve_document_file, reindex_document, create_workspace
+                list_documents,
+                get_document,
+                delete_document,
+                serve_document_file,
+                reindex_document,
+                create_workspace,
             )
-            
+
             endpoints = [
                 ("list_documents", list_documents),
                 ("get_document", get_document),
@@ -895,17 +938,17 @@ if __name__ == "__main__":
                 ("reindex_document", reindex_document),
                 ("create_workspace", create_workspace),
             ]
-            
+
             for name, func in endpoints:
                 assert inspect.iscoroutinefunction(func), f"{name} should be async"
             print(f"   ✅ All {len(endpoints)} document endpoints are async coroutines")
-            
+
             # -- Test 5: Router configuration & routes --------------------
             print("\n📌 Test 5: Router configuration & routes")
-            
+
             # Get route paths correctly
-            route_paths = [r.path for r in router.routes if hasattr(r, 'path')]
-            
+            route_paths = [r.path for r in router.routes if hasattr(r, "path")]
+
             # Verify expected paths exist
             expected_paths = [
                 "/documents/workspaces",
@@ -915,56 +958,62 @@ if __name__ == "__main__":
                 "/documents/{source_file:path}/file",
                 "/documents/{document_id}/reindex",
             ]
-            
+
             found_count = sum(1 for exp in expected_paths if any(exp in p for p in route_paths))
             print(f"   ✅ Router has {found_count}/{len(expected_paths)} expected document endpoints")
-            
+
             # Verify tags
             assert "documents" in router.tags
             print(f"   ✅ Router tagged: {router.tags}")
-            
+
             # -- Test 6: Metadata helper ---------------------------------
             print("\n📌 Test 6: get_document_metadata (debugging helper)")
-            
+
             metadata = get_document_metadata()
             assert "allowed_extensions" in metadata
             assert ".pdf" in metadata["allowed_extensions"]
             assert metadata["path_traversal_protection"] is True
-            print(f"   ✅ get_document_metadata returns config")
-            
+            print("   ✅ get_document_metadata returns config")
+
             # -- Test 7: Error handling patterns -------------------------
             print("\n📌 Test 7: Error handling (HTTPException vs ValueError)")
-            
+
             try:
                 _validate_document_inputs(123, None, None, "test")  # type: ignore
             except ValueError:
-                print(f"   ✅ Validation errors: raise ValueError (FastAPI -> 400)")
-            
+                print("   ✅ Validation errors: raise ValueError (FastAPI -> 400)")
+
             try:
-                raise HTTPException(status_code=403, detail="Access denied", headers={"X-Correlation-ID": "test"})
+                raise HTTPException(
+                    status_code=403,
+                    detail="Access denied",
+                    headers={"X-Correlation-ID": "test"},
+                )
             except HTTPException as e:
                 assert e.status_code == 403
                 assert "X-Correlation-ID" in e.headers
-                print(f"   ✅ Auth errors: raise HTTPException with correlation_id header")
-            
+                print("   ✅ Auth errors: raise HTTPException with correlation_id header")
+
             # -- Test 8: File serving security (path traversal) ----------
             print("\n📌 Test 8: File serving security (path traversal protection)")
-            
+
             from pathlib import Path as PyPath
+
             safe = PyPath("test.pdf").name
             assert safe == "test.pdf"
             malicious = PyPath("../../etc/passwd").name
             assert malicious == "passwd"
-            print(f"   ✅ Path traversal protection: Path().name sanitizes input")
-            
+            print("   ✅ Path traversal protection: Path().name sanitizes input")
+
             # -- Test 9: Module exports ---------------------------------
             print("\n📌 Test 9: Module imports & exports")
-            
+
             from app.api.routes import documents
+
             assert hasattr(documents, "router")
             assert "router" in documents.__all__
-            print(f"   ✅ Module exports: router in __all__")
-            
+            print("   ✅ Module exports: router in __all__")
+
             print("\n" + "=" * 70)
             print("✅ ALL TESTS PASSED! Documents routes module verified.")
             print("\n💡 What we verified:")
@@ -978,13 +1027,14 @@ if __name__ == "__main__":
             print("\n🔧 Next: Move to app/api/routes/query.py for RAG queries")
             print("\n🔐 Security: Path sanitization, workspace scoping, rate limiting")
             return True
-                    
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
-    
+
     # Run async tests
     success = asyncio.run(run_tests())
     sys.exit(0 if success else 1)

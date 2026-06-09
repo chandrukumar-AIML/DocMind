@@ -14,13 +14,13 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Final, Optional, Union
+from typing import Final, Optional
 from html.parser import HTMLParser
 
 import numpy as np
 
 # DVMELTSS-M: Import centralized utilities
-from app.core.ocr_utils import normalize_bbox, detect_language_vectorized, ConfidenceField, BBoxField
+from app.core.ocr_utils import normalize_bbox, detect_language_vectorized
 from app.core.retry import retry_async, RetryConfig
 
 logger = logging.getLogger(__name__)
@@ -29,9 +29,11 @@ logger = logging.getLogger(__name__)
 _TAG_PATTERN: Final = re.compile(r"<[^>]+>")
 _SPACE_PATTERN: Final = re.compile(r"\s+")
 
+
 # ✅ FIXED: Safe defaults for dataclass fields
 def _default_bbox() -> list[list[float]]:
     return []
+
 
 def _default_confidence() -> float:
     return 0.0
@@ -40,6 +42,7 @@ def _default_confidence() -> float:
 @dataclass
 class TextBlock:
     """Immutable text block representation for OCR results."""
+
     text: str
     block_type: str
     page_num: int
@@ -61,6 +64,7 @@ class TextBlock:
 @dataclass
 class PageOCRResult:
     """Aggregated OCR results for a single page."""
+
     page_num: int
     blocks: list[TextBlock] = field(default_factory=list)
     mean_confidence: float = 0.0
@@ -81,6 +85,7 @@ class PageOCRResult:
 @dataclass
 class DocumentOCRResult:
     """Aggregated OCR results for a multi-page document."""
+
     pages: list[PageOCRResult] = field(default_factory=list)
     source_model: str = "paddleocr"
     correlation_id: Optional[str] = None
@@ -102,26 +107,27 @@ class DocumentOCRResult:
 
 class _HTMLTextParser(HTMLParser):
     """✅ NEW: Safe HTML to text converter preserving structure hints."""
+
     def __init__(self):
         super().__init__()
         self.text_parts: list[str] = []
         self.in_table = False
-    
+
     def handle_starttag(self, tag, attrs):
         if tag == "table":
             self.in_table = True
             self.text_parts.append("[TABLE_START] ")
         elif tag in ("tr", "td", "th"):
             self.text_parts.append(" | ")
-    
+
     def handle_endtag(self, tag):
         if tag == "table":
             self.in_table = False
             self.text_parts.append(" [TABLE_END]")
-    
+
     def handle_data(self, data):
         self.text_parts.append(data.strip())
-    
+
     def get_text(self) -> str:
         return " ".join(p for p in self.text_parts if p).strip()
 
@@ -129,17 +135,23 @@ class _HTMLTextParser(HTMLParser):
 class PaddleOCREngine:
     """
     PaddleOCR-based text extraction with layout analysis.
-    
+
     ✅ FIXED: Thread-safe via asyncio.Lock, async wrapper, input validation, GPU cleanup.
     """
-    
+
     LAYOUT_TYPE_MAP: Final = {
-        "text": "paragraph", "title": "title", "figure": "figure",
-        "figure_caption": "figure_caption", "table": "table",
-        "table_caption": "table_caption", "header": "header",
-        "footer": "footer", "reference": "reference", "equation": "equation",
+        "text": "paragraph",
+        "title": "title",
+        "figure": "figure",
+        "figure_caption": "figure_caption",
+        "table": "table",
+        "table_caption": "table_caption",
+        "header": "header",
+        "footer": "footer",
+        "reference": "reference",
+        "equation": "equation",
     }
-    
+
     # ✅ NEW: Valid image constraints
     _VALID_DTYPES: Final = {"uint8", "float32"}
     _VALID_CHANNELS: Final = {1, 3, 4}  # Grayscale, RGB, RGBA
@@ -160,7 +172,7 @@ class PaddleOCREngine:
 
         # ✅ FIXED: Lazy import paddleocr to reduce cold-start time
         from paddleocr import PaddleOCR, PPStructure
-        
+
         self.structure_engine = PPStructure(
             lang=self._get_paddle_lang(),
             use_gpu=use_gpu,
@@ -175,15 +187,12 @@ class PaddleOCREngine:
             use_gpu=use_gpu,
             show_log=False,
         )
-        
+
         # ✅ NEW: Locks for thread-safe engine access
         self._structure_lock = asyncio.Lock()
         self._ocr_lock = asyncio.Lock()
-        
-        logger.info(
-            f"PaddleOCR initialized: langs={self.languages}, "
-            f"gpu={use_gpu}, layout={enable_layout}"
-        )
+
+        logger.info(f"PaddleOCR initialized: langs={self.languages}, " f"gpu={use_gpu}, layout={enable_layout}")
 
     # ✅ NEW: Input validation helper
     def _validate_image(self, image: np.ndarray) -> None:
@@ -215,18 +224,15 @@ class PaddleOCREngine:
         Runs blocking PaddleOCR in thread pool to avoid event loop freeze.
         """
         corr_id = correlation_id or "paddle_ocr"
-        
+
         # Validate first (fast, no I/O)
         self._validate_image(image)
-        
+
         loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in 3.10+
 
         try:
             result = await asyncio.wait_for(
-                loop.run_in_executor(
-                    None,
-                    lambda: self.process_page(image, page_num, corr_id)
-                ),
+                loop.run_in_executor(None, lambda: self.process_page(image, page_num, corr_id)),
                 timeout=timeout_seconds,
             )
             return result
@@ -245,6 +251,7 @@ class PaddleOCREngine:
             if self.use_gpu:
                 try:
                     import torch
+
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
                 except ImportError:
@@ -253,13 +260,13 @@ class PaddleOCREngine:
     def process_page(self, image: np.ndarray, page_num: int = 0, correlation_id: Optional[str] = None) -> PageOCRResult:
         """Process a single page image and return structured OCR results."""
         corr_id = correlation_id or "paddle_ocr"
-        
+
         # Validate input
         self._validate_image(image)
-        
+
         h, w = image.shape[:2]
         blocks: list[TextBlock] = []
-        
+
         try:
             if self.enable_layout:
                 blocks = self._process_with_layout(image, page_num, corr_id)
@@ -273,15 +280,15 @@ class PaddleOCREngine:
                 logger.error(f"[{corr_id}] Plain OCR also failed: {e2}")
                 # Return empty result instead of crashing
                 return PageOCRResult(
-                    page_num=page_num, blocks=[], width=w, height=h, correlation_id=corr_id
+                    page_num=page_num,
+                    blocks=[],
+                    width=w,
+                    height=h,
+                    correlation_id=corr_id,
                 )
 
-        result = PageOCRResult(
-            page_num=page_num, blocks=blocks, width=w, height=h, correlation_id=corr_id
-        )
-        logger.info(
-            f"[{corr_id}] Page {page_num}: {len(blocks)} blocks, confidence={result.mean_confidence:.3f}"
-        )
+        result = PageOCRResult(page_num=page_num, blocks=blocks, width=w, height=h, correlation_id=corr_id)
+        logger.info(f"[{corr_id}] Page {page_num}: {len(blocks)} blocks, confidence={result.mean_confidence:.3f}")
         return result
 
     async def _process_with_layout_async(self, image: np.ndarray, page_num: int, corr_id: str) -> list[TextBlock]:
@@ -289,10 +296,7 @@ class PaddleOCREngine:
         async with self._structure_lock:
             # Run blocking call in executor
             loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in 3.10+
-            return await loop.run_in_executor(
-                None,
-                lambda: self._process_with_layout(image, page_num, corr_id)
-            )
+            return await loop.run_in_executor(None, lambda: self._process_with_layout(image, page_num, corr_id))
 
     def _process_with_layout(self, image: np.ndarray, page_num: int, corr_id: str) -> list[TextBlock]:
         """Process page with PPStructure layout analysis."""
@@ -316,23 +320,22 @@ class PaddleOCREngine:
                             if isinstance(line, (list, tuple)) and len(line) == 2:
                                 _, (_, conf) = line
                                 cell_confidences.append(float(conf))
-                table_confidence = (
-                    sum(cell_confidences) / len(cell_confidences)
-                    if cell_confidences else 0.80
-                )
+                table_confidence = sum(cell_confidences) / len(cell_confidences) if cell_confidences else 0.80
                 # ✅ FIXED: Improved HTML to text conversion
                 table_text = self._table_html_to_text_safe(table_html)
-                blocks.append(TextBlock(
-                    text=table_text,
-                    confidence=table_confidence,
-                    bbox=normalize_bbox(bbox),
-                    block_type="table",
-                    page_num=page_num,
-                    language=self.languages[0],
-                    line_num=line_num,
-                    table_html=table_html,
-                    correlation_id=corr_id,
-                ))
+                blocks.append(
+                    TextBlock(
+                        text=table_text,
+                        confidence=table_confidence,
+                        bbox=normalize_bbox(bbox),
+                        block_type="table",
+                        page_num=page_num,
+                        language=self.languages[0],
+                        line_num=line_num,
+                        table_html=table_html,
+                        correlation_id=corr_id,
+                    )
+                )
                 line_num += 1
                 continue
 
@@ -350,16 +353,18 @@ class PaddleOCREngine:
                 if not text or not text.strip():
                     continue
 
-                blocks.append(TextBlock(
-                    text=text.strip(),
-                    confidence=float(confidence),
-                    bbox=normalize_bbox(line_bbox),
-                    block_type=block_type,
-                    page_num=page_num,
-                    language=self._detect_language_safe(text),  # ✅ FIXED: Safe fallback
-                    line_num=line_num,
-                    correlation_id=corr_id,
-                ))
+                blocks.append(
+                    TextBlock(
+                        text=text.strip(),
+                        confidence=float(confidence),
+                        bbox=normalize_bbox(line_bbox),
+                        block_type=block_type,
+                        page_num=page_num,
+                        language=self._detect_language_safe(text),  # ✅ FIXED: Safe fallback
+                        line_num=line_num,
+                        correlation_id=corr_id,
+                    )
+                )
                 line_num += 1
 
         return blocks
@@ -368,10 +373,7 @@ class PaddleOCREngine:
         """Async wrapper for plain OCR with lock."""
         async with self._ocr_lock:
             loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in 3.10+
-            return await loop.run_in_executor(
-                None,
-                lambda: self._process_plain(image, page_num, corr_id)
-            )
+            return await loop.run_in_executor(None, lambda: self._process_plain(image, page_num, corr_id))
 
     def _process_plain(self, image: np.ndarray, page_num: int, corr_id: str) -> list[TextBlock]:
         """Process page with plain PaddleOCR (no layout analysis)."""
@@ -385,16 +387,18 @@ class PaddleOCREngine:
             bbox_points, (text, confidence) = line
             if not text or not text.strip():
                 continue
-            blocks.append(TextBlock(
-                text=text.strip(),
-                confidence=float(confidence),
-                bbox=normalize_bbox(bbox_points),
-                block_type="paragraph",
-                page_num=page_num,
-                language=self._detect_language_safe(text),  # ✅ FIXED: Safe fallback
-                line_num=line_num,
-                correlation_id=corr_id,
-            ))
+            blocks.append(
+                TextBlock(
+                    text=text.strip(),
+                    confidence=float(confidence),
+                    bbox=normalize_bbox(bbox_points),
+                    block_type="paragraph",
+                    page_num=page_num,
+                    language=self._detect_language_safe(text),  # ✅ FIXED: Safe fallback
+                    line_num=line_num,
+                    correlation_id=corr_id,
+                )
+            )
         return blocks
 
     # ✅ FIXED: Safe HTML to text with structure hints
@@ -455,8 +459,8 @@ if __name__ == "__main__":
     import sys
     import math
     from pathlib import Path
-    from unittest.mock import patch, MagicMock
-    
+    from unittest.mock import patch
+
     # 🔧 ROBUST PATH SETUP
     current_file = Path(__file__).resolve()
     for parent in current_file.parents:
@@ -465,106 +469,175 @@ if __name__ == "__main__":
             break
     else:
         backend_root = current_file.parents[2]
-    
+
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
-    
+
     async def run_tests():
         print("🔍 Testing PaddleOCREngine module (app/ocr/paddle_ocr.py)")
         print("=" * 70)
-        
+
         try:
-            from app.ocr.paddle_ocr import TextBlock, PageOCRResult, DocumentOCRResult, PaddleOCREngine
-            
+            from app.ocr.paddle_ocr import (
+                TextBlock,
+                PageOCRResult,
+                DocumentOCRResult,
+                PaddleOCREngine,
+            )
+
             # -- Test 1: Module imports & dataclasses ---------------------
             print("\n📌 Test 1: Module imports & dataclass validation")
-            
+
             block = TextBlock(text="Hello World", block_type="paragraph", page_num=0, language="en")
             assert block.confidence == 0.0 and block.bbox == []
             print(f"   ✅ TextBlock defaults: confidence={block.confidence}, bbox={block.bbox}")
-            
+
             try:
-                TextBlock(text="Test", block_type="text", page_num=0, language="en", bbox=[[1, 2, 3]])
+                TextBlock(
+                    text="Test",
+                    block_type="text",
+                    page_num=0,
+                    language="en",
+                    bbox=[[1, 2, 3]],
+                )
             except ValueError as e:
-                if "Invalid bbox format" in str(e): print(f"   ✅ Invalid bbox rejected: {e}")
-                
-            high_conf = TextBlock(text="Test", block_type="text", page_num=0, language="en", confidence=1.5)
+                if "Invalid bbox format" in str(e):
+                    print(f"   ✅ Invalid bbox rejected: {e}")
+
+            high_conf = TextBlock(
+                text="Test",
+                block_type="text",
+                page_num=0,
+                language="en",
+                confidence=1.5,
+            )
             assert high_conf.confidence == 1.0
             print(f"   ✅ Confidence clamped: 1.5 -> {high_conf.confidence}")
-            
-            page = PageOCRResult(page_num=0, blocks=[
-                TextBlock(text="A", block_type="text", page_num=0, language="en", confidence=0.8),
-                TextBlock(text="B", block_type="text", page_num=0, language="en", confidence=0.9),
-            ])
+
+            page = PageOCRResult(
+                page_num=0,
+                blocks=[
+                    TextBlock(
+                        text="A",
+                        block_type="text",
+                        page_num=0,
+                        language="en",
+                        confidence=0.8,
+                    ),
+                    TextBlock(
+                        text="B",
+                        block_type="text",
+                        page_num=0,
+                        language="en",
+                        confidence=0.9,
+                    ),
+                ],
+            )
             assert math.isclose(page.mean_confidence, 0.85, rel_tol=1e-9)
             print(f"   ✅ Page mean confidence: {page.mean_confidence:.3f}")
-            
-            doc = DocumentOCRResult(pages=[
-                PageOCRResult(page_num=0, blocks=[TextBlock(text="X", block_type="text", page_num=0, language="en", confidence=0.7)]),
-                PageOCRResult(page_num=1, blocks=[TextBlock(text="Y", block_type="text", page_num=1, language="en", confidence=0.9)]),
-            ])
+
+            doc = DocumentOCRResult(
+                pages=[
+                    PageOCRResult(
+                        page_num=0,
+                        blocks=[
+                            TextBlock(
+                                text="X",
+                                block_type="text",
+                                page_num=0,
+                                language="en",
+                                confidence=0.7,
+                            )
+                        ],
+                    ),
+                    PageOCRResult(
+                        page_num=1,
+                        blocks=[
+                            TextBlock(
+                                text="Y",
+                                block_type="text",
+                                page_num=1,
+                                language="en",
+                                confidence=0.9,
+                            )
+                        ],
+                    ),
+                ]
+            )
             assert math.isclose(doc.mean_confidence, 0.8, rel_tol=1e-9)
             print(f"   ✅ Document aggregation: mean_conf={doc.mean_confidence:.3f}, blocks={len(doc.all_blocks)}")
-                
+
             # -- Test 2: Image validation ---------------------------------
             print("\n📌 Test 2: Image input validation")
             with patch("paddleocr.PaddleOCR"), patch("paddleocr.PPStructure"):
                 engine = PaddleOCREngine(languages=["en"], use_gpu=False, enable_layout=False)
-                
+
                 engine._validate_image(np.zeros((100, 100), dtype=np.uint8))
                 engine._validate_image(np.zeros((100, 100, 3), dtype=np.uint8))
-                print(f"   ✅ Valid inputs: grayscale & RGB accepted")
-                
-                try: engine._validate_image(np.zeros((100, 100), dtype=np.int16))
-                except ValueError: print(f"   ✅ Invalid dtype rejected: int16")
-                try: engine._validate_image(np.zeros((20, 20), dtype=np.uint8))
-                except ValueError: print(f"   ✅ Small image rejected: 20x20")
-                try: engine._validate_image(np.zeros((15000, 15000), dtype=np.uint8))
-                except ValueError: print(f"   ✅ Large image rejected: 15000x15000")
+                print("   ✅ Valid inputs: grayscale & RGB accepted")
+
+                try:
+                    engine._validate_image(np.zeros((100, 100), dtype=np.int16))
+                except ValueError:
+                    print("   ✅ Invalid dtype rejected: int16")
+                try:
+                    engine._validate_image(np.zeros((20, 20), dtype=np.uint8))
+                except ValueError:
+                    print("   ✅ Small image rejected: 20x20")
+                try:
+                    engine._validate_image(np.zeros((15000, 15000), dtype=np.uint8))
+                except ValueError:
+                    print("   ✅ Large image rejected: 15000x15000")
 
             # -- Test 3: Table HTML to text conversion --------------------
             print("\n📌 Test 3: _table_html_to_text_safe (structure-preserving)")
             table_html = "<table><tr><th>Name</th></tr><tr><td>Item A</td></tr></table>"
             text = PaddleOCREngine._table_html_to_text_safe(table_html)
             assert "[TABLE_START]" in text and "[TABLE_END]" in text and "Item A" in text
-            print(f"   ✅ Table HTML -> text: markers preserved, content extracted")
-            
+            print("   ✅ Table HTML -> text: markers preserved, content extracted")
+
             assert PaddleOCREngine._table_html_to_text_safe("") == ""
             assert PaddleOCREngine._table_html_to_text_safe("<invalid>") == ""
             assert "text" in PaddleOCREngine._table_html_to_text_safe("<broken>text</broken>")
-            print(f"   ✅ Edge cases: empty/invalid HTML handled gracefully")
-            
+            print("   ✅ Edge cases: empty/invalid HTML handled gracefully")
+
             # -- Test 4: Language detection fallback -----------------------
             print("\n📌 Test 4: _detect_language_safe (fallback logic)")
-            with patch("paddleocr.PaddleOCR"), patch("paddleocr.PPStructure"), \
-                 patch("app.ocr.paddle_ocr.detect_language_vectorized") as mock_detect:
+            with patch("paddleocr.PaddleOCR"), patch("paddleocr.PPStructure"), patch(
+                "app.ocr.paddle_ocr.detect_language_vectorized"
+            ) as mock_detect:
                 engine = PaddleOCREngine(languages=["en", "fr"], use_gpu=False)
                 assert engine._detect_language_safe("Hi") == "en"
-                print(f"   ✅ Short text fallback: 'Hi' -> en")
-                
+                print("   ✅ Short text fallback: 'Hi' -> en")
+
                 mock_detect.side_effect = Exception("fail")
                 assert engine._detect_language_safe("Longer text for testing") == "en"
-                print(f"   ✅ Exception fallback: error -> en")
+                print("   ✅ Exception fallback: error -> en")
             # -- Test 5: Core OCR logic via internal methods (no decorator interference) -
             print("\n📌 Test 5: Core OCR logic via internal methods (no decorator interference)")
-            
+
             with patch("paddleocr.PaddleOCR"), patch("paddleocr.PPStructure"):
                 engine = PaddleOCREngine(languages=["en"], use_gpu=False, enable_layout=False)
-                
+
                 # ✅ CORRECT: PaddleOCR ocr() returns list of lists of (bbox, (text, conf))
                 mock_ocr_result = [
-                    [ ( [[10,10], [100,10], [100,30], [10,30]], ("Mock OCR Text", 0.95) ) ]
+                    [
+                        (
+                            [[10, 10], [100, 10], [100, 30], [10, 30]],
+                            ("Mock OCR Text", 0.95),
+                        )
+                    ]
                 ]
                 with patch.object(engine.ocr_engine, "ocr", return_value=mock_ocr_result):
                     blocks = engine._process_plain(
                         np.zeros((100, 100, 3), dtype=np.uint8),
                         page_num=0,
-                        corr_id="test-plain"
+                        corr_id="test-plain",
                     )
                     assert len(blocks) == 1
                     assert blocks[0].text == "Mock OCR Text"
                     print(f"   ✅ _process_plain: {len(blocks)} blocks, conf={blocks[0].confidence:.2f}")
-                
+
                 # ✅ CORRECT: PPStructure 'res' is a list of lines: [ [bbox, (text, conf)] ]
                 mock_structure_result = [
                     {
@@ -572,35 +645,39 @@ if __name__ == "__main__":
                         "bbox": [10, 10, 200, 50],
                         # res is a list of lines. Each line is [bbox, (text, conf)].
                         # Here we have 1 line.
-                        "res": [ [ [[10,10],[200,10],[200,50],[10,50]], ("Layout Text", 0.88) ] ]
+                        "res": [
+                            [
+                                [[10, 10], [200, 10], [200, 50], [10, 50]],
+                                ("Layout Text", 0.88),
+                            ]
+                        ],
                     }
                 ]
                 engine_layout = PaddleOCREngine(languages=["en"], use_gpu=False, enable_layout=True)
-                
+
                 # ✅ FIX: Set return_value directly on the Mock instance
                 # patching __call__ on a Mock can sometimes be unreliable
                 engine_layout.structure_engine.return_value = mock_structure_result
-                
+
                 blocks = engine_layout._process_with_layout(
                     np.zeros((100, 100, 3), dtype=np.uint8),
                     page_num=1,
-                    corr_id="test-layout"
+                    corr_id="test-layout",
                 )
                 assert len(blocks) >= 1, f"Expected >=1 block, got {len(blocks)}"
                 assert blocks[0].text == "Layout Text"
                 print(f"   ✅ _process_with_layout: {len(blocks)} blocks extracted")
-                
+
                 # Verify async wrapper gracefully handles timeouts in test env
                 try:
                     await engine.process_page_async(
                         np.zeros((100, 100, 3), dtype=np.uint8),
                         page_num=2,
-                        timeout_seconds=0.001
+                        timeout_seconds=0.001,
                     )
                 except (asyncio.TimeoutError, Exception):
-                    print(f"   ✅ process_page_async: handles timeout gracefully (no crash)")
+                    print("   ✅ process_page_async: handles timeout gracefully (no crash)")
 
-                    
             # -- Test 6: GPU cleanup hint ---------------------------------
             print("\n📌 Test 6: GPU memory cleanup (safe fallback)")
             with patch("paddleocr.PaddleOCR"), patch("paddleocr.PPStructure"):
@@ -609,10 +686,13 @@ if __name__ == "__main__":
                     try:
                         if engine.use_gpu:
                             import torch
-                            if torch.cuda.is_available(): torch.cuda.empty_cache()
-                    except (ImportError, AttributeError): pass
-                    print(f"   ✅ GPU cleanup: safe fallback when torch unavailable")
-            
+
+                            if torch.cuda.is_available():
+                                torch.cuda.empty_cache()
+                    except (ImportError, AttributeError):
+                        pass
+                    print("   ✅ GPU cleanup: safe fallback when torch unavailable")
+
             # -- Test 7: Language mapping ---------------------------------
             print("\n📌 Test 7: _get_paddle_lang (language code mapping)")
             with patch("paddleocr.PaddleOCR"), patch("paddleocr.PPStructure"):
@@ -620,16 +700,18 @@ if __name__ == "__main__":
                 assert PaddleOCREngine(languages=["zh"], use_gpu=False)._get_paddle_lang() == "ch"
                 assert PaddleOCREngine(languages=["en", "fr"], use_gpu=False)._get_paddle_lang() == "en"
                 assert PaddleOCREngine(languages=["xyz"], use_gpu=False)._get_paddle_lang() == "en"
-                print(f"   ✅ Language mapping: en->en, zh->ch, multi->en, unknown->en")
-            
+                print("   ✅ Language mapping: en->en, zh->ch, multi->en, unknown->en")
+
             print("\n" + "=" * 70)
             print("✅ ALL TESTS PASSED! PaddleOCREngine module verified.")
             return True
-            
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
-            import traceback; traceback.print_exc()
+            import traceback
+
+            traceback.print_exc()
             return False
-    
+
     success = asyncio.run(run_tests())
     sys.exit(0 if success else 1)

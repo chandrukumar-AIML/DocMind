@@ -1,23 +1,24 @@
-﻿# backend/app/versioning/diff_engine.py
+# backend/app/versioning/diff_engine.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, M - Modular
 # BATMAN-FIX: A - True async, M - Memory safety
 # ASCALE-FIX: L - Layered, E - Error propagation
 from __future__ import annotations
-import asyncio
 import logging
 from typing import Final, Optional
+
 # DVMELTSS-M: Import centralized utilities
 from app.core.versioning_utils import (
     compute_text_diff,
     summarize_changes_async,
-    generate_version_id,
-    validate_version_metadata,
 )
 from app.core.schema_utils import validate_correlation_id
 from .models import DiffResult, VersionComparison
+
 logger = logging.getLogger(__name__)
 # DVMELTSS-S: Diff configuration
 _MIN_SIMILARITY_FOR_SKIP: Final = 0.99  # Skip versioning if docs are 99%+ similar
+
+
 async def compute_document_diff(
     old_content: str,
     new_content: str,
@@ -42,6 +43,7 @@ async def compute_document_diff(
         if len(old_content) > 100 and len(new_content) > 100:
             # Simple ratio check before full diff
             from difflib import SequenceMatcher
+
             ratio = SequenceMatcher(None, old_content[:5000], new_content[:5000]).ratio()
             if ratio >= _MIN_SIMILARITY_FOR_SKIP:
                 logger.debug(f"[{corr_id}] Documents {ratio:.2%} similar — skipping detailed diff")
@@ -90,6 +92,8 @@ async def compute_document_diff(
             correlation_id=corr_id,
             error=str(e),
         )
+
+
 async def summarize_changes(
     diff_result: DiffResult,
     document_type: str = "general",
@@ -121,6 +125,8 @@ async def summarize_changes(
     except Exception as e:
         logger.warning(f"[{corr_id}] Change summarization failed: {e}")
         return f"Changes detected: {len(diff_result.added_lines)} additions, {len(diff_result.removed_lines)} removals."
+
+
 def compare_versions(
     version_a: dict,
     version_b: dict,
@@ -146,12 +152,13 @@ def compare_versions(
         change_summary=version_b.get("change_summary", ""),
         correlation_id=corr_id,  # FIXED: Propagate correlation_id
     )
+
+
 # DVMELTSS-M: Explicit module exports
 __all__ = ["compute_document_diff", "summarize_changes", "compare_versions"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

@@ -104,6 +104,19 @@ docmind_uploads/
 backend/.cache/
 backend/data/
 
+# ML model/artifact files (defensive — common paths already covered above)
+*.pkl
+*.pt
+*.pth
+*.onnx
+*.h5
+*.npy
+models/
+
+# Linter caches
+.mypy_cache/
+.ruff_cache/
+
 # Claude Code session files
 .claude/
 

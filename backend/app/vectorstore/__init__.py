@@ -12,6 +12,7 @@ Provides unified interface to ChromaDB + FAISS dual-store architecture:
 Public API:
 from app.vectorstore import VectorStoreManager, ChromaVectorStore, FAISSVectorStore
 """
+
 from __future__ import annotations
 from typing import Any
 
@@ -50,17 +51,17 @@ def __getattr__(name: str) -> Any:
         module_path, attr_name = _LAZY_IMPORTS[name]
         try:
             import importlib
-            module = importlib.import_module(module_path, package=__name__.rpartition('.')[0])
+
+            module = importlib.import_module(module_path, package=__name__.rpartition(".")[0])
             return getattr(module, attr_name)
         except ImportError as e:
-            raise AttributeError(
-                f"Failed to lazy-import '{name}' from '{module_path}': {e}"
-            ) from e
-    
+            raise AttributeError(f"Failed to lazy-import '{name}' from '{module_path}': {e}") from e
+
     if name == "get_vectorstore_metadata":
         from .store_manager import get_vectorstore_metadata
+
         return get_vectorstore_metadata
-    
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -76,41 +77,42 @@ def __dir__() -> list[str]:
 def _reset_caches_for_tests() -> None:
     """
     Reset internal caches & singletons for clean pytest runs.
-    
+
     ✅ FIXED: Actually resets all module-level caches (not just invalidate_caches).
     """
     import sys
     import importlib
-    
+
     # Reset ChromaDB client cache
     try:
         from . import chroma_store
+
         if hasattr(chroma_store, "_chroma_clients"):
             chroma_store._chroma_clients.clear()
     except ImportError:
         pass
-    
+
     # Reset FAISSVectorStore instance cache if any
     try:
         from . import faiss_store
         # No module-level singletons to reset
     except ImportError:
         pass
-    
+
     # Reset CachedOpenAIEmbeddings cache files (optional)
     try:
         from . import embeddings
         # Cache files are on disk — tests should use temp dirs
     except ImportError:
         pass
-    
+
     # Reset VectorStoreManager singleton if exists
     try:
         from . import store_manager
         # No module-level singleton
     except ImportError:
         pass
-    
+
     # Invalidate import cache (secondary effect)
     importlib.invalidate_caches()
 
@@ -118,13 +120,15 @@ def _reset_caches_for_tests() -> None:
 # DVMELTSS-L: Module initialization logging for observability
 __init_logged: bool = False
 
+
 def _log_module_init() -> None:
     """Log module load — idempotent to avoid spam in multi-worker setups."""
     global __init_logged
     if __init_logged:
         return
-    
+
     import logging
+
     logger = logging.getLogger(__name__)
     logger.debug(  # ✅ Use debug level to avoid prod log spam
         f"VectorStore module loaded | version={__version__} | {__description__}"
@@ -140,4 +144,5 @@ _log_module_init()
 def get_vectorstore_metadata() -> dict[str, Any]:
     """Return vectorstore module metadata for monitoring/debugging."""
     from .store_manager import get_vectorstore_metadata as _get_meta
+
     return _get_meta()

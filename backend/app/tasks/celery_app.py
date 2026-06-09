@@ -1,4 +1,4 @@
-﻿# backend/app/tasks/celery_app.py
+# backend/app/tasks/celery_app.py
 # DVMELTSS-FIX: M - Modular, E - Error handling, L - Logging
 # ASCALE-FIX: S - Separation, C - Coupling
 # BATMAN-FIX: A - True async worker lifecycle
@@ -15,7 +15,6 @@ from kombu import Queue, Exchange
 
 # DVMELTSS-M: Import centralized config
 from app.config import get_settings
-from app.core.celery_utils import propagate_correlation_id
 
 logger = logging.getLogger(__name__)
 
@@ -23,18 +22,30 @@ logger = logging.getLogger(__name__)
 DEFAULT_EXCHANGE = Exchange("documind", type="direct")
 
 QUEUES: Final = (
-    Queue("high_priority", DEFAULT_EXCHANGE, routing_key="high_priority",
-          queue_arguments={"x-max-priority": 10}),
-    Queue("default",       DEFAULT_EXCHANGE, routing_key="default",
-          queue_arguments={"x-max-priority": 5}),
-    Queue("bulk",          DEFAULT_EXCHANGE, routing_key="bulk",
-          queue_arguments={"x-max-priority": 1}),
+    Queue(
+        "high_priority",
+        DEFAULT_EXCHANGE,
+        routing_key="high_priority",
+        queue_arguments={"x-max-priority": 10},
+    ),
+    Queue(
+        "default",
+        DEFAULT_EXCHANGE,
+        routing_key="default",
+        queue_arguments={"x-max-priority": 5},
+    ),
+    Queue(
+        "bulk",
+        DEFAULT_EXCHANGE,
+        routing_key="bulk",
+        queue_arguments={"x-max-priority": 1},
+    ),
 )
 
 QUEUE_TIER_MAP: Final = {
-    "high":    "high_priority",
+    "high": "high_priority",
     "default": "default",
-    "bulk":    "bulk",
+    "bulk": "bulk",
 }
 
 
@@ -87,32 +98,26 @@ def create_celery_app() -> Celery:
         task_default_queue="default",
         task_default_exchange="documind",
         task_default_routing_key="default",
-
         # Serialization
         task_serializer="json",
         result_serializer="json",
         accept_content=["json"],
         task_compression="gzip",
-
         # Time limits (configurable via settings)
         task_soft_time_limit=getattr(settings, "celery_task_soft_time_limit", 600),
         task_time_limit=getattr(settings, "celery_task_time_limit", 720),
         task_acks_late=True,
         task_reject_on_worker_lost=True,
-
         # ✅ FIXED: Add connection timeout to prevent hangs
         broker_connection_timeout=30,
         broker_connection_retry_on_startup=True,
         broker_connection_max_retries=3,
-
         # Result backend
         result_expires=3600,
         result_extended=True,
-
         # Worker
         worker_prefetch_multiplier=1,
         worker_max_tasks_per_child=getattr(settings, "celery_max_tasks_per_child", 50),
-
         # Retry policy
         task_publish_retry=True,
         task_publish_retry_policy={
@@ -121,13 +126,14 @@ def create_celery_app() -> Celery:
             "interval_step": 0.5,
             "interval_max": 2.0,
             # ✅ FIXED: Retry on connection errors specifically
-            "retry_for_exceptions": ["kombu.exceptions.OperationalError", "redis.exceptions.ConnectionError"],
+            "retry_for_exceptions": [
+                "kombu.exceptions.OperationalError",
+                "redis.exceptions.ConnectionError",
+            ],
         },
-
         # Monitoring
         worker_send_task_events=True,
         task_send_sent_event=True,
-        
         # ✅ FIXED: Use named function instead of lambda to avoid pickling issues
         task_annotations={
             "*": {
@@ -144,6 +150,7 @@ celery_app = create_celery_app()
 
 # -- Worker lifecycle hooks -----------------------------------------------------
 
+
 @worker_ready.connect
 def on_worker_ready(sender, **kwargs):
     """Initialize resources when a Celery worker starts."""
@@ -151,6 +158,7 @@ def on_worker_ready(sender, **kwargs):
     try:
         logger.info(f"[{corr_id}] Celery worker ready.")
         from app.core.logging_config import configure_logging
+
         configure_logging()
     except Exception as e:
         # ✅ FIXED: Log error but don't crash worker
@@ -204,10 +212,9 @@ __all__ = [
     "create_celery_app",
     "get_celery_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

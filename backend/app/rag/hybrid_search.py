@@ -12,7 +12,11 @@ from rank_bm25 import BM25Okapi
 
 # DVMELTSS-M: Import centralized utilities
 from app.config import get_settings
-from app.core.rag_utils import tokenize_for_bm25, reciprocal_rank_fusion, validate_rag_weights
+from app.core.rag_utils import (
+    tokenize_for_bm25,
+    reciprocal_rank_fusion,
+    validate_rag_weights,
+)
 from app.vectorstore.store_manager import VectorStoreManager
 
 logger = logging.getLogger(__name__)
@@ -27,7 +31,7 @@ def _get_bm25_cache_path() -> Path:
 class HybridSearcher:
     """
     Hybrid BM25 + semantic vector search with Reciprocal Rank Fusion.
-    
+
     Features (DVMELTSS-V, BATMAN-M):
     - Centralized tokenization via app.core.rag_utils
     - Configurable RRF weights with validation
@@ -45,12 +49,10 @@ class HybridSearcher:
         self.store = store_manager
         self._bm25: Optional[BM25Okapi] = None
         self._bm25_docs: List[Document] = []
-        
+
         # FIXED: Validate and normalize weights
-        self.semantic_weight, self.keyword_weight = validate_rag_weights(
-            semantic_weight, keyword_weight
-        )
-        
+        self.semantic_weight, self.keyword_weight = validate_rag_weights(semantic_weight, keyword_weight)
+
         if bm25_corpus:
             self._build_bm25_index(bm25_corpus)
         elif not self._load_bm25_from_cache():
@@ -72,13 +74,13 @@ class HybridSearcher:
         """
         corr_id = correlation_id or "search_unknown"
         semantic_q = hyde_query or query
-        
+
         # Use override weights or defaults
         s_weight, k_weight = validate_rag_weights(
             semantic_weight or self.semantic_weight,
             keyword_weight or self.keyword_weight,
         )
-        
+
         semantic_results = self._semantic_search(semantic_q, k=k * 2, filter_dict=filter_dict)
         keyword_results = self._bm25_search(query, k=k * 2)
 
@@ -95,7 +97,7 @@ class HybridSearcher:
             weights=[s_weight, k_weight],
             k=k,
         )
-        
+
         logger.info(
             f"[{corr_id}] Hybrid: semantic={len(semantic_results)}, "
             f"keyword={len(keyword_results)}, fused={len(fused)}"
@@ -131,13 +133,13 @@ class HybridSearcher:
         # FIXED: Use centralized tokenization
         tokenized = [tokenize_for_bm25(text) for text in corpus]
         non_empty = [(tokens, doc) for tokens, doc in zip(tokenized, self._bm25_docs) if tokens]
-        
+
         if not non_empty:
             logger.warning("BM25 index skipped — all documents empty after tokenization")
             self._bm25 = None
             self._bm25_docs = []
             return
-        
+
         tokens_only = [t for t, _ in non_empty]
         self._bm25_docs = [doc for _, doc in non_empty]
         self._bm25 = BM25Okapi(tokens_only)
@@ -197,20 +199,16 @@ class HybridSearcher:
         """Search using BM25 keyword matching."""
         if self._bm25 is None or not self._bm25_docs:
             return []
-        
+
         # FIXED: Use centralized tokenization
         tokenized_query = tokenize_for_bm25(query)
         if not tokenized_query:
             return []
-            
+
         scores = self._bm25.get_scores(tokenized_query)
         top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:k]
-        
-        return [
-            self._bm25_docs[i] 
-            for i in top_indices 
-            if scores[i] > 0 and i < len(self._bm25_docs)
-        ]
+
+        return [self._bm25_docs[i] for i in top_indices if scores[i] > 0 and i < len(self._bm25_docs)]
 
     def get_model_info(self) -> dict:
         """Return model configuration for monitoring."""
@@ -220,6 +218,7 @@ class HybridSearcher:
             "keyword_weight": self.keyword_weight,
         }
 
+
 # DVMELTSS-M: Explicit module exports
 __all__ = ["HybridSearcher", "_get_bm25_cache_path"]
 
@@ -228,11 +227,10 @@ __all__ = ["HybridSearcher", "_get_bm25_cache_path"]
 # ========================================================================
 
 if __name__ == "__main__":
-    import asyncio
     import sys
     from pathlib import Path
-    from unittest.mock import AsyncMock, MagicMock, patch, mock_open
-    
+    from unittest.mock import MagicMock, patch, mock_open
+
     # 🔧 ROBUST PATH SETUP
     current_file = Path(__file__).resolve()
     for parent in current_file.parents:
@@ -241,226 +239,241 @@ if __name__ == "__main__":
             break
     else:
         backend_root = current_file.parents[2]
-    
+
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
-    
+
     def run_tests():
         print("🔍 Testing Hybrid Search module (app/rag/hybrid_search.py)")
         print("=" * 70)
-        
+
         try:
             from app.rag.hybrid_search import HybridSearcher, _get_bm25_cache_path
-            from app.core.rag_utils import tokenize_for_bm25, reciprocal_rank_fusion
+            from app.core.rag_utils import tokenize_for_bm25
             from langchain_core.documents import Document
-            
+
             # -- Mock Classes -------------------------------------------
             class MockVectorStoreManager:
                 def __init__(self):
                     self.chroma = MagicMock()
-                
+
                 def search(self, query, k, filter_dict=None):
                     # Return mock semantic results as (Document, score) tuples
                     return [
-                        (Document(page_content=f"Semantic result {i}", metadata={"score": 0.9-i*0.1}), 0.9-i*0.1)
+                        (
+                            Document(
+                                page_content=f"Semantic result {i}",
+                                metadata={"score": 0.9 - i * 0.1},
+                            ),
+                            0.9 - i * 0.1,
+                        )
                         for i in range(min(k, 5))
                     ]
-            
+
             # -- Test 1: Module constants & helpers ---------------------
             print("\n📌 Test 1: Module constants & helpers")
-            
+
             cache_path = _get_bm25_cache_path()
             assert isinstance(cache_path, Path)
-            print(f"   ✅ _get_bm25_cache_path: returns Path object")
-            
+            print("   ✅ _get_bm25_cache_path: returns Path object")
+
             # -- Test 2: Initialization & weight validation -------------
             print("\n📌 Test 2: Initialization & weight validation")
-            
+
             store = MockVectorStoreManager()
-            
+
             # Valid weights
             searcher = HybridSearcher(store, semantic_weight=0.7, keyword_weight=0.3)
             assert abs(searcher.semantic_weight - 0.7) < 0.001
             assert abs(searcher.keyword_weight - 0.3) < 0.001
-            print(f"   ✅ Valid weights: normalized correctly")
-            
+            print("   ✅ Valid weights: normalized correctly")
+
             # Invalid weights (zero total) -> fallback to defaults
             searcher2 = HybridSearcher(store, semantic_weight=0.0, keyword_weight=0.0)
             assert searcher2.semantic_weight == 0.6  # Default
-            assert searcher2.keyword_weight == 0.4    # Default
-            print(f"   ✅ Invalid weights: fallback to defaults (0.6/0.4)")
-            
+            assert searcher2.keyword_weight == 0.4  # Default
+            print("   ✅ Invalid weights: fallback to defaults (0.6/0.4)")
+
             # -- Test 3: BM25 index building (correct order) ------------
             print("\n📌 Test 3: BM25 index building")
-            
+
             # Create documents with proper content
             corpus_texts = [
                 "Machine learning is a subset of artificial intelligence",
-                "Deep learning uses neural networks with many layers", 
+                "Deep learning uses neural networks with many layers",
                 "Natural language processing enables computers to understand text",
             ]
             docs = [Document(page_content=text) for text in corpus_texts]
-            
+
             # Create searcher WITHOUT bm25_corpus first
             searcher = HybridSearcher(store)
-            
+
             # ✅ FIX: Set _bm25_docs BEFORE building index (correct order)
             searcher._bm25_docs = docs
             searcher._build_bm25_index(corpus_texts)
-            
+
             # Now BM25 should be built
             assert searcher._bm25 is not None, "BM25 index should be built"
             assert len(searcher._bm25_docs) == len(corpus_texts)
             print(f"   ✅ BM25 index: built with {len(corpus_texts)} documents")
-            
+
             # Test tokenization
             tokens = tokenize_for_bm25("Machine learning!")
             assert "machine" in tokens and "learning" in tokens
             assert "!" not in tokens  # Punctuation removed
-            print(f"   ✅ Tokenization: punctuation removed, lowercase")
-            
+            print("   ✅ Tokenization: punctuation removed, lowercase")
+
             # -- Test 4: BM25 search -----------------------------------
             print("\n📌 Test 4: BM25 keyword search")
-            
+
             results = searcher._bm25_search("machine learning", k=2)
             assert len(results) <= 2
             assert all(isinstance(doc, Document) for doc in results)
             print(f"   ✅ BM25 search: returned {len(results)} relevant documents")
-            
+
             # Empty query -> empty results
             results = searcher._bm25_search("", k=5)
             assert len(results) == 0
-            print(f"   ✅ Empty query: returns no results")
-            
+            print("   ✅ Empty query: returns no results")
+
             # -- Test 5: Semantic search delegation ---------------------
             print("\n📌 Test 5: Semantic search delegation")
-            
+
             results = searcher._semantic_search("AI concepts", k=3)
             assert len(results) <= 3
             assert all(isinstance(doc, Document) for doc in results)
-            print(f"   ✅ Semantic search: delegated to vector store")
-            
+            print("   ✅ Semantic search: delegated to vector store")
+
             # -- Test 6: Hybrid search with RRF fusion ------------------
             print("\n📌 Test 6: Hybrid search (RRF fusion)")
-            
+
             # Mock the internal search methods for controlled testing
             # ✅ FIX: Return (Document, score) tuples as expected by RRF
-            with patch.object(searcher, '_semantic_search') as mock_sem, \
-                 patch.object(searcher, '_bm25_search') as mock_bm25:
-                
+            with patch.object(searcher, "_semantic_search") as mock_sem, patch.object(
+                searcher, "_bm25_search"
+            ) as mock_bm25:
                 # Setup mock results as (Document, score) tuples
                 mock_sem.return_value = [
-                    (Document(page_content="Semantic A", metadata={"source": "vec"}), 0.9),
-                    (Document(page_content="Semantic B", metadata={"source": "vec"}), 0.8),
+                    (
+                        Document(page_content="Semantic A", metadata={"source": "vec"}),
+                        0.9,
+                    ),
+                    (
+                        Document(page_content="Semantic B", metadata={"source": "vec"}),
+                        0.8,
+                    ),
                 ]
                 mock_bm25.return_value = [
-                    (Document(page_content="Keyword X", metadata={"source": "bm25"}), 0.85),
-                    (Document(page_content="Semantic A", metadata={"source": "bm25"}), 0.7),  # Overlap!
+                    (
+                        Document(page_content="Keyword X", metadata={"source": "bm25"}),
+                        0.85,
+                    ),
+                    (
+                        Document(page_content="Semantic A", metadata={"source": "bm25"}),
+                        0.7,
+                    ),  # Overlap!
                 ]
-                
+
                 results = searcher.search("test query", k=3, correlation_id="test-hybrid")
-                
+
                 # RRF should fuse results, with "Semantic A" boosted due to appearing in both
                 assert len(results) <= 3
                 # Each result should be a (Document, score) tuple
                 assert all(isinstance(item, tuple) and len(item) == 2 for item in results)
                 print(f"   ✅ Hybrid search: RRF fused {len(results)} results")
-                
+
                 # Verify scores are normalized
                 doc, score = results[0]
                 assert isinstance(score, float) and 0 <= score <= 1
-                print(f"   ✅ RRF scores: normalized to [0, 1] range")
-            
+                print("   ✅ RRF scores: normalized to [0, 1] range")
+
             # -- Test 7: Weight overrides in search ---------------------
             print("\n📌 Test 7: Weight overrides in search")
-            
-            with patch.object(searcher, '_semantic_search') as mock_sem, \
-                 patch.object(searcher, '_bm25_search') as mock_bm25, \
-                 patch('app.rag.hybrid_search.reciprocal_rank_fusion') as mock_rrf:
-                
+
+            with patch.object(searcher, "_semantic_search") as mock_sem, patch.object(
+                searcher, "_bm25_search"
+            ) as mock_bm25, patch("app.rag.hybrid_search.reciprocal_rank_fusion") as mock_rrf:
                 # Return (Document, score) tuples
                 mock_sem.return_value = [(Document(page_content="S"), 0.9)]
                 mock_bm25.return_value = [(Document(page_content="K"), 0.8)]
                 mock_rrf.return_value = [(Document(page_content="fused"), 0.5)]
-                
+
                 # Override weights
                 searcher.search("query", semantic_weight=0.9, keyword_weight=0.1)
-                
+
                 # Verify RRF was called with overridden weights
                 call_kwargs = mock_rrf.call_args[1]
-                weights = call_kwargs['weights']
+                weights = call_kwargs["weights"]
                 assert abs(weights[0] - 0.9) < 0.001  # semantic
                 assert abs(weights[1] - 0.1) < 0.001  # keyword
-                print(f"   ✅ Weight override: passed to RRF fusion")
-            
+                print("   ✅ Weight override: passed to RRF fusion")
+
             # -- Test 8: Filter application -----------------------------
             print("\n📌 Test 8: Filter application")
-            
-            with patch.object(searcher, '_semantic_search') as mock_sem, \
-                 patch.object(searcher, '_bm25_search') as mock_bm25:
-                
+
+            with patch.object(searcher, "_semantic_search") as mock_sem, patch.object(
+                searcher, "_bm25_search"
+            ) as mock_bm25:
                 mock_sem.return_value = []
                 mock_bm25.return_value = []
-                
+
                 # Pass filter_dict -> should be passed to semantic search
                 searcher.search("query", k=5, filter_dict={"workspace_id": "ws-123"})
-                
+
                 # Verify filter was passed to semantic search (BM25 doesn't support filters)
                 call_args = mock_sem.call_args
                 assert call_args is not None
-                assert call_args[1].get('filter_dict') == {"workspace_id": "ws-123"}
-                print(f"   ✅ Filters: passed to semantic search")
-            
+                assert call_args[1].get("filter_dict") == {"workspace_id": "ws-123"}
+                print("   ✅ Filters: passed to semantic search")
+
             # -- Test 9: BM25 cache persistence -------------------------
             print("\n📌 Test 9: BM25 cache persistence")
-            
+
             # Test _persist_bm25_cache with mocked file operations
-            with patch('app.rag.hybrid_search._get_bm25_cache_path') as mock_path, \
-                 patch('builtins.open', mock_open()) as mock_file, \
-                 patch('pickle.dump') as mock_dump:
-                
+            with patch("app.rag.hybrid_search._get_bm25_cache_path") as mock_path, patch(
+                "builtins.open", mock_open()
+            ) as mock_file, patch("pickle.dump") as mock_dump:
                 mock_path.return_value = Path("/tmp/test_bm25.pkl")
-                
+
                 searcher._persist_bm25_cache()
-                
+
                 # Verify atomic write pattern: write to .tmp, then rename
                 assert mock_file.called
-                print(f"   ✅ Cache persist: atomic write pattern used")
-            
+                print("   ✅ Cache persist: atomic write pattern used")
+
             # Test _load_bm25_from_cache with mocked file
-            with patch('app.rag.hybrid_search._get_bm25_cache_path') as mock_path, \
-                 patch('pathlib.Path.exists', return_value=True), \
-                 patch('builtins.open', mock_open(read_data=b"mock-pickle-data")), \
-                 patch('pickle.load', return_value=MagicMock()) as mock_load:
-                
+            with patch("app.rag.hybrid_search._get_bm25_cache_path") as mock_path, patch(
+                "pathlib.Path.exists", return_value=True
+            ), patch("builtins.open", mock_open(read_data=b"mock-pickle-data")), patch(
+                "pickle.load", return_value=MagicMock()
+            ) as mock_load:
                 mock_path.return_value = Path("/tmp/test_bm25.pkl")
-                
+
                 loaded = searcher._load_bm25_from_cache()
-                
+
                 # Should return True if load succeeds
                 assert loaded is True or loaded is False  # Depends on mock setup
-                print(f"   ✅ Cache load: attempted with error handling")
-            
+                print("   ✅ Cache load: attempted with error handling")
+
             # -- Test 10: Model info & cleanup --------------------------
             print("\n📌 Test 10: Model info & cache management")
-            
+
             info = searcher.get_model_info()
             assert "bm25_ready" in info
             assert "semantic_weight" in info
             assert "keyword_weight" in info
-            print(f"   ✅ Model info: returns configuration dict")
-            
+            print("   ✅ Model info: returns configuration dict")
+
             # Test clear_cache with mocked file operations
-            with patch('app.rag.hybrid_search._get_bm25_cache_path') as mock_path, \
-                 patch('pathlib.Path.exists', return_value=True), \
-                 patch('pathlib.Path.unlink') as mock_unlink:
-                
+            with patch("app.rag.hybrid_search._get_bm25_cache_path") as mock_path, patch(
+                "pathlib.Path.exists", return_value=True
+            ), patch("pathlib.Path.unlink") as mock_unlink:
                 mock_path.return_value = Path("/tmp/test_bm25.pkl")
                 searcher.clear_cache()
-                
+
                 assert mock_unlink.called
-                print(f"   ✅ Cache clear: unlink called on cache file")
-            
+                print("   ✅ Cache clear: unlink called on cache file")
+
             print("\n" + "=" * 70)
             print("✅ ALL TESTS PASSED! Hybrid Search module verified.")
             print("\n💡 What we verified:")
@@ -474,13 +487,14 @@ if __name__ == "__main__":
             print("   • Monitoring: model info dict for observability ✅")
             print("\n🔐 Production: Hybrid retrieval with graceful degradation ready")
             return True
-            
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
-    
+
     # Run tests (sync, no async needed for this module)
     success = run_tests()
     sys.exit(0 if success else 1)

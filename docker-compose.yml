@@ -1,8 +1,6 @@
 # docker-compose.yml — DocuMind AI v2 — PRODUCTION READY
 # All services integrated, syntax validated
 
-version: "3.8"
-
 networks:
   documind-net:
     driver: bridge

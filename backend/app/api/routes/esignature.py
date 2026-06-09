@@ -1,5 +1,6 @@
 # backend/app/api/routes/esignature.py
 """E-signature API: request signatures, status, DocuSign callbacks, in-app signing."""
+
 from __future__ import annotations
 
 import json
@@ -7,13 +8,15 @@ import logging
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from app.auth.dependencies import get_current_user, AuthenticatedUser
 from app.core.ids import generate_correlation_id
 from app.core.esign_handler import (
-    create_esign_request, handle_docusign_callback, record_inapp_signature,
+    create_esign_request,
+    handle_docusign_callback,
+    record_inapp_signature,
 )
 from app.database.engine import async_engine
 
@@ -22,6 +25,7 @@ router = APIRouter(prefix="/esignature", tags=["esignature"])
 
 
 # ── Pydantic models ────────────────────────────────────────────
+
 
 class SignerInfo(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
@@ -41,6 +45,7 @@ class InAppSignatureRequest(BaseModel):
 
 
 # ── Endpoints ─────────────────────────────────────────────────
+
 
 @router.post("/request", status_code=status.HTTP_201_CREATED)
 async def request_signature(
@@ -72,12 +77,15 @@ async def get_esign_status(
 ) -> dict[str, Any]:
     corr_id = generate_correlation_id("esign-status")
     async with async_engine.begin() as conn:
-        row = await conn.execute(text("""
+        row = await conn.execute(
+            text("""
             SELECT id, source_file, envelope_id, status, signers,
                    provider, created_at, completed_at
             FROM esign_requests
             WHERE id = :id AND workspace_id = :ws
-        """), {"id": request_id, "ws": user.workspace_id})
+        """),
+            {"id": request_id, "ws": user.workspace_id},
+        )
         r = row.fetchone()
 
     if not r:
@@ -102,13 +110,16 @@ async def list_esign_requests(
 ) -> dict[str, Any]:
     corr_id = generate_correlation_id("esign-list")
     async with async_engine.begin() as conn:
-        rows = await conn.execute(text("""
+        rows = await conn.execute(
+            text("""
             SELECT id, source_file, status, provider, created_at
             FROM esign_requests
             WHERE workspace_id = :ws
             ORDER BY created_at DESC
             LIMIT 100
-        """), {"ws": user.workspace_id})
+        """),
+            {"ws": user.workspace_id},
+        )
         requests = rows.fetchall()
 
     return {

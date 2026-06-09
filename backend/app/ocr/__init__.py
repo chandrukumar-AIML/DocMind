@@ -13,14 +13,24 @@ from typing import Any
 # DVMELTSS-M: Explicit public API surface
 __all__ = [
     # Core pipeline
-    "OCRPipeline", "get_ocr_pipeline", "reset_ocr_pipeline_cache",  # ✅ NEW: cache reset export
+    "OCRPipeline",
+    "get_ocr_pipeline",
+    "reset_ocr_pipeline_cache",  # ✅ NEW: cache reset export
     # Engines
-    "PaddleOCREngine", "VisionOCREngine", "VisionAnalyzer",
+    "PaddleOCREngine",
+    "VisionOCREngine",
+    "VisionAnalyzer",
     # Data models
-    "TextBlock", "PageOCRResult", "DocumentOCRResult",
-    "TableAnalysis", "DiagramAnalysis", "DocumentMetadata", "EnrichedDocument",
+    "TextBlock",
+    "PageOCRResult",
+    "DocumentOCRResult",
+    "TableAnalysis",
+    "DiagramAnalysis",
+    "DocumentMetadata",
+    "EnrichedDocument",
     # Utilities
-    "VisionCostTracker", "EnrichedTextFormatter",
+    "VisionCostTracker",
+    "EnrichedTextFormatter",
     # Config
     "VisionAnalyzerConfig",
 ]
@@ -61,13 +71,12 @@ def __getattr__(name: str) -> Any:
         module_path, attr_name = _LAZY_IMPORTS[name]
         try:
             import importlib
-            module = importlib.import_module(module_path, package=__name__.rpartition('.')[0])
+
+            module = importlib.import_module(module_path, package=__name__.rpartition(".")[0])
             return getattr(module, attr_name)
         except ImportError as e:
-            raise AttributeError(
-                f"Failed to lazy-import '{name}' from '{module_path}': {e}"
-            ) from e
-    
+            raise AttributeError(f"Failed to lazy-import '{name}' from '{module_path}': {e}") from e
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -83,36 +92,37 @@ def __dir__() -> list[str]:
 def _reset_caches_for_tests() -> None:
     """
     Reset internal caches & singletons for clean pytest runs.
-    
+
     ✅ FIXED: Actually resets LRU caches and module singletons.
     """
     import sys
     import importlib
-    
+
     # Reset get_ocr_pipeline LRU cache
     try:
         from .pipeline import get_ocr_pipeline, reset_ocr_pipeline_cache
+
         reset_ocr_pipeline_cache()
     except ImportError:
         pass
-    
+
     # Reset VisionCostTracker if loaded
     try:
         from .cost_tracking import VisionCostTracker
         # Reset any class-level state if applicable
     except ImportError:
         pass
-    
+
     # Reset preprocessor singleton if exists
     try:
         from .preprocessor import DocumentPreprocessor
         # No singleton, but clear any module-level caches
     except ImportError:
         pass
-    
+
     # Invalidate import cache (secondary effect)
     importlib.invalidate_caches()
-    
+
     # Optional: clear sys.modules entries for full reload (use with caution)
     # for mod_name in list(sys.modules):
     #     if mod_name.startswith("app.ocr"):
@@ -122,13 +132,15 @@ def _reset_caches_for_tests() -> None:
 # -- Module init logging (idempotent) ------------------------------------
 __init_logged: bool = False
 
+
 def _log_module_init() -> None:
     """Log module load — idempotent to avoid spam in multi-worker setups."""
     global __init_logged
     if __init_logged:
         return
-    
+
     import logging
+
     logger = logging.getLogger(__name__)
     logger.debug(  # ✅ Use debug level to avoid prod log spam
         f"OCR module loaded | version={__version__} | {__description__}"

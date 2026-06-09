@@ -1,5 +1,6 @@
 # backend/app/api/routes/webhooks.py
 """Webhook management: register, list, delete, test."""
+
 from __future__ import annotations
 
 import json
@@ -8,12 +9,11 @@ import uuid
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 
 from app.auth.dependencies import get_current_user, AuthenticatedUser
 from app.core.ids import generate_correlation_id
-from app.core.webhook_dispatcher import dispatch_event, _sign_payload
 from app.database.engine import async_engine
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ _VALID_EVENTS = {
 
 
 # ── Pydantic models ────────────────────────────────────────────
+
 
 class WebhookRegisterRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
@@ -80,6 +81,7 @@ class WebhookTestResponse(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────
 
+
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register_webhook(
     req: WebhookRegisterRequest,
@@ -89,20 +91,23 @@ async def register_webhook(
     wh_id = str(uuid.uuid4())
     try:
         async with async_engine.begin() as conn:
-            await conn.execute(text("""
+            await conn.execute(
+                text("""
                 INSERT INTO webhooks
                     (id, workspace_id, name, url, secret, events, is_active, created_by)
                 VALUES
                     (:id, :workspace_id, :name, :url, :secret, CAST(:events AS jsonb), TRUE, :created_by)
-            """), {
-                "id": wh_id,
-                "workspace_id": user.workspace_id,
-                "name": req.name,
-                "url": req.url,
-                "secret": req.secret,
-                "events": json.dumps(req.events),
-                "created_by": user.user_id,
-            })
+            """),
+                {
+                    "id": wh_id,
+                    "workspace_id": user.workspace_id,
+                    "name": req.name,
+                    "url": req.url,
+                    "secret": req.secret,
+                    "events": json.dumps(req.events),
+                    "created_by": user.user_id,
+                },
+            )
     except Exception as e:
         logger.error(f"[{corr_id}] Failed to register webhook: {e}")
         raise HTTPException(status_code=500, detail="Failed to register webhook")
@@ -117,13 +122,16 @@ async def list_webhooks(
     corr_id = generate_correlation_id("wh-list")
     try:
         async with async_engine.begin() as conn:
-            rows = await conn.execute(text("""
+            rows = await conn.execute(
+                text("""
                 SELECT id, workspace_id, name, url, events, is_active, created_by,
                        created_at
                 FROM webhooks
                 WHERE workspace_id = :ws
                 ORDER BY created_at DESC
-            """), {"ws": user.workspace_id})
+            """),
+                {"ws": user.workspace_id},
+            )
             hooks = rows.fetchall()
     except Exception as e:
         logger.error(f"[{corr_id}] Failed to list webhooks: {e}")
@@ -131,16 +139,18 @@ async def list_webhooks(
 
     result = []
     for row in hooks:
-        result.append({
-            "id": str(row[0]),
-            "workspace_id": row[1],
-            "name": row[2],
-            "url": row[3],
-            "events": row[4] if isinstance(row[4], list) else json.loads(row[4] or "[]"),
-            "is_active": row[5],
-            "created_by": row[6],
-            "created_at": row[7].isoformat() if row[7] else None,
-        })
+        result.append(
+            {
+                "id": str(row[0]),
+                "workspace_id": row[1],
+                "name": row[2],
+                "url": row[3],
+                "events": row[4] if isinstance(row[4], list) else json.loads(row[4] or "[]"),
+                "is_active": row[5],
+                "created_by": row[6],
+                "created_at": row[7].isoformat() if row[7] else None,
+            }
+        )
 
     return {"webhooks": result, "total": len(result), "correlation_id": corr_id}
 
@@ -153,10 +163,13 @@ async def delete_webhook(
     corr_id = generate_correlation_id("wh-del")
     try:
         async with async_engine.begin() as conn:
-            result = await conn.execute(text("""
+            result = await conn.execute(
+                text("""
                 UPDATE webhooks SET is_active = FALSE
                 WHERE id = :id AND workspace_id = :ws
-            """), {"id": webhook_id, "ws": user.workspace_id})
+            """),
+                {"id": webhook_id, "ws": user.workspace_id},
+            )
             if result.rowcount == 0:
                 raise HTTPException(status_code=404, detail="Webhook not found")
     except HTTPException:
@@ -176,10 +189,13 @@ async def test_webhook(
     corr_id = generate_correlation_id("wh-test")
     try:
         async with async_engine.begin() as conn:
-            row = await conn.execute(text("""
+            row = await conn.execute(
+                text("""
                 SELECT id, url, secret FROM webhooks
                 WHERE id = :id AND workspace_id = :ws AND is_active = TRUE
-            """), {"id": req.webhook_id, "ws": user.workspace_id})
+            """),
+                {"id": req.webhook_id, "ws": user.workspace_id},
+            )
             hook = row.fetchone()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {e}")
@@ -189,6 +205,7 @@ async def test_webhook(
 
     _, url, secret = hook
     from app.core.webhook_dispatcher import _deliver_once
+
     test_payload = {
         "event_type": req.event_type,
         "workspace_id": user.workspace_id,
@@ -219,14 +236,17 @@ async def get_delivery_history(
     corr_id = generate_correlation_id("wh-hist")
     try:
         async with async_engine.begin() as conn:
-            rows = await conn.execute(text("""
+            rows = await conn.execute(
+                text("""
                 SELECT id, event_type, attempt, status, http_status, error_msg,
                        delivered_at, created_at
                 FROM webhook_deliveries
                 WHERE webhook_id = :wid AND workspace_id = :ws
                 ORDER BY created_at DESC
                 LIMIT :lim
-            """), {"wid": webhook_id, "ws": user.workspace_id, "lim": min(limit, 200)})
+            """),
+                {"wid": webhook_id, "ws": user.workspace_id, "lim": min(limit, 200)},
+            )
             deliveries = rows.fetchall()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch deliveries: {e}")
@@ -256,6 +276,7 @@ if __name__ == "__main__":
     async def smoke_test():
         print("Webhook routes smoke test")
         from app.core.webhook_dispatcher import _sign_payload
+
         body = b'{"test":true}'
         sig = _sign_payload(body, "my-secret")
         assert sig.startswith("sha256="), f"Bad sig: {sig}"

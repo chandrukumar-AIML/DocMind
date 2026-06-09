@@ -1,4 +1,4 @@
-﻿# backend/app/evaluation/ragas_dataset.py
+# backend/app/evaluation/ragas_dataset.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 # ✅ FIXED: Safe file I/O + input validation + duplicate detection
 
@@ -24,23 +24,25 @@ DATASET_DIR: Final = Path(".cache/eval_datasets")
 @dataclass
 class EvalSample:
     """A single evaluation sample with validation."""
+
     id: str
     question: str
     ground_truth: str
     domain: str
     metadata: dict = field(default_factory=dict)
-    
+
     def validate(self) -> tuple[bool, str]:
         """Validate sample has required fields."""
         return validate_eval_sample(
             {"question": self.question, "ground_truth": self.ground_truth},
-            required_fields=["question", "ground_truth"]
+            required_fields=["question", "ground_truth"],
         )
 
 
 @dataclass
 class EvalDataset:
     """A versioned evaluation dataset for one domain."""
+
     name: str
     domain: str
     version: str
@@ -61,7 +63,7 @@ class EvalDataset:
         """Validate dataset structure."""
         if not self.samples:
             return False, "Dataset has no samples"
-        
+
         # ✅ FIXED: Check for duplicate sample IDs
         seen_ids = set()
         for i, sample in enumerate(self.samples):
@@ -69,13 +71,11 @@ class EvalDataset:
             if sample_id in seen_ids:
                 return False, f"Duplicate sample ID: {sample_id}"
             seen_ids.add(sample_id)
-            
-            is_valid, error = validate_eval_sample(
-                sample, required_fields=["question", "ground_truth"]
-            )
+
+            is_valid, error = validate_eval_sample(sample, required_fields=["question", "ground_truth"])
             if not is_valid:
                 return False, f"Sample {i} invalid: {error}"
-        
+
         return True, ""
 
     def to_ragas_samples(
@@ -85,7 +85,7 @@ class EvalDataset:
     ) -> list[RAGAsSample]:
         """Run the RAG system on all Q&A pairs and produce RAGAsSamples."""
         corr_id = correlation_id or self.correlation_id or generate_eval_correlation_id("dataset")
-        
+
         ragas_samples = []
         for item in self.samples:
             question = item.get("question", "")
@@ -96,13 +96,15 @@ class EvalDataset:
                 logger.warning(f"[{corr_id}] Skipping sample with empty question/ground_truth")
                 continue
 
-            ragas_samples.append(RAGAsSample(
-                question=question,
-                answer="",  # filled by pipeline
-                contexts=[],  # filled by pipeline
-                ground_truth=ground_truth,
-                correlation_id=corr_id,
-            ))
+            ragas_samples.append(
+                RAGAsSample(
+                    question=question,
+                    answer="",  # filled by pipeline
+                    contexts=[],  # filled by pipeline
+                    ground_truth=ground_truth,
+                    correlation_id=corr_id,
+                )
+            )
         return ragas_samples
 
 
@@ -131,7 +133,7 @@ class DatasetManager:
         is_valid, error = _validate_dataset_inputs(None, None, dataset_dir, "dataset_init")
         if not is_valid:
             raise ValueError(error)
-        
+
         self.dir = Path(dataset_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
 
@@ -141,26 +143,28 @@ class DatasetManager:
         is_valid, error = dataset.validate()
         if not is_valid:
             raise ValueError(f"Cannot save invalid dataset: {error}")
-        
+
         filename = f"{dataset.domain}_{dataset.version}.json"
         path = self.dir / filename
-        
+
         # ✅ FIXED: Atomic write with temp file + error handling
         try:
             # Write to temp file first
-            with tempfile.NamedTemporaryFile(
-                mode="w", dir=self.dir, delete=False, suffix=".tmp"
-            ) as tmp:
-                json.dump({
-                    "name": dataset.name,
-                    "domain": dataset.domain,
-                    "version": dataset.version,
-                    "created_at": dataset.created_at,
-                    "description": dataset.description,
-                    "samples": dataset.samples,
-                }, tmp, indent=2)
+            with tempfile.NamedTemporaryFile(mode="w", dir=self.dir, delete=False, suffix=".tmp") as tmp:
+                json.dump(
+                    {
+                        "name": dataset.name,
+                        "domain": dataset.domain,
+                        "version": dataset.version,
+                        "created_at": dataset.created_at,
+                        "description": dataset.description,
+                        "samples": dataset.samples,
+                    },
+                    tmp,
+                    indent=2,
+                )
                 tmp_path = Path(tmp.name)
-            
+
             # Atomic rename
             tmp_path.rename(path)
             logger.info(f"Dataset saved: {path} ({dataset.size} samples)")
@@ -173,20 +177,20 @@ class DatasetManager:
             raise
 
     def load(
-        self, 
-        domain: str, 
+        self,
+        domain: str,
         version: str = "latest",
         correlation_id: Optional[str] = None,
     ) -> Optional[EvalDataset]:
         """Load a dataset by domain + version."""
         corr_id = correlation_id or generate_eval_correlation_id("dataset_load")
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_dataset_inputs(domain, version, None, corr_id)
         if not is_valid:
             logger.error(f"[{corr_id}] Invalid inputs: {error}")
             return None
-        
+
         if version == "latest":
             files = sorted(self.dir.glob(f"{domain}_*.json"), reverse=True)
             if not files:
@@ -202,7 +206,7 @@ class DatasetManager:
         try:
             with open(path) as f:
                 data = json.load(f)
-            
+
             # ✅ FIXED: Safe dict access with defaults
             dataset = EvalDataset(
                 name=data.get("name", ""),
@@ -213,13 +217,13 @@ class DatasetManager:
                 description=data.get("description", ""),
                 correlation_id=corr_id,
             )
-            
+
             # FIXED: Validate after loading
             is_valid, error = dataset.validate()
             if not is_valid:
                 logger.error(f"[{corr_id}] Loaded dataset validation failed: {error}")
                 return None
-                
+
             return dataset
         except json.JSONDecodeError as e:
             logger.error(f"[{corr_id}] Dataset JSON decode failed: {e}")
@@ -235,14 +239,16 @@ class DatasetManager:
             try:
                 with open(f) as fp:
                     data = json.load(fp)
-                datasets.append({
-                    "name": data.get("name", ""),
-                    "domain": data.get("domain", ""),
-                    "version": data.get("version", ""),
-                    "size": len(data.get("samples", [])),
-                    "created_at": data.get("created_at", ""),
-                    "filename": f.name,
-                })
+                datasets.append(
+                    {
+                        "name": data.get("name", ""),
+                        "domain": data.get("domain", ""),
+                        "version": data.get("version", ""),
+                        "size": len(data.get("samples", [])),
+                        "created_at": data.get("created_at", ""),
+                        "filename": f.name,
+                    }
+                )
             except json.JSONDecodeError:
                 logger.warning(f"Skipping corrupted dataset file: {f.name}")
                 continue
@@ -258,34 +264,48 @@ class DatasetManager:
 
         domain_templates = {
             "legal": [
-                {"question": "What are the payment terms in this contract?",
-                 "ground_truth": "Payment is due within 30 days of invoice receipt."},
-                {"question": "What is the liability cap in this agreement?",
-                 "ground_truth": "Liability is capped at the total contract value."},
+                {
+                    "question": "What are the payment terms in this contract?",
+                    "ground_truth": "Payment is due within 30 days of invoice receipt.",
+                },
+                {
+                    "question": "What is the liability cap in this agreement?",
+                    "ground_truth": "Liability is capped at the total contract value.",
+                },
             ],
             "invoice": [
-                {"question": "What is the total amount due?",
-                 "ground_truth": "The total amount due is specified on the invoice."},
-                {"question": "What is the invoice number?",
-                 "ground_truth": "The invoice number appears at the top of the document."},
+                {
+                    "question": "What is the total amount due?",
+                    "ground_truth": "The total amount due is specified on the invoice.",
+                },
+                {
+                    "question": "What is the invoice number?",
+                    "ground_truth": "The invoice number appears at the top of the document.",
+                },
             ],
             "general": [
-                {"question": "What is the main topic of this document?",
-                 "ground_truth": "The document covers the subject described in the title."},
-                {"question": "Who authored this document?",
-                 "ground_truth": "The author is listed on the document cover or header."},
+                {
+                    "question": "What is the main topic of this document?",
+                    "ground_truth": "The document covers the subject described in the title.",
+                },
+                {
+                    "question": "Who authored this document?",
+                    "ground_truth": "The author is listed on the document cover or header.",
+                },
             ],
         }
 
         for domain, template_samples in domain_templates.items():
             samples = []
             for i, s in enumerate(template_samples * 2):
-                samples.append({
-                    "id": f"{domain}_{i+1:03d}",
-                    "question": s["question"],
-                    "ground_truth": s["ground_truth"],
-                    "domain": domain,
-                })
+                samples.append(
+                    {
+                        "id": f"{domain}_{i+1:03d}",
+                        "question": s["question"],
+                        "ground_truth": s["ground_truth"],
+                        "domain": domain,
+                    }
+                )
 
             dataset = EvalDataset(
                 name=f"DocuMind {domain.title()} Eval v{now}",
@@ -320,10 +340,9 @@ __all__ = [
     "EvalSample",
     "get_dataset_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

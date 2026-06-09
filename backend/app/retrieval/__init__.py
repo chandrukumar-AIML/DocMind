@@ -13,9 +13,12 @@ from typing import Any
 # DVMELTSS-M: Explicit public API surface
 __all__ = [
     # Retrievers
-    "DenseRetriever", "BM25Retriever", "HybridRetriever",
+    "DenseRetriever",
+    "BM25Retriever",
+    "HybridRetriever",
     # Utilities
-    "reciprocal_rank_fusion", "hybrid_score",
+    "reciprocal_rank_fusion",
+    "hybrid_score",
     # Benchmarking
     "RetrievalBenchmark",
     # Profiles
@@ -54,25 +57,23 @@ def __getattr__(name: str) -> Any:
         module_path, attr_name = _LAZY_IMPORTS[name]
         try:
             import importlib
+
             module = importlib.import_module(module_path, package=__name__)
             return getattr(module, attr_name)
         except ImportError as e:
-            raise AttributeError(
-                f"Failed to lazy-import '{name}' from '{module_path}': {e}"
-            ) from e
-    
+            raise AttributeError(f"Failed to lazy-import '{name}' from '{module_path}': {e}") from e
+
     # Utilities (centralized)
     if name in _UTIL_IMPORTS:
         module_path, attr_name = _UTIL_IMPORTS[name]
         try:
             import importlib
+
             module = importlib.import_module(module_path)
             return getattr(module, attr_name)
         except ImportError as e:
-            raise AttributeError(
-                f"Failed to lazy-import utility '{name}' from '{module_path}': {e}"
-            ) from e
-    
+            raise AttributeError(f"Failed to lazy-import utility '{name}' from '{module_path}': {e}") from e
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -88,17 +89,17 @@ def __dir__() -> list[str]:
 def _reset_caches_for_tests() -> None:
     """
     Reset internal caches for clean pytest runs.
-    
+
     ✅ FIXED: Actually resets module-level singletons if they expose clear().
     If modules don't support reset, this is a documented no-op.
     """
     import sys
     import importlib
-    
+
     # Try to reset caches in loaded retrieval modules
     for mod_name in [
         "app.retrieval.dense_retriever",
-        "app.retrieval.bm25_retriever", 
+        "app.retrieval.bm25_retriever",
         "app.retrieval.hybrid_retriever",
         "app.retrieval.benchmark",
         "app.retrieval.rrf_fusion",
@@ -113,7 +114,7 @@ def _reset_caches_for_tests() -> None:
                         obj.clear_index()
                     except Exception:
                         pass  # Safe no-op for tests
-    
+
     # Invalidate import cache (secondary effect)
     importlib.invalidate_caches()
 
@@ -121,13 +122,15 @@ def _reset_caches_for_tests() -> None:
 # -- Module init logging (idempotent) ------------------------------------
 __init_logged: bool = False
 
+
 def _log_module_init() -> None:
     """Log module load — idempotent to avoid spam in multi-worker setups."""
     global __init_logged
     if __init_logged:
         return
-    
+
     import logging
+
     logger = logging.getLogger(__name__)
     logger.debug(  # ✅ Use debug level to avoid prod log spam
         f"Retrieval module loaded | version={__version__} | {__description__}"

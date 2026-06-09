@@ -1,12 +1,13 @@
 # backend/app/core/workflow_engine.py
 """No-code workflow automation engine: IF/THEN rule evaluation and actions."""
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import text
 
@@ -23,7 +24,8 @@ async def ensure_workflow_schema() -> None:
     async with async_engine.begin() as conn:
         if conn.dialect.name != "postgresql":
             return
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS workflows (
                 id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 workspace_id  VARCHAR(64) NOT NULL,
@@ -37,8 +39,10 @@ async def ensure_workflow_schema() -> None:
                 created_at    TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 updated_at    TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             )
-        """))
-        await conn.execute(text("""
+        """)
+        )
+        await conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS workflow_runs (
                 id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 workflow_id  UUID NOT NULL,
@@ -50,7 +54,8 @@ async def ensure_workflow_schema() -> None:
                 created_at   TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 completed_at TIMESTAMP WITH TIME ZONE
             )
-        """))
+        """)
+        )
         for idx in [
             "CREATE INDEX IF NOT EXISTS ix_workflows_workspace ON workflows(workspace_id)",
             "CREATE INDEX IF NOT EXISTS ix_workflow_runs_workflow ON workflow_runs(workflow_id)",
@@ -60,6 +65,7 @@ async def ensure_workflow_schema() -> None:
 
 
 # ── Condition evaluation ──────────────────────────────────────
+
 
 def _evaluate_condition(condition: dict, doc_context: dict) -> bool:
     """Evaluate a single IF condition against document context."""
@@ -92,6 +98,7 @@ def _evaluate_condition(condition: dict, doc_context: dict) -> bool:
             return str(actual).lower() in [str(v).lower() for v in (value or [])]
         elif op == "regex":
             import re
+
             return bool(re.search(str(value), str(actual), re.IGNORECASE))
     except Exception as e:
         logger.warning(f"Condition eval error ({field} {op} {value}): {e}")
@@ -107,6 +114,7 @@ def evaluate_conditions(conditions: list[dict], doc_context: dict) -> bool:
 
 # ── Action execution ──────────────────────────────────────────
 
+
 async def _execute_action(action: dict, doc_context: dict, workspace_id: str) -> dict:
     action_type = action.get("type", "")
     result: dict[str, Any] = {"type": action_type, "status": "ok"}
@@ -114,6 +122,7 @@ async def _execute_action(action: dict, doc_context: dict, workspace_id: str) ->
     try:
         if action_type == "webhook":
             from app.core.webhook_dispatcher import dispatch_event
+
             await dispatch_event(
                 workspace_id=workspace_id,
                 event_type="workflow_triggered",
@@ -125,15 +134,18 @@ async def _execute_action(action: dict, doc_context: dict, workspace_id: str) ->
             source_file = doc_context.get("source_file", "")
             if source_file:
                 async with async_engine.begin() as conn:
-                    await conn.execute(text("""
+                    await conn.execute(
+                        text("""
                         UPDATE documents
                         SET tags = COALESCE(tags, '[]'::jsonb) || CAST(:tag AS jsonb)
                         WHERE source_file = :sf AND workspace_id = :ws
-                    """), {
-                        "tag": json.dumps([tag]),
-                        "sf": source_file,
-                        "ws": workspace_id,
-                    })
+                    """),
+                        {
+                            "tag": json.dumps([tag]),
+                            "sf": source_file,
+                            "ws": workspace_id,
+                        },
+                    )
 
         elif action_type == "email":
             # Queues for SMTP delivery; non-blocking
@@ -169,13 +181,16 @@ async def trigger_workflows(
     corr_id = generate_correlation_id("wf")
     try:
         async with async_engine.begin() as conn:
-            rows = await conn.execute(text("""
+            rows = await conn.execute(
+                text("""
                 SELECT id, name, conditions, actions
                 FROM workflows
                 WHERE workspace_id = :ws
                   AND is_active = TRUE
                   AND trigger_event = :event
-            """), {"ws": workspace_id, "event": trigger_event})
+            """),
+                {"ws": workspace_id, "event": trigger_event},
+            )
             workflows = rows.fetchall()
     except Exception as e:
         logger.warning(f"[{corr_id}] Could not load workflows: {e}")
@@ -193,15 +208,18 @@ async def trigger_workflows(
 
         try:
             async with async_engine.begin() as conn:
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     INSERT INTO workflow_runs (id, workflow_id, workspace_id, trigger_data)
                     VALUES (:id, :wf_id, :ws, CAST(:data AS jsonb))
-                """), {
-                    "id": run_id,
-                    "wf_id": str(wf_id),
-                    "ws": workspace_id,
-                    "data": json.dumps(doc_context, default=str),
-                })
+                """),
+                    {
+                        "id": run_id,
+                        "wf_id": str(wf_id),
+                        "ws": workspace_id,
+                        "data": json.dumps(doc_context, default=str),
+                    },
+                )
 
             for action in actions:
                 action_result = await asyncio.wait_for(
@@ -211,13 +229,16 @@ async def trigger_workflows(
                 actions_log.append(action_result)
 
             async with async_engine.begin() as conn:
-                await conn.execute(text("""
+                await conn.execute(
+                    text("""
                     UPDATE workflow_runs
                     SET status = 'completed',
                         actions_log = CAST(:log AS jsonb),
                         completed_at = NOW()
                     WHERE id = :id
-                """), {"id": run_id, "log": json.dumps(actions_log)})
+                """),
+                    {"id": run_id, "log": json.dumps(actions_log)},
+                )
 
             logger.info(f"[{corr_id}] Workflow '{name}' ({str(wf_id)[:8]}) ran {len(actions)} actions")
 
@@ -225,11 +246,14 @@ async def trigger_workflows(
             logger.error(f"[{corr_id}] Workflow '{name}' run {run_id} failed: {e}")
             try:
                 async with async_engine.begin() as conn:
-                    await conn.execute(text("""
+                    await conn.execute(
+                        text("""
                         UPDATE workflow_runs
                         SET status = 'failed', error_msg = :err, completed_at = NOW()
                         WHERE id = :id
-                    """), {"id": run_id, "err": str(e)[:300]})
+                    """),
+                        {"id": run_id, "err": str(e)[:300]},
+                    )
             except Exception:
                 pass
 

@@ -20,25 +20,24 @@ from typing import AsyncIterator, Optional, Any, List, Dict, Tuple, Union
 
 from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
+
 # ✅ FIXED: Correct import path based on project structure
 from app.vectorstore.store_manager import VectorStoreManager
 
 from app.config import get_settings
 from app.core.llm_pool import get_llm
-from app.core.retry import retry_async, RetryConfig
+from app.core.retry import RetryConfig
 from app.core.rag_utils import (
     escape_prompt_content,
     generate_rag_correlation_id,
     build_safe_context,
-    validate_rag_weights,
-    CorrelationIdField,
 )
 from app.core.openai_errors import is_insufficient_quota_error
 from app.core.exceptions import RAGChainError
 
 from .hyde import HyDEExpander
 from .hybrid_search import HybridSearcher
-from .reranker import CrossEncoderReranker, get_reranker
+from .reranker import get_reranker
 from .prompts import ANSWER_PROMPT, CONDENSE_QUESTION_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -50,6 +49,7 @@ _MAX_ANSWER_LENGTH: int = 8000  # ~2000 tokens max
 @dataclass
 class Citation:
     """Structured citation for RAG responses."""
+
     source_file: str
     page_number: int
     block_type: str
@@ -57,7 +57,7 @@ class Citation:
     rerank_score: float
     chunk_id: Optional[str] = None
     correlation_id: Optional[str] = None
-    
+
     def to_dict(self) -> dict:
         """Convert to API-friendly dict with truncated text."""
         return {
@@ -69,7 +69,7 @@ class Citation:
             "chunk_id": self.chunk_id,
             "correlation_id": self.correlation_id,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict, correlation_id: Optional[str] = None) -> "Citation":
         """✅ NEW: Safe factory method with defaults for missing keys."""
@@ -87,6 +87,7 @@ class Citation:
 @dataclass
 class RAGResponse:
     """Complete RAG response with metadata for monitoring."""
+
     answer: str
     citations: List[Citation]
     hyde_hypothesis: str
@@ -98,7 +99,7 @@ class RAGResponse:
     context_precision_score: Optional[float] = None
     latency_ms: Optional[float] = None
     correlation_id: Optional[str] = None
-    
+
     def to_dict(self) -> dict:
         """Convert to API response format."""
         return {
@@ -121,6 +122,7 @@ class RAGResponse:
 @dataclass
 class RetrievalResult:
     """Intermediate retrieval state for debugging/telemetry."""
+
     standalone_question: str
     hypothesis: str
     candidate_docs: List[Any]
@@ -137,7 +139,7 @@ class AdvancedRAGChain:
     Full advanced RAG pipeline:
     HyDE -> hybrid search -> parent expansion -> cross-encoder rerank
     -> GPT-4o streaming answer with citations.
-    
+
     Features (DVMELTSS-V, BATMAN-A, OWASP-1):
     - Centralized LLM pool via app.core.llm_pool
     - Async streaming with token-by-token yield + timeout guards
@@ -166,16 +168,16 @@ class AdvancedRAGChain:
             self.correlation_id = correlation_id or generate_rag_correlation_id()
         except Exception:
             self.correlation_id = f"rag_{int(time.time())}"
-        
+
         self.llm = get_llm(streaming=True, temperature_override=0.1)
         self.condenser_llm = get_llm(streaming=False, temperature_override=0.0)
-        
+
         self._llm_retry_config = RetryConfig(
             max_attempts=3,
             backoff_base=1.0,
             exceptions=(Exception,),
         )
-        
+
         logger.info(f"AdvancedRAGChain initialized | corr_id={self.correlation_id}")
 
     @property
@@ -193,7 +195,7 @@ class AdvancedRAGChain:
         if self._bm25_ready:
             logger.debug(f"[{self.correlation_id}] BM25 already initialized — skipping")
             return
-            
+
         try:
             loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in Python 3.10+
             await loop.run_in_executor(None, self.searcher.build_bm25_from_store)
@@ -216,7 +218,13 @@ class AdvancedRAGChain:
 
     async def _invoke_llm(self, messages: List[BaseMessage]) -> Any:
         """Invoke LLM. Skips immediately if quota exceeded globally."""
-        from app.core.openai_errors import is_openai_available, is_insufficient_quota_error, is_authentication_error, mark_openai_quota_exceeded, mark_openai_auth_failed
+        from app.core.openai_errors import (
+            is_openai_available,
+            is_authentication_error,
+            mark_openai_quota_exceeded,
+            mark_openai_auth_failed,
+        )
+
         if not is_openai_available():
             raise RuntimeError("LLM skipped — OpenAI quota/auth previously exceeded")
         try:
@@ -252,10 +260,14 @@ class AdvancedRAGChain:
 
             result = await asyncio.wait_for(
                 self._run_retrieval_pipeline(
-                    question, chat_history or [], filter_dict,
-                    top_k_retrieve, top_k_rerank, corr_id
+                    question,
+                    chat_history or [],
+                    filter_dict,
+                    top_k_retrieve,
+                    top_k_rerank,
+                    corr_id,
                 ),
-                timeout=timeout_seconds * 0.7
+                timeout=timeout_seconds * 0.7,
             )
 
             # Low-confidence detection: no docs found or all rerank scores weak
@@ -277,14 +289,21 @@ class AdvancedRAGChain:
                         content_str = chunk.content if isinstance(chunk.content, str) else str(chunk.content)
                         if len(full_answer) + len(content_str) > _MAX_ANSWER_LENGTH:
                             logger.warning(f"[{corr_id}] Answer truncated at {_MAX_ANSWER_LENGTH} chars")
-                            yield {"type": "token", "content": content_str[:_MAX_ANSWER_LENGTH - len(full_answer)] + "\n\n[Response truncated]"}
+                            yield {
+                                "type": "token",
+                                "content": content_str[: _MAX_ANSWER_LENGTH - len(full_answer)]
+                                + "\n\n[Response truncated]",
+                            }
                             break
                         full_answer += content_str
                         yield {"type": "token", "content": content_str}
 
             except asyncio.TimeoutError:
                 logger.warning(f"[{corr_id}] LLM streaming timed out")
-                yield {"type": "token", "content": "[Response truncated due to timeout]"}
+                yield {
+                    "type": "token",
+                    "content": "[Response truncated due to timeout]",
+                }
             except Exception as e:
                 logger.warning(f"[{corr_id}] LLM streaming failed: {e}")
                 fallback = self._generate_fallback_answer(result.reranked, result.standalone_question)
@@ -308,7 +327,11 @@ class AdvancedRAGChain:
 
         except asyncio.TimeoutError:
             logger.error(f"[{corr_id}] RAG stream timed out after {timeout_seconds}s")
-            yield {"type": "error", "message": f"Request timed out after {timeout_seconds}s", "correlation_id": corr_id}
+            yield {
+                "type": "error",
+                "message": f"Request timed out after {timeout_seconds}s",
+                "correlation_id": corr_id,
+            }
         except Exception as e:
             logger.error(f"[{corr_id}] RAG stream failed: {e}", exc_info=True)
             yield {"type": "error", "message": str(e), "correlation_id": corr_id}
@@ -326,34 +349,38 @@ class AdvancedRAGChain:
         """Non-streaming RAG query returning complete response object."""
         corr_id = correlation_id or self.correlation_id
         start_time = time.perf_counter()
-        
+
         try:
             result = await asyncio.wait_for(
                 self._run_retrieval_pipeline(
-                    question, chat_history or [], filter_dict,
-                    top_k_retrieve, top_k_rerank, corr_id
+                    question,
+                    chat_history or [],
+                    filter_dict,
+                    top_k_retrieve,
+                    top_k_rerank,
+                    corr_id,
                 ),
-                timeout=timeout_seconds * 0.7
+                timeout=timeout_seconds * 0.7,
             )
-            
+
             messages = ANSWER_PROMPT.format_messages(
                 context=escape_prompt_content(result.context),
                 question=escape_prompt_content(result.standalone_question),
                 chat_history=chat_history or [],
             )
-            
+
             try:
                 response = await asyncio.wait_for(
                     self._invoke_llm(messages),  # ✅ FIXED: Use dedicated retry method
-                    timeout=timeout_seconds * 0.3
+                    timeout=timeout_seconds * 0.3,
                 )
                 answer_str = response.content if isinstance(response.content, str) else str(response.content)
             except Exception as e:
                 logger.warning(f"[{corr_id}] LLM batch failed: {e}")
                 answer_str = self._generate_fallback_answer(result.reranked, result.standalone_question)
-            
+
             latency = round((time.perf_counter() - start_time) * 1000)
-            
+
             return RAGResponse(
                 answer=answer_str,
                 citations=result.citations,
@@ -431,10 +458,7 @@ class AdvancedRAGChain:
             # Reranker disabled — keep retrieval order, pair with descending
             # placeholder scores so downstream code that expects (doc, score) works.
             n = len(expanded_docs[:top_k_rerank])
-            reranked = [
-                (doc, 1.0 - (i / max(n, 1)))
-                for i, doc in enumerate(expanded_docs[:top_k_rerank])
-            ]
+            reranked = [(doc, 1.0 - (i / max(n, 1))) for i, doc in enumerate(expanded_docs[:top_k_rerank])]
         timings["rerank_ms"] = round((time.perf_counter() - t3) * 1000)
 
         logger.info(
@@ -453,15 +477,13 @@ class AdvancedRAGChain:
             context, citation_dicts = build_safe_context(reranked)
             # ✅ Convert dicts to Citation objects safely
             citations = [
-                Citation.from_dict(c, correlation_id=correlation_id) 
-                for c in citation_dicts 
-                if isinstance(c, dict)
+                Citation.from_dict(c, correlation_id=correlation_id) for c in citation_dicts if isinstance(c, dict)
             ]
         except Exception as e:
             logger.error(f"[{correlation_id}] Context building failed: {e}")
             context = "<document_context>\nContext unavailable.\n</document_context>"
             citations = []
-        
+
         return RetrievalResult(
             standalone_question=standalone_q,
             hypothesis=hypothesis,
@@ -493,7 +515,7 @@ class AdvancedRAGChain:
                         lc_history.append(SystemMessage(content=content))
                 elif isinstance(msg, BaseMessage):
                     lc_history.append(msg)
-            
+
             messages = CONDENSE_QUESTION_PROMPT.format_messages(
                 chat_history=lc_history, question=escape_prompt_content(question)
             )
@@ -511,7 +533,7 @@ class AdvancedRAGChain:
 
         snippets = []
         query_terms = set(t.lower() for t in question.split() if len(t) > 2)
-        
+
         for doc, score in reranked[:3]:
             text = " ".join(doc.page_content.split())
             if not text:
@@ -521,13 +543,13 @@ class AdvancedRAGChain:
             snippets.append((overlap + max(score, 0), first_sentence, doc.metadata))
 
         snippets.sort(key=lambda item: item[0], reverse=True)
-        
+
         lines = ["Extractive answer from indexed text:"]
         for _, snippet, meta in snippets[:2]:
             page = int(meta.get("page_number", 0)) + 1
             source = meta.get("source_file", "document")
             lines.append(f"- {snippet} [SOURCE: {source}, page {page}]")
-        
+
         return "\n".join(lines)
 
     def _expand_to_parents(self, docs: List[Any]) -> List[Any]:
@@ -536,7 +558,7 @@ class AdvancedRAGChain:
         seen_ids: set[str] = set()
 
         for doc in docs:
-            meta = getattr(doc, 'metadata', {})
+            meta = getattr(doc, "metadata", {})
             parent_id = meta.get("parent_id", "")
             chunk_id = meta.get("chunk_id", "")
 
@@ -571,7 +593,7 @@ class AdvancedRAGChain:
                 if self.rerank_enabled and hasattr(self.reranker, "get_model_info")
                 else "disabled"
             ),
-            "llm_model": getattr(self.llm, 'model_name', 'unknown'),
+            "llm_model": getattr(self.llm, "model_name", "unknown"),
             "correlation_id": self.correlation_id,
         }
 
@@ -589,7 +611,7 @@ if __name__ == "__main__":
     import sys
     from pathlib import Path
     from unittest.mock import patch, MagicMock, AsyncMock
-    
+
     # 🔧 ROBUST PATH SETUP
     current_file = Path(__file__).resolve()
     for parent in current_file.parents:
@@ -598,59 +620,71 @@ if __name__ == "__main__":
             break
     else:
         backend_root = current_file.parents[2]
-    
+
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
-    
+
     async def run_tests():
         print("🔍 Testing AdvancedRAGChain module (app/rag/chain.py)")
         print("=" * 70)
-        
+
         try:
-            from app.rag.chain import AdvancedRAGChain, Citation, RAGResponse, RetrievalResult
+            from app.rag.chain import AdvancedRAGChain, Citation, RAGResponse
             from langchain_core.documents import Document
-            
+
             # -- Test 1: Module imports & dataclasses ---------------------
             print("\n📌 Test 1: Module imports & dataclass validation")
-            
+
             # Test Citation
             citation = Citation(
-                source_file="invoice.pdf", page_number=2, block_type="table",
-                chunk_text="Item | Price\nA | $10", rerank_score=0.95,
-                chunk_id="chunk_123", correlation_id="test-cite"
+                source_file="invoice.pdf",
+                page_number=2,
+                block_type="table",
+                chunk_text="Item | Price\nA | $10",
+                rerank_score=0.95,
+                chunk_id="chunk_123",
+                correlation_id="test-cite",
             )
             cit_dict = citation.to_dict()
             assert cit_dict["page_number"] == 3  # 1-indexed
             assert "..." in cit_dict["chunk_text"] or len(cit_dict["chunk_text"]) <= 203
             print(f"   ✅ Citation: to_dict() works, page={cit_dict['page_number']}")
-            
+
             # Test Citation.from_dict with missing keys
-            partial_data = {"source_file": "test.pdf", "chunk_text": "Sample text", "rerank_score": 0.8}
+            partial_data = {
+                "source_file": "test.pdf",
+                "chunk_text": "Sample text",
+                "rerank_score": 0.8,
+            }
             cit_from_dict = Citation.from_dict(partial_data, correlation_id="test-fallback")
             assert cit_from_dict.page_number == 0  # default
             assert cit_from_dict.block_type == "text"  # default
-            print(f"   ✅ Citation.from_dict: handles missing keys with defaults")
-            
+            print("   ✅ Citation.from_dict: handles missing keys with defaults")
+
             # Test RAGResponse
             response = RAGResponse(
-                answer="The total is $10.", citations=[citation],
+                answer="The total is $10.",
+                citations=[citation],
                 hyde_hypothesis="What is the price of item A?",
-                retrieved_count=20, reranked_count=3, query="How much is A?",
-                faithfulness_score=0.92, latency_ms=1500, correlation_id="test-rag"
+                retrieved_count=20,
+                reranked_count=3,
+                query="How much is A?",
+                faithfulness_score=0.92,
+                latency_ms=1500,
+                correlation_id="test-rag",
             )
             resp_dict = response.to_dict()
             assert "scores" in resp_dict and resp_dict["scores"]["faithfulness"] == 0.92
-            print(f"   ✅ RAGResponse: to_dict() includes scores and citations")
-            
+            print("   ✅ RAGResponse: to_dict() includes scores and citations")
+
             # -- Test 2: Chain initialization with mocked deps ------------
             print("\n📌 Test 2: AdvancedRAGChain initialization (mocked deps)")
-            
-            with patch("app.rag.chain.VectorStoreManager") as mock_store_mgr, \
-                 patch("app.rag.chain.HyDEExpander") as mock_hyde, \
-                 patch("app.rag.chain.HybridSearcher") as mock_searcher, \
-                 patch("app.rag.chain.CrossEncoderReranker") as mock_reranker, \
-                 patch("app.rag.chain.get_llm") as mock_get_llm:
-                
+
+            with patch("app.rag.chain.VectorStoreManager") as mock_store_mgr, patch(
+                "app.rag.chain.HyDEExpander"
+            ) as mock_hyde, patch("app.rag.chain.HybridSearcher") as mock_searcher, patch(
+                "app.rag.chain.CrossEncoderReranker"
+            ) as mock_reranker, patch("app.rag.chain.get_llm") as mock_get_llm:
                 # Setup mocks
                 mock_store = MagicMock()
                 mock_store_mgr.return_value = mock_store
@@ -660,91 +694,109 @@ if __name__ == "__main__":
                 mock_searcher.return_value = mock_searcher_instance
                 mock_reranker_instance = MagicMock()
                 mock_reranker.return_value = mock_reranker_instance
-                
+
                 # Mock LLM with async methods
                 mock_llm = MagicMock()
                 mock_llm.astream = AsyncMock(return_value=AsyncMock())
                 mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Mock answer"))
                 mock_get_llm.return_value = mock_llm
-                
+
                 chain = AdvancedRAGChain(use_gpu=False, correlation_id="test-chain")
                 assert chain.correlation_id == "test-chain"
                 print(f"   ✅ Chain initialized: corr_id={chain.correlation_id}")
-            
+
             # -- Test 3: Citation handling & context building -------------
             print("\n📌 Test 3: Citation handling & build_safe_context integration")
-            
+
             # Mock reranked docs for context building
             mock_doc1 = Document(
                 page_content="Invoice total: $1,234.56",
-                metadata={"source_file": "inv.pdf", "page_number": 1, "block_type": "table", "chunk_id": "c1", "parent_id": "p1"}
+                metadata={
+                    "source_file": "inv.pdf",
+                    "page_number": 1,
+                    "block_type": "table",
+                    "chunk_id": "c1",
+                    "parent_id": "p1",
+                },
             )
             mock_doc2 = Document(
                 page_content="Payment due: 2026-06-01",
-                metadata={"source_file": "inv.pdf", "page_number": 2, "block_type": "paragraph", "chunk_id": "c2"}
+                metadata={
+                    "source_file": "inv.pdf",
+                    "page_number": 2,
+                    "block_type": "paragraph",
+                    "chunk_id": "c2",
+                },
             )
             reranked = [(mock_doc1, 0.95), (mock_doc2, 0.88)]
-            
+
             # Test _expand_to_parents with mocked store
-            with patch("app.rag.chain.VectorStoreManager") as mock_store_mgr, \
-                 patch("app.rag.chain.HyDEExpander"), \
-                 patch("app.rag.chain.HybridSearcher"), \
-                 patch("app.rag.chain.CrossEncoderReranker"), \
-                 patch("app.rag.chain.get_llm"):
-                
+            with patch("app.rag.chain.VectorStoreManager") as mock_store_mgr, patch(
+                "app.rag.chain.HyDEExpander"
+            ), patch("app.rag.chain.HybridSearcher"), patch("app.rag.chain.CrossEncoderReranker"), patch(
+                "app.rag.chain.get_llm"
+            ):
                 mock_store = MagicMock()
                 mock_store.get_parent.return_value = "Full invoice context with total $1,234.56"
                 mock_store_mgr.return_value = mock_store
-                
+
                 chain = AdvancedRAGChain(correlation_id="test-expand")
-                
+
                 # Test parent expansion
                 expanded = chain._expand_to_parents([mock_doc1, mock_doc2])
                 # Should expand c1 to parent p1, keep c2 as-is
                 assert len(expanded) >= 1
                 print(f"   ✅ Parent expansion: {len([mock_doc1, mock_doc2])} docs -> {len(expanded)} expanded")
-                
+
                 # Test fallback answer generation
                 fallback = chain._generate_fallback_answer(reranked, "What is the total?")
                 assert "Invoice total" in fallback or "$1,234.56" in fallback
                 assert "SOURCE:" in fallback  # Includes citation
-                print(f"   ✅ Fallback answer: extractive with citations")
-            
+                print("   ✅ Fallback answer: extractive with citations")
+
             # -- Test 4: Retrieval pipeline stages (mocked) ---------------
             print("\n📌 Test 4: _run_retrieval_pipeline stages (mocked)")
-            
-            with patch("app.rag.chain.VectorStoreManager") as mock_store_mgr, \
-                 patch("app.rag.chain.HyDEExpander") as mock_hyde, \
-                 patch("app.rag.chain.HybridSearcher") as mock_searcher, \
-                 patch("app.rag.chain.CrossEncoderReranker") as mock_reranker, \
-                 patch("app.rag.chain.get_llm"), \
-                 patch("app.rag.chain.build_safe_context") as mock_build_ctx:
-                
+
+            with patch("app.rag.chain.VectorStoreManager") as mock_store_mgr, patch(
+                "app.rag.chain.HyDEExpander"
+            ) as mock_hyde, patch("app.rag.chain.HybridSearcher") as mock_searcher, patch(
+                "app.rag.chain.CrossEncoderReranker"
+            ) as mock_reranker, patch("app.rag.chain.get_llm"), patch(
+                "app.rag.chain.build_safe_context"
+            ) as mock_build_ctx:
                 # Setup mocks
                 mock_store = MagicMock()
                 mock_store.get_parent.return_value = "Parent context"
                 mock_store_mgr.return_value = mock_store
-                
+
                 mock_hyde_instance = MagicMock()
                 mock_hyde_instance.expand = MagicMock(return_value="Hypothesis: What is the invoice total amount?")
                 mock_hyde.return_value = mock_hyde_instance
-                
+
                 mock_searcher_instance = MagicMock()
                 mock_searcher_instance.search = MagicMock(return_value=[(mock_doc1, 0.9), (mock_doc2, 0.8)])
                 mock_searcher.return_value = mock_searcher_instance
-                
+
                 mock_reranker_instance = MagicMock()
                 mock_reranker_instance.rerank = MagicMock(return_value=[(mock_doc1, 0.95), (mock_doc2, 0.88)])
                 mock_reranker.return_value = mock_reranker_instance
-                
+
                 # Mock context building to return safe output
                 mock_build_ctx.return_value = (
                     "<context>Invoice total: $1,234.56</context>",
-                    [{"source_file": "inv.pdf", "page_number": 1, "block_type": "table", "chunk_text": "Total: $1,234.56", "rerank_score": 0.95}]
+                    [
+                        {
+                            "source_file": "inv.pdf",
+                            "page_number": 1,
+                            "block_type": "table",
+                            "chunk_text": "Total: $1,234.56",
+                            "rerank_score": 0.95,
+                        }
+                    ],
                 )
-                
+
                 chain = AdvancedRAGChain(correlation_id="test-pipeline")
-                
+
                 # Run retrieval pipeline
                 result = await chain._run_retrieval_pipeline(
                     question="What is the total?",
@@ -752,106 +804,104 @@ if __name__ == "__main__":
                     filter_dict=None,
                     top_k_retrieve=20,
                     top_k_rerank=3,
-                    correlation_id="test-pipeline"
+                    correlation_id="test-pipeline",
                 )
-                
+
                 assert result.standalone_question == "What is the total?"  # No history -> same
                 assert "Hypothesis" in result.hypothesis
                 assert len(result.citations) >= 1
                 assert result.citations[0].source_file == "inv.pdf"
-                print(f"   ✅ Retrieval pipeline: hypothesis='{result.hypothesis[:40]}...', citations={len(result.citations)}")
-            
+                print(
+                    f"   ✅ Retrieval pipeline: hypothesis='{result.hypothesis[:40]}...', citations={len(result.citations)}"
+                )
+
             # -- Test 5: Query method with mocked LLM ---------------------
             print("\n📌 Test 5: query() method (mocked LLM response)")
-            
-            with patch("app.rag.chain.VectorStoreManager") as mock_store_mgr, \
-                 patch("app.rag.chain.HyDEExpander") as mock_hyde, \
-                 patch("app.rag.chain.HybridSearcher") as mock_searcher, \
-                 patch("app.rag.chain.CrossEncoderReranker") as mock_reranker, \
-                 patch("app.rag.chain.get_llm") as mock_get_llm, \
-                 patch("app.rag.chain.build_safe_context") as mock_build_ctx:
-                
+
+            with patch("app.rag.chain.VectorStoreManager") as mock_store_mgr, patch(
+                "app.rag.chain.HyDEExpander"
+            ) as mock_hyde, patch("app.rag.chain.HybridSearcher") as mock_searcher, patch(
+                "app.rag.chain.CrossEncoderReranker"
+            ) as mock_reranker, patch("app.rag.chain.get_llm") as mock_get_llm, patch(
+                "app.rag.chain.build_safe_context"
+            ) as mock_build_ctx:
                 # Setup mocks (same as above)
                 mock_store = MagicMock()
                 mock_store.get_parent.return_value = "Parent context"
                 mock_store_mgr.return_value = mock_store
-                
+
                 mock_hyde_instance = MagicMock()
                 mock_hyde_instance.expand = MagicMock(return_value="Hypothesis")
                 mock_hyde.return_value = mock_hyde_instance
-                
+
                 mock_searcher_instance = MagicMock()
                 mock_searcher_instance.search = MagicMock(return_value=[(mock_doc1, 0.9)])
                 mock_searcher.return_value = mock_searcher_instance
-                
+
                 mock_reranker_instance = MagicMock()
                 mock_reranker_instance.rerank = MagicMock(return_value=[(mock_doc1, 0.95)])
                 mock_reranker.return_value = mock_reranker_instance
-                
+
                 # Mock LLM response
                 mock_llm = MagicMock()
                 mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="The invoice total is $1,234.56."))
                 mock_get_llm.return_value = mock_llm
-                
+
                 # Mock context building
                 mock_build_ctx.return_value = ("<context>Test</context>", [])
-                
+
                 chain = AdvancedRAGChain(correlation_id="test-query")
-                
+
                 # Run query
-                response = await chain.query(
-                    question="What is the total?",
-                    chat_history=[],
-                    timeout_seconds=30
-                )
-                
+                response = await chain.query(question="What is the total?", chat_history=[], timeout_seconds=30)
+
                 assert "1,234.56" in response.answer or "total" in response.answer.lower()
                 assert response.latency_ms is not None
                 assert response.correlation_id == "test-query"
                 print(f"   ✅ Query method: answer='{response.answer[:40]}...', latency={response.latency_ms}ms")
-            
+
             # -- Test 6: Streaming with mocked LLM ------------------------
             print("\n📌 Test 6: stream() method (mocked token streaming)")
-            
-            with patch("app.rag.chain.VectorStoreManager") as mock_store_mgr, \
-                 patch("app.rag.chain.HyDEExpander") as mock_hyde, \
-                 patch("app.rag.chain.HybridSearcher") as mock_searcher, \
-                 patch("app.rag.chain.CrossEncoderReranker") as mock_reranker, \
-                 patch("app.rag.chain.get_llm") as mock_get_llm, \
-                 patch("app.rag.chain.build_safe_context") as mock_build_ctx:
-                
+
+            with patch("app.rag.chain.VectorStoreManager") as mock_store_mgr, patch(
+                "app.rag.chain.HyDEExpander"
+            ) as mock_hyde, patch("app.rag.chain.HybridSearcher") as mock_searcher, patch(
+                "app.rag.chain.CrossEncoderReranker"
+            ) as mock_reranker, patch("app.rag.chain.get_llm") as mock_get_llm, patch(
+                "app.rag.chain.build_safe_context"
+            ) as mock_build_ctx:
                 # Setup mocks
                 mock_store = MagicMock()
                 mock_store.get_parent.return_value = "Parent"
                 mock_store_mgr.return_value = mock_store
-                
+
                 mock_hyde_instance = MagicMock()
                 mock_hyde_instance.expand = MagicMock(return_value="Hypothesis")
                 mock_hyde.return_value = mock_hyde_instance
-                
+
                 mock_searcher_instance = MagicMock()
                 mock_searcher_instance.search = MagicMock(return_value=[(mock_doc1, 0.9)])
                 mock_searcher.return_value = mock_searcher_instance
-                
+
                 mock_reranker_instance = MagicMock()
                 mock_reranker_instance.rerank = MagicMock(return_value=[(mock_doc1, 0.95)])
                 mock_reranker.return_value = mock_reranker_instance
-                
+
                 # Mock streaming LLM: yield tokens one by one
                 async def mock_astream(*args, **kwargs):
                     tokens = ["The ", "total ", "is ", "$1,234.56", "."]
                     for tok in tokens:
                         yield MagicMock(content=tok)
-                
+
                 mock_llm = MagicMock()
                 mock_llm.astream = mock_astream
                 mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="Fallback"))
                 mock_get_llm.return_value = mock_llm
-                
+
                 mock_build_ctx.return_value = ("<context>Test</context>", [])
-                
+
                 chain = AdvancedRAGChain(correlation_id="test-stream")
-                
+
                 # Collect streamed output
                 streamed_tokens = []
                 citations_received = False
@@ -862,22 +912,22 @@ if __name__ == "__main__":
                         citations_received = True
                     elif chunk.get("type") == "done":
                         assert chunk.get("latency_ms") is not None
-                
+
                 full_answer = "".join(streamed_tokens)
                 assert "1,234.56" in full_answer or "total" in full_answer.lower()
                 assert citations_received is True
                 print(f"   ✅ Streaming: collected {len(streamed_tokens)} tokens, citations={citations_received}")
-            
+
             # -- Test 7: Error handling & fallbacks -----------------------
             print("\n📌 Test 7: Error handling & fallback mechanisms")
-            
-            with patch("app.rag.chain.VectorStoreManager") as mock_store_mgr, \
-                 patch("app.rag.chain.HyDEExpander") as mock_hyde, \
-                 patch("app.rag.chain.HybridSearcher") as mock_searcher, \
-                 patch("app.rag.chain.CrossEncoderReranker") as mock_reranker, \
-                 patch("app.rag.chain.get_llm") as mock_get_llm, \
-                 patch("app.rag.chain.build_safe_context") as mock_build_ctx:
-                
+
+            with patch("app.rag.chain.VectorStoreManager") as mock_store_mgr, patch(
+                "app.rag.chain.HyDEExpander"
+            ) as mock_hyde, patch("app.rag.chain.HybridSearcher") as mock_searcher, patch(
+                "app.rag.chain.CrossEncoderReranker"
+            ) as mock_reranker, patch("app.rag.chain.get_llm") as mock_get_llm, patch(
+                "app.rag.chain.build_safe_context"
+            ) as mock_build_ctx:
                 mock_store = MagicMock()
                 mock_store_mgr.return_value = mock_store
                 mock_hyde_instance = MagicMock()
@@ -889,22 +939,22 @@ if __name__ == "__main__":
                 mock_reranker_instance = MagicMock()
                 mock_reranker_instance.rerank = MagicMock(return_value=[])  # No reranked
                 mock_reranker.return_value = mock_reranker_instance
-                
+
                 # Mock LLM to fail, triggering fallback
                 mock_llm = MagicMock()
                 mock_llm.ainvoke = AsyncMock(side_effect=Exception("LLM unavailable"))
                 mock_llm.astream = AsyncMock(side_effect=Exception("Stream failed"))
                 mock_get_llm.return_value = mock_llm
-                
+
                 mock_build_ctx.return_value = ("<context>Empty</context>", [])
-                
+
                 chain = AdvancedRAGChain(correlation_id="test-fallback")
-                
+
                 # Test query fallback
                 response = await chain.query(question="Test question?", timeout_seconds=10)
                 assert "extractive" in response.answer.lower() or "couldn't find" in response.answer.lower()
-                print(f"   ✅ Query fallback: LLM failure -> extractive answer")
-                
+                print("   ✅ Query fallback: LLM failure -> extractive answer")
+
                 # Test stream fallback
                 streamed = []
                 async for chunk in chain.stream(question="Test?", timeout_seconds=10):
@@ -912,37 +962,35 @@ if __name__ == "__main__":
                         streamed.append(chunk.get("content", ""))
                 full = "".join(streamed)
                 assert "extractive" in full.lower() or "couldn't find" in full.lower()
-                print(f"   ✅ Stream fallback: LLM failure -> extractive answer")
-            
+                print("   ✅ Stream fallback: LLM failure -> extractive answer")
+
             # -- Test 8: Memory guard & timeout handling ------------------
             print("\n📌 Test 8: Memory guard (_MAX_ANSWER_LENGTH) & timeout")
-            
+
             # Test that long answers get truncated
             long_content = "A" * (_MAX_ANSWER_LENGTH + 100)
-            
-            with patch("app.rag.chain.VectorStoreManager"), \
-                 patch("app.rag.chain.HyDEExpander") as mock_hyde, \
-                 patch("app.rag.chain.HybridSearcher") as mock_searcher, \
-                 patch("app.rag.chain.CrossEncoderReranker") as mock_reranker, \
-                 patch("app.rag.chain.get_llm") as mock_get_llm, \
-                 patch("app.rag.chain.build_safe_context") as mock_build_ctx:
-                
+
+            with patch("app.rag.chain.VectorStoreManager"), patch("app.rag.chain.HyDEExpander") as mock_hyde, patch(
+                "app.rag.chain.HybridSearcher"
+            ) as mock_searcher, patch("app.rag.chain.CrossEncoderReranker") as mock_reranker, patch(
+                "app.rag.chain.get_llm"
+            ) as mock_get_llm, patch("app.rag.chain.build_safe_context") as mock_build_ctx:
                 mock_hyde.return_value.expand = MagicMock(return_value="H")
                 mock_searcher.return_value.search = MagicMock(return_value=[(mock_doc1, 0.9)])
                 mock_reranker.return_value.rerank = MagicMock(return_value=[(mock_doc1, 0.95)])
                 mock_build_ctx.return_value = ("<ctx>Test</ctx>", [])
-                
+
                 # Mock streaming to yield very long content
                 async def mock_long_stream(*args, **kwargs):
                     yield MagicMock(content=long_content)
-                
+
                 mock_llm = MagicMock()
                 mock_llm.astream = mock_long_stream
                 mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content=long_content))
                 mock_get_llm.return_value = mock_llm
-                
+
                 chain = AdvancedRAGChain(correlation_id="test-guard")
-                
+
                 # Test streaming with memory guard
                 tokens = []
                 async for chunk in chain.stream(question="Test?", timeout_seconds=30):
@@ -950,11 +998,11 @@ if __name__ == "__main__":
                         tokens.append(chunk.get("content", ""))
                     if "[Response truncated]" in chunk.get("content", ""):
                         break  # Guard triggered
-                
+
                 full = "".join(tokens)
                 assert len(full) <= _MAX_ANSWER_LENGTH + 50  # Allow small buffer for truncation message
                 print(f"   ✅ Memory guard: long answer truncated to ~{_MAX_ANSWER_LENGTH} chars")
-            
+
             print("\n" + "=" * 70)
             print("✅ ALL TESTS PASSED! AdvancedRAGChain module verified.")
             print("\n💡 Note: Real RAG queries require:")
@@ -963,13 +1011,14 @@ if __name__ == "__main__":
             print("   • Cross-encoder model for reranking (optional)")
             print("\n🔐 Security: Prompts are escaped via escape_prompt_content()")
             return True
-            
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
-    
+
     # Run async tests
     success = asyncio.run(run_tests())
     sys.exit(0 if success else 1)

@@ -1,9 +1,8 @@
-﻿# backend/app/domains/legal/risk_scorer.py
+# backend/app/domains/legal/risk_scorer.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from typing import Final, Optional
@@ -60,6 +59,7 @@ Consider:
 @dataclass
 class ClauseRiskReport:
     """Risk assessment for a single clause."""
+
     clause_type: str
     section_ref: str
     risk_score: float  # 1.0–10.0
@@ -73,6 +73,7 @@ class ClauseRiskReport:
 @dataclass
 class DocumentRiskReport:
     """Aggregate risk report for a full contract."""
+
     source_file: str
     overall_risk_score: float
     clause_reports: list[ClauseRiskReport]
@@ -112,20 +113,22 @@ class RiskScorer:
     def __init__(self, model: str = "gpt-4o"):
         # FIXED: Use centralized LLM pool
         self.llm = get_domain_llm(streaming=False, model_override=model)
-        self._llm_retry = retry_async(config=RetryConfig(
-            max_attempts=2,
-            backoff_base=0.5,
-            exceptions=(Exception,),
-        ))
+        self._llm_retry = retry_async(
+            config=RetryConfig(
+                max_attempts=2,
+                backoff_base=0.5,
+                exceptions=(Exception,),
+            )
+        )
 
     async def score_clause(
-        self, 
+        self,
         clause: ExtractedClause,
         correlation_id: Optional[str] = None,  # FIXED: Added param
     ) -> ClauseRiskReport:
         """Score a single clause for risk (1-10)."""
         corr_id = correlation_id or generate_domain_correlation_id("legal")
-        
+
         prompt = build_domain_prompt(
             RISK_SCORING_PROMPT,
             clause_type=clause.clause_type,
@@ -133,14 +136,12 @@ class RiskScorer:
             clause_text=clause.text[:600],
             specific_values=", ".join(clause.specific_values) or "none identified",
         )
-        
+
         try:
             # FIXED: Apply retry + centralized JSON parsing
-            response = await self._llm_retry(
-                lambda: self.llm.ainvoke([{"role": "user", "content": prompt}])
-            )
+            response = await self._llm_retry(lambda: self.llm.ainvoke([{"role": "user", "content": prompt}]))
             data = safe_parse_llm_json(response.content, default={})
-            
+
             is_valid, error = validate_legal_output(data)
             if not is_valid:
                 logger.warning(f"[{corr_id}] Invalid risk output: {error}")
@@ -156,7 +157,7 @@ class RiskScorer:
                     recommendation="Manual review recommended.",
                     correlation_id=corr_id,
                 )
-            
+
             score = float(data.get("risk_score", 5.0))
             score = max(1.0, min(10.0, score))
 
@@ -192,7 +193,7 @@ class RiskScorer:
     ) -> DocumentRiskReport:
         """Score all clauses and generate document-level risk report."""
         corr_id = correlation_id or extraction.correlation_id or generate_domain_correlation_id("legal")
-        
+
         clause_reports = []
         for clause in extraction.clauses:
             report = await self.score_clause(clause, corr_id)
@@ -209,14 +210,8 @@ class RiskScorer:
         base_score = float(np.mean(weighted_scores)) if weighted_scores else 5.0
         overall = min(10.0, base_score + missing_penalty)
 
-        critical = [
-            r.section_ref or r.clause_type
-            for r in clause_reports if r.risk_score >= 9.0
-        ]
-        high = [
-            r.section_ref or r.clause_type
-            for r in clause_reports if 7.0 <= r.risk_score < 9.0
-        ]
+        critical = [r.section_ref or r.clause_type for r in clause_reports if r.risk_score >= 9.0]
+        high = [r.section_ref or r.clause_type for r in clause_reports if 7.0 <= r.risk_score < 9.0]
 
         # Generate executive summary
         summary = await self._generate_summary(
@@ -249,11 +244,10 @@ class RiskScorer:
         """Generate a plain-English executive summary of contract risk."""
         top_risks = sorted(clause_reports, key=lambda r: r.risk_score, reverse=True)[:3]
         risks_text = "\n".join(
-            f"- {r.clause_type}: score {r.risk_score:.1f} — {r.risk_explanation[:100]}"
-            for r in top_risks
+            f"- {r.clause_type}: score {r.risk_score:.1f} — {r.risk_explanation[:100]}" for r in top_risks
         )
         missing_text = f"Missing clauses: {', '.join(missing)}" if missing else ""
-        
+
         prompt = build_domain_prompt(
             """Write a 3-sentence executive summary of this contract's legal risk.
 
@@ -271,11 +265,9 @@ Be concise and use plain English. Focus on business impact.""",
             risks_text=risks_text,
             missing_text=missing_text,
         )
-        
+
         try:
-            response = await self._llm_retry(
-                lambda: self.llm.ainvoke([{"role": "user", "content": prompt}])
-            )
+            response = await self._llm_retry(lambda: self.llm.ainvoke([{"role": "user", "content": prompt}]))
             return response.content.strip()[:300]
         except Exception:
             return (
@@ -287,10 +279,9 @@ Be concise and use plain English. Focus on business impact.""",
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["RiskScorer", "ClauseRiskReport", "DocumentRiskReport"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

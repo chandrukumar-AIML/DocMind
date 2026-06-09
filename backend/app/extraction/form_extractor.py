@@ -1,4 +1,4 @@
-﻿# backend/app/extraction/form_extractor.py
+# backend/app/extraction/form_extractor.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # BATMAN-FIX: A - True async, T - Exponential backoff
 # OWASP-FIX: 1 - Prompt escaping, 7 - Safe field handling
@@ -19,7 +19,6 @@ from typing import Final, Optional, Any
 from pydantic import BaseModel, ValidationError, Field
 
 # DVMELTSS-M: Import centralized utilities
-from app.config import get_settings
 from app.core.vision_llm import get_vision_llm
 from app.core.retry import retry_async, RetryConfig
 from app.core.prompts import escape_prompt_content
@@ -31,10 +30,18 @@ logger = logging.getLogger(__name__)
 # -- CONSTANTS & CONFIG (DVMELTSS-S, BATMAN-A) -------------------------
 # ========================================================================
 
-_VALID_FORM_TYPES: Final = frozenset({
-    "invoice", "application", "medical_form", "tax_form",
-    "contract_header", "receipt", "purchase_order", "other"
-})
+_VALID_FORM_TYPES: Final = frozenset(
+    {
+        "invoice",
+        "application",
+        "medical_form",
+        "tax_form",
+        "contract_header",
+        "receipt",
+        "purchase_order",
+        "other",
+    }
+)
 
 # BATMAN-A: Token safety limits
 _MAX_PROMPT_TOKENS: Final = 6000
@@ -46,11 +53,13 @@ _MAX_RETRIES: Final = 3
 _RETRY_BASE_DELAY: Final = 1.0
 _RETRY_MAX_DELAY: Final = 30.0
 
+
 # DVMELTSS-V: Pydantic schemas for structured output
 class FormFieldSchema(BaseModel):
     field: str = Field(..., min_length=1, max_length=100)
     value: str = Field(..., max_length=500)
     confidence: float = Field(..., ge=0.0, le=1.0)
+
 
 class FormExtractionSchema(BaseModel):
     form_type: str = Field(..., pattern=f"^({'|'.join(_VALID_FORM_TYPES)})$")
@@ -64,12 +73,14 @@ class FormExtractionSchema(BaseModel):
 # -- IMMUTABLE DATA MODEL (DVMELTSS-M, V) -------------------------------
 # ========================================================================
 
+
 @dataclass
 class ExtractedForm:
     """
     Structured form field extraction result.
     ✅ FIXED: Proper field defaults + validation in __post_init__.
     """
+
     form_id: str
     source_file: str
     page_number: int
@@ -86,7 +97,7 @@ class ExtractedForm:
     def __post_init__(self):
         # ✅ Validate form_type against allowed values
         if self.form_type not in _VALID_FORM_TYPES:
-            object.__setattr__(self, 'form_type', 'other')
+            object.__setattr__(self, "form_type", "other")
         # ✅ Build lookup dict with validation
         safe_fields = []
         for f in self.fields:
@@ -99,7 +110,7 @@ class ExtractedForm:
         # ✅ Clamp to max fields
         if len(safe_fields) > _MAX_FIELDS:
             safe_fields = safe_fields[:_MAX_FIELDS]
-        object.__setattr__(self, 'fields', safe_fields)
+        object.__setattr__(self, "fields", safe_fields)
 
     def get_field(self, field_name: str) -> Optional[str]:
         """Case-insensitive field lookup."""
@@ -167,10 +178,11 @@ Rules:
 # -- EXTRACTOR CLASS (DVMELTSS-V, BATMAN-A, OWASP-1) -------------------
 # ========================================================================
 
+
 class FormExtractor:
     """
     Extracts structured key-value pairs from form documents.
-    
+
     Features:
     - Centralized vision LLM client via app.core.vision_llm
     - Expanded heuristic filtering for better form detection
@@ -180,19 +192,44 @@ class FormExtractor:
     """
 
     # FIXED: Expanded heuristic keywords for form detection
-    _FORM_KEYWORDS: Final = frozenset({
-        "invoice", "application", "form", "receipt", "order", "contract",
-        "name:", "date:", "amount:", "total:", "signature", "address",
-        "phone:", "email:", "id:", "no:", "#", "reference", "bill to", "ship to",
-        "terms:", "due:", "paid:", "balance:", "subtotal:", "tax:", "discount:"
-    })
+    _FORM_KEYWORDS: Final = frozenset(
+        {
+            "invoice",
+            "application",
+            "form",
+            "receipt",
+            "order",
+            "contract",
+            "name:",
+            "date:",
+            "amount:",
+            "total:",
+            "signature",
+            "address",
+            "phone:",
+            "email:",
+            "id:",
+            "no:",
+            "#",
+            "reference",
+            "bill to",
+            "ship to",
+            "terms:",
+            "due:",
+            "paid:",
+            "balance:",
+            "subtotal:",
+            "tax:",
+            "discount:",
+        }
+    )
 
     def __init__(self, model: str = "gpt-4o", max_retries: int = _MAX_RETRIES):
         # FIXED: Use centralized vision LLM pool
         self.client = get_vision_llm(model_override=model, timeout=30.0)
         self.model = model
         self.max_retries = max_retries
-        
+
         logger.info(f"FormExtractor initialized: model={model}, async=True")
 
     # ✅ NEW: Input validation helper
@@ -209,12 +246,14 @@ class FormExtractor:
         return True, ""
 
     # ✅ FIXED: Moved retry logic to dedicated method for testability
-    @retry_async(config=RetryConfig(
-        max_attempts=_MAX_RETRIES,
-        backoff_base=_RETRY_BASE_DELAY,
-        backoff_max=_RETRY_MAX_DELAY,
-        exceptions=(Exception,),
-    ))
+    @retry_async(
+        config=RetryConfig(
+            max_attempts=_MAX_RETRIES,
+            backoff_base=_RETRY_BASE_DELAY,
+            backoff_max=_RETRY_MAX_DELAY,
+            exceptions=(Exception,),
+        )
+    )
     async def _call_vision_api(self, prompt: str, corr_id: str):
         """Call vision LLM with retry logic."""
         # ✅ FIXED: Run sync OpenAI call in thread to avoid blocking event loop
@@ -240,7 +279,7 @@ class FormExtractor:
                     max_tokens=800,
                     response_format={"type": "json_object"},
                     extra_headers={"X-Correlation-ID": corr_id} if corr_id else {},
-                )
+                ),
             )
 
     def _estimate_tokens(self, text: str) -> int:
@@ -253,20 +292,20 @@ class FormExtractor:
         More robust than simple colon counting.
         """
         text_lower = text.lower()
-        
+
         # Check for form keywords
         if any(kw in text_lower for kw in self._FORM_KEYWORDS):
             return True
-        
+
         # Check for field patterns (Label: Value)
         field_pattern = re.compile(r"^[A-Za-z\s]+:\s*.+$", re.MULTILINE)
         if field_pattern.search(text):
             return True
-        
+
         # Check for table-like structure (pipes or tabs)
         if "|" in text or "\t" in text:
             return True
-            
+
         # Check for common form layouts (key-value pairs on separate lines)
         lines = [l.strip() for l in text.split("\n") if l.strip()]
         if len(lines) >= 3:
@@ -274,7 +313,7 @@ class FormExtractor:
             field_lines = sum(1 for l in lines if ":" in l and len(l.split(":")) >= 2)
             if field_lines >= 2:
                 return True
-        
+
         return False
 
     async def _call_llm_with_retry(
@@ -284,13 +323,13 @@ class FormExtractor:
     ) -> Optional[dict]:
         """DVMELTSS-E: Async LLM call with centralized retry + structured validation."""
         corr_id = correlation_id or "form_unknown"
-        
+
         # FIXED: Use centralized prompt escaping
         safe_prompt = escape_prompt_content(prompt)
-        
+
         # Token safety
         if self._estimate_tokens(safe_prompt) > _MAX_PROMPT_TOKENS:
-            safe_prompt = safe_prompt[:_MAX_PROMPT_TOKENS * 4]
+            safe_prompt = safe_prompt[: _MAX_PROMPT_TOKENS * 4]
 
         try:
             response = await self._call_vision_api(safe_prompt, corr_id)
@@ -329,7 +368,7 @@ class FormExtractor:
         ✅ FIXED: Input validation + safe field conversion + prompt escaping.
         """
         corr_id = correlation_id or "form_unknown"
-        
+
         # ✅ Validate inputs first
         is_valid, error = self._validate_form_text(text, corr_id)
         if not is_valid:
@@ -357,7 +396,11 @@ class FormExtractor:
             else:
                 # Fallback: ensure dict format
                 fields = [
-                    {"field": str(f.get("field", "")), "value": str(f.get("value", "")), "confidence": float(f.get("confidence", 0.9))}
+                    {
+                        "field": str(f.get("field", "")),
+                        "value": str(f.get("value", "")),
+                        "confidence": float(f.get("confidence", 0.9)),
+                    }
                     for f in fields_raw[:_MAX_FIELDS]
                     if isinstance(f, dict) and f.get("field") and f.get("value")
                 ]
@@ -397,8 +440,8 @@ class FormExtractor:
             loop = asyncio.get_running_loop()
             # If yes, we can't use asyncio.run() — warn and return None
             logger.warning(
-                f"⚠️ FormExtractor.extract_from_text() called from async context — "
-                f"use extract_from_text_async() instead. Returning None."
+                "⚠️ FormExtractor.extract_from_text() called from async context — "
+                "use extract_from_text_async() instead. Returning None."
             )
             return None
         except RuntimeError:
@@ -410,10 +453,9 @@ class FormExtractor:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["FormExtractor", "ExtractedForm"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

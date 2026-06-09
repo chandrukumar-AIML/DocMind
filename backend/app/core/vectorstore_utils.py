@@ -1,4 +1,4 @@
-﻿# backend/app/core/vectorstore_utils.py
+# backend/app/core/vectorstore_utils.py
 # DVMELTSS-FIX: M - Modular, S - Security, V - Validate
 # ASCALE-FIX: S - Separation, C - Coupling
 # BATMAN-FIX: A - True async for I/O operations
@@ -14,56 +14,67 @@ Centralizes:
 Usage:
     from app.core.vectorstore_utils import sanitize_chroma_key, atomic_save
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import re
-import shutil
 from pathlib import Path
-from typing import Any, Final, Optional, Union 
+from typing import Any, Final, Optional
 from app.core.ids import generate_correlation_id
 
-
-from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 # DVMELTSS-S: ChromaDB key sanitization pattern
-_CHROMA_KEY_SANITIZE_PATTERN: Final = re.compile(r'[{}:*\"\\s]')
+_CHROMA_KEY_SANITIZE_PATTERN: Final = re.compile(r"[{}:*\"\\s]")
 _MAX_KEY_LENGTH: Final = 255
 
 # DVMELTSS-V: Required metadata fields (shared across stores)
 REQUIRED_METADATA_FIELDS: Final = [
-    "source_file", "page_number", "chunk_id", "parent_id",
-    "block_type", "language", "ocr_confidence", "chunk_type",
-    "ingest_timestamp", "document_type", "char_count",
+    "source_file",
+    "page_number",
+    "chunk_id",
+    "parent_id",
+    "block_type",
+    "language",
+    "ocr_confidence",
+    "chunk_type",
+    "ingest_timestamp",
+    "document_type",
+    "char_count",
 ]
 
 # Allowed filter keys for similarity search
-ALLOWED_FILTER_KEYS: Final = frozenset({
-    "source_file", "page_number", "block_type", "language",
-    "chunk_type", "document_type", "ocr_confidence",
-})
-ALLOWED_FILTER_OPERATORS: Final = frozenset({
-    "$gte", "$lte", "$gt", "$lt", "$eq", "$ne", "$in", "$nin"
-})
+ALLOWED_FILTER_KEYS: Final = frozenset(
+    {
+        "source_file",
+        "page_number",
+        "block_type",
+        "language",
+        "chunk_type",
+        "document_type",
+        "ocr_confidence",
+    }
+)
+ALLOWED_FILTER_OPERATORS: Final = frozenset({"$gte", "$lte", "$gt", "$lt", "$eq", "$ne", "$in", "$nin"})
 
 
 def sanitize_chroma_key(key: str, prefix: str = "") -> str:
     """
     Sanitize ChromaDB key to prevent injection attacks.
-    
+
     Args:
         key: Raw key string
         prefix: Optional prefix to prepend after sanitization
-    
+
     Returns:
         Safe ChromaDB key string
     """
     if not key:
         raise ValueError("ChromaDB key cannot be empty")
-    
+
     # Remove dangerous characters
     safe = _CHROMA_KEY_SANITIZE_PATTERN.sub("_", key)
     # Collapse multiple underscores
@@ -76,18 +87,18 @@ def sanitize_chroma_key(key: str, prefix: str = "") -> str:
     # Enforce max length
     if len(safe) > _MAX_KEY_LENGTH:
         safe = safe[:_MAX_KEY_LENGTH]
-    
+
     return safe
 
 
 def coerce_metadata_value(value: Any, field_name: str) -> Any:
     """
     Coerce metadata value to expected type with detailed logging.
-    
+
     Args:
         value: Raw value
         field_name: Field name for error messages
-    
+
     Returns:
         Coerced value or original if coercion fails
     """
@@ -118,11 +129,11 @@ def coerce_metadata_value(value: Any, field_name: str) -> Any:
 def validate_metadata(meta: dict, required_fields: list[str] = None) -> tuple[bool, Optional[str]]:
     """
     Validate metadata has required fields.
-    
+
     Args:
         meta: Metadata dict
         required_fields: List of required field names (uses default if None)
-    
+
     Returns:
         (is_valid, error_message)
     """
@@ -136,45 +147,51 @@ def validate_metadata(meta: dict, required_fields: list[str] = None) -> tuple[bo
 def validate_filter(filter_dict: dict) -> tuple[bool, Optional[str]]:
     """
     Validate filter dict against allowed keys and operators.
-    
+
     Args:
         filter_dict: Filter dict to validate
-    
+
     Returns:
         (is_valid, error_message)
     """
     invalid_keys = set(filter_dict.keys()) - ALLOWED_FILTER_KEYS
     if invalid_keys:
-        return False, f"Invalid filter keys: {invalid_keys}. Allowed: {ALLOWED_FILTER_KEYS}"
-    
+        return (
+            False,
+            f"Invalid filter keys: {invalid_keys}. Allowed: {ALLOWED_FILTER_KEYS}",
+        )
+
     def validate_value(value: Any) -> tuple[bool, Optional[str]]:
         if isinstance(value, dict):
             invalid_ops = set(value.keys()) - ALLOWED_FILTER_OPERATORS
             if invalid_ops:
-                return False, f"Invalid filter operator: {invalid_ops}. Allowed: {ALLOWED_FILTER_OPERATORS}"
+                return (
+                    False,
+                    f"Invalid filter operator: {invalid_ops}. Allowed: {ALLOWED_FILTER_OPERATORS}",
+                )
             for nested in value.values():
                 valid, err = validate_value(nested)
                 if not valid:
                     return False, err
         return True, None
-    
+
     for value in filter_dict.values():
         valid, err = validate_value(value)
         if not valid:
             return False, err
-    
+
     return True, None
 
 
 async def atomic_save(data: Any, path: Path, save_fn: callable) -> bool:
     """
     Save data atomically using temp file + rename pattern.
-    
+
     Args:
         data: Data to save
         path: Target file path
         save_fn: Function that writes data to a file path
-    
+
     Returns:
         True if save successful, False otherwise
     """
@@ -214,10 +231,9 @@ __all__ = [
     "ALLOWED_FILTER_KEYS",
     "ALLOWED_FILTER_OPERATORS",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

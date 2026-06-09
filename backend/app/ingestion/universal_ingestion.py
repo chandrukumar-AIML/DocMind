@@ -1,4 +1,4 @@
-﻿# backend/app/ingest/universal_ingestion.py
+# backend/app/ingest/universal_ingestion.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # BATMAN-FIX: A - True async, T - Routing efficiency, M - Resource cleanup
 # OWASP-FIX: 9 - Path traversal prevention, 1 - Input sanitization
@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Final, Optional, Any
@@ -21,17 +21,25 @@ from .format_detector import FormatDetector, FileFormat
 # DVMELTSS-M: Import centralized utilities
 from app.config import get_settings
 from app.core.ingest_utils import (
-    validate_upload_path, generate_ingest_correlation_id,
-    read_file_bytes_async, _MAX_FILE_SIZE_MB,
+    validate_upload_path,
+    generate_ingest_correlation_id,
+    read_file_bytes_async,
+    _MAX_FILE_SIZE_MB,
 )
 from app.core.celery_utils import run_async_in_task  # ✅ NEW: For safe async execution
 
 logger = logging.getLogger(__name__)
 
 _EXTENSION_FALLBACK: Final = {
-    ".pdf": FileFormat.PDF, ".docx": FileFormat.DOCX, ".xlsx": FileFormat.XLSX,
-    ".mp3": FileFormat.MP3, ".mp4": FileFormat.MP4, ".wav": FileFormat.WAV,
-    ".png": FileFormat.PNG, ".jpg": FileFormat.JPEG, ".jpeg": FileFormat.JPEG,
+    ".pdf": FileFormat.PDF,
+    ".docx": FileFormat.DOCX,
+    ".xlsx": FileFormat.XLSX,
+    ".mp3": FileFormat.MP3,
+    ".mp4": FileFormat.MP4,
+    ".wav": FileFormat.WAV,
+    ".png": FileFormat.PNG,
+    ".jpg": FileFormat.JPEG,
+    ".jpeg": FileFormat.JPEG,
 }
 
 # ✅ NEW: Per-handler timeout (seconds)
@@ -41,6 +49,7 @@ _HANDLER_TIMEOUT: Final = 300  # 5 minutes
 @dataclass(frozen=True)
 class IngestionResult:
     """Immutable unified result from any ingestion path."""
+
     source_file: str
     format: str
     documents: list[Document]
@@ -151,7 +160,9 @@ class UniversalIngestionPipeline:
 
         detected = self.detector.detect(file_bytes, safe_path.name)
         fmt = detected.format
-        logger.info(f"[{corr_id}] Universal ingest: {safe_path.name} | format={fmt.value} | confidence={detected.confidence:.2f}")
+        logger.info(
+            f"[{corr_id}] Universal ingest: {safe_path.name} | format={fmt.value} | confidence={detected.confidence:.2f}"
+        )
 
         file_size_mb = safe_path.stat().st_size / 1024 / 1024
         if file_size_mb > _MAX_FILE_SIZE_MB:
@@ -402,8 +413,10 @@ class UniversalIngestionPipeline:
         Sync wrapper — prefers async version in new code.
         ✅ FIXED: Use run_async_in_task helper to avoid deadlock.
         """
+
         async def _do_ingest():
             return await self.ingest_async(file_path, file_bytes, correlation_id)
+
         return run_async_in_task(_do_ingest)
 
 
@@ -424,10 +437,9 @@ __all__ = [
     "IngestionResult",
     "get_ingestion_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

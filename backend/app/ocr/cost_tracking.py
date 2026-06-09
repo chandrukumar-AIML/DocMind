@@ -1,4 +1,4 @@
-﻿# backend/app/ocr/cost_tracking.py
+# backend/app/ocr/cost_tracking.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, M - Modular
 # ASCALE-FIX: S - Separation, C - Coupling
 # BATMAN-FIX: M - Memory safety, T - Thread safety + Async safety
@@ -10,11 +10,12 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Final, Optional, Any  # ✅ FIXED: Added Any to imports
+from typing import Optional, Any  # ✅ FIXED: Added Any to imports
 
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+
 
 def _get_pricing() -> dict[str, float]:
     """Get Vision API pricing from settings with fallback defaults."""
@@ -39,13 +40,13 @@ def _get_pricing() -> dict[str, float]:
 class VisionCostTracker:
     """
     Thread-safe + async-safe tracker for GPT-4o Vision API usage and estimated cost.
-    
+
     ✅ FIXED: Dual-mode locking (threading + asyncio), config-driven pricing, validation.
-    
+
     DVMELTSS-M: Singleton-friendly design with class-level config.
     BATMAN-T: Uses appropriate lock for sync/async contexts.
     """
-    
+
     _ocr_fallback_calls: int = field(default=0, init=False)
     _table_analysis_calls: int = field(default=0, init=False)
     _diagram_analysis_calls: int = field(default=0, init=False)
@@ -53,28 +54,32 @@ class VisionCostTracker:
     _total_input_tokens: int = field(default=0, init=False)
     _total_output_tokens: int = field(default=0, init=False)
     _total_images_sent: int = field(default=0, init=False)
-    
+
     correlation_id: Optional[str] = None
     last_updated: float = field(default_factory=time.time, init=False)
-    
+
     _thread_lock: Optional[threading.Lock] = field(default=None, init=False, repr=False)
     _async_lock: Optional[asyncio.Lock] = field(default=None, init=False, repr=False)
-    
+
     _pricing: dict[str, float] = field(default_factory=_get_pricing, init=False)
 
     def __post_init__(self):
         """Initialize locks and validate initial state."""
-        object.__setattr__(self, '_thread_lock', threading.Lock())
-        object.__setattr__(self, '_async_lock', asyncio.Lock())
-        object.__setattr__(self, 'last_updated', time.time())
+        object.__setattr__(self, "_thread_lock", threading.Lock())
+        object.__setattr__(self, "_async_lock", asyncio.Lock())
+        object.__setattr__(self, "last_updated", time.time())
         self._validate_counters()
 
     def _validate_counters(self) -> None:
         """Ensure all counters are non-negative."""
         for attr in [
-            '_ocr_fallback_calls', '_table_analysis_calls', 
-            '_diagram_analysis_calls', '_metadata_calls',
-            '_total_input_tokens', '_total_output_tokens', '_total_images_sent'
+            "_ocr_fallback_calls",
+            "_table_analysis_calls",
+            "_diagram_analysis_calls",
+            "_metadata_calls",
+            "_total_input_tokens",
+            "_total_output_tokens",
+            "_total_images_sent",
         ]:
             val = getattr(self, attr)
             if val < 0:
@@ -97,21 +102,20 @@ class VisionCostTracker:
     ):
         """
         Log a single API call with thread/async-safe counter updates.
-        
+
         ✅ FIXED: Input validation + dual-mode locking + config-driven pricing.
         """
         input_tokens = max(0, int(input_tokens))
         output_tokens = max(0, int(output_tokens))
         images_sent = max(0, int(images_sent))
-        
+
         image_token_rate = (
-            self._pricing["image_tokens_high"] if detail_level == "high"
-            else self._pricing["image_tokens_low"]
+            self._pricing["image_tokens_high"] if detail_level == "high" else self._pricing["image_tokens_low"]
         )
         image_tokens = images_sent * image_token_rate
-        
+
         lock = self._get_lock(is_async)
-        
+
         if is_async:
             raise RuntimeError(
                 "log_call(is_async=True) must be called from async context. "
@@ -119,12 +123,10 @@ class VisionCostTracker:
             )
         else:
             with lock:  # type: ignore[arg-type]
-                self._update_counters_sync(
-                    call_type, input_tokens, output_tokens, images_sent, image_tokens
-                )
+                self._update_counters_sync(call_type, input_tokens, output_tokens, images_sent, image_tokens)
                 if correlation_id:
-                    object.__setattr__(self, 'correlation_id', correlation_id)
-                object.__setattr__(self, 'last_updated', time.time())
+                    object.__setattr__(self, "correlation_id", correlation_id)
+                object.__setattr__(self, "last_updated", time.time())
 
     async def log_call_async(
         self,
@@ -137,26 +139,23 @@ class VisionCostTracker:
     ):
         """
         Async version of log_call — use this from async FastAPI routes.
-        
+
         ✅ Properly awaits asyncio.Lock for true async safety.
         """
         input_tokens = max(0, int(input_tokens))
         output_tokens = max(0, int(output_tokens))
         images_sent = max(0, int(images_sent))
-        
+
         image_token_rate = (
-            self._pricing["image_tokens_high"] if detail_level == "high"
-            else self._pricing["image_tokens_low"]
+            self._pricing["image_tokens_high"] if detail_level == "high" else self._pricing["image_tokens_low"]
         )
         image_tokens = images_sent * image_token_rate
-        
+
         async with self._async_lock:
-            self._update_counters_sync(
-                call_type, input_tokens, output_tokens, images_sent, image_tokens
-            )
+            self._update_counters_sync(call_type, input_tokens, output_tokens, images_sent, image_tokens)
             if correlation_id:
-                object.__setattr__(self, 'correlation_id', correlation_id)
-            object.__setattr__(self, 'last_updated', time.time())
+                object.__setattr__(self, "correlation_id", correlation_id)
+            object.__setattr__(self, "last_updated", time.time())
 
     def _update_counters_sync(
         self,
@@ -177,35 +176,39 @@ class VisionCostTracker:
         if attr:
             current = getattr(self, attr)
             object.__setattr__(self, attr, current + 1)
-        
-        object.__setattr__(self, '_total_input_tokens', self._total_input_tokens + input_tokens + image_tokens)
-        object.__setattr__(self, '_total_output_tokens', self._total_output_tokens + output_tokens)
-        object.__setattr__(self, '_total_images_sent', self._total_images_sent + images_sent)
+
+        object.__setattr__(
+            self,
+            "_total_input_tokens",
+            self._total_input_tokens + input_tokens + image_tokens,
+        )
+        object.__setattr__(self, "_total_output_tokens", self._total_output_tokens + output_tokens)
+        object.__setattr__(self, "_total_images_sent", self._total_images_sent + images_sent)
 
     @property
     def ocr_fallback_calls(self) -> int:
         return max(0, self._ocr_fallback_calls)
-    
+
     @property
     def table_analysis_calls(self) -> int:
         return max(0, self._table_analysis_calls)
-    
+
     @property
     def diagram_analysis_calls(self) -> int:
         return max(0, self._diagram_analysis_calls)
-    
+
     @property
     def metadata_calls(self) -> int:
         return max(0, self._metadata_calls)
-    
+
     @property
     def total_input_tokens(self) -> int:
         return max(0, self._total_input_tokens)
-    
+
     @property
     def total_output_tokens(self) -> int:
         return max(0, self._total_output_tokens)
-    
+
     @property
     def total_images_sent(self) -> int:
         return max(0, self._total_images_sent)
@@ -220,12 +223,7 @@ class VisionCostTracker:
     @property
     def total_calls(self) -> int:
         """Total number of Vision API calls made."""
-        return (
-            self.ocr_fallback_calls +
-            self.table_analysis_calls +
-            self.diagram_analysis_calls +
-            self.metadata_calls
-        )
+        return self.ocr_fallback_calls + self.table_analysis_calls + self.diagram_analysis_calls + self.metadata_calls
 
     def report(self) -> dict:
         """Return thread-safe usage report with per-type cost breakdown."""
@@ -235,7 +233,7 @@ class VisionCostTracker:
                 return self._generate_report()
         else:
             return self._generate_report()
-    
+
     def _generate_report(self) -> dict:
         """Internal report generation (called within lock)."""
         type_costs = {}
@@ -248,12 +246,15 @@ class VisionCostTracker:
             if count > 0:
                 avg_input = 1000 + self._pricing["image_tokens_high"]
                 avg_output = 500
-                type_costs[call_type] = round(
-                    (avg_input / 1_000_000) * self._pricing["input_per_1m"] +
-                    (avg_output / 1_000_000) * self._pricing["output_per_1m"],
-                    4
-                ) * count
-        
+                type_costs[call_type] = (
+                    round(
+                        (avg_input / 1_000_000) * self._pricing["input_per_1m"]
+                        + (avg_output / 1_000_000) * self._pricing["output_per_1m"],
+                        4,
+                    )
+                    * count
+                )
+
         return {
             "total_calls": self.total_calls,
             "calls_by_type": {
@@ -275,7 +276,7 @@ class VisionCostTracker:
     def log_report(self):
         """Log usage summary to logger with correlation_id."""
         r = self.report()
-        corr = r.get('correlation_id', 'unknown')
+        corr = r.get("correlation_id", "unknown")
         logger.info(
             f"[{corr}] Vision API usage — calls={r['total_calls']} | "
             f"images={r['total_images_sent']} | "
@@ -292,17 +293,17 @@ class VisionCostTracker:
                 self._do_reset()
         else:
             self._do_reset()
-    
+
     def _do_reset(self):
         """Internal reset logic."""
-        object.__setattr__(self, '_ocr_fallback_calls', 0)
-        object.__setattr__(self, '_table_analysis_calls', 0)
-        object.__setattr__(self, '_diagram_analysis_calls', 0)
-        object.__setattr__(self, '_metadata_calls', 0)
-        object.__setattr__(self, '_total_input_tokens', 0)
-        object.__setattr__(self, '_total_output_tokens', 0)
-        object.__setattr__(self, '_total_images_sent', 0)
-        object.__setattr__(self, 'last_updated', time.time())
+        object.__setattr__(self, "_ocr_fallback_calls", 0)
+        object.__setattr__(self, "_table_analysis_calls", 0)
+        object.__setattr__(self, "_diagram_analysis_calls", 0)
+        object.__setattr__(self, "_metadata_calls", 0)
+        object.__setattr__(self, "_total_input_tokens", 0)
+        object.__setattr__(self, "_total_output_tokens", 0)
+        object.__setattr__(self, "_total_images_sent", 0)
+        object.__setattr__(self, "last_updated", time.time())
         logger.debug("VisionCostTracker reset")
 
     def to_dict(self) -> dict:
@@ -327,9 +328,13 @@ class VisionCostTracker:
             if key in ["correlation_id", "last_updated"]:
                 object.__setattr__(tracker, key, value)
             elif key.startswith("_") or key in [
-                "ocr_fallback_calls", "table_analysis_calls",
-                "diagram_analysis_calls", "metadata_calls",
-                "total_input_tokens", "total_output_tokens", "total_images_sent"
+                "ocr_fallback_calls",
+                "table_analysis_calls",
+                "diagram_analysis_calls",
+                "metadata_calls",
+                "total_input_tokens",
+                "total_output_tokens",
+                "total_images_sent",
             ]:
                 attr = f"_{key}" if not key.startswith("_") else key
                 if hasattr(tracker, attr):
@@ -358,10 +363,9 @@ __all__ = [
     "VisionCostTracker",
     "get_cost_tracker_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

@@ -20,6 +20,7 @@ Usage:
     async for child, parent in chunker.chunk_enriched_document(doc, "file.pdf"):
         await vector_store.aadd_documents([child])
 """
+
 from __future__ import annotations
 
 import logging
@@ -60,7 +61,7 @@ def get_chunker() -> "ParentChildChunker":
     Get or create the singleton ParentChildChunker instance.
     DVMELTSS-M: Lazy initialization — no heavy imports until first use.
     BATMAN-A: Safe for async FastAPI startup.
-    
+
     Returns:
         ParentChildChunker: Configured chunker with settings from app.config.
     """
@@ -68,6 +69,7 @@ def get_chunker() -> "ParentChildChunker":
     if _chunker_instance is None:
         # ✅ Lazy import — only when actually needed
         from .parent_child import ParentChildChunker
+
         _chunker_instance = ParentChildChunker()
         _log_module_init()
     return _chunker_instance
@@ -77,9 +79,11 @@ def get_chunker() -> "ParentChildChunker":
 # -- CONVENIENCE FUNCTIONS (DVMELTSS-M: Re-export utilities) ---------
 # ========================================================================
 
+
 def normalize_chunking_tags(tags: list[str] | None) -> list[str]:
     """Alias for app.core.validators.normalize_tags — for convenient imports."""
     from app.core.validators import normalize_tags as _normalize
+
     return _normalize(tags or [])
 
 
@@ -89,6 +93,7 @@ def get_chunker_metadata() -> dict[str, Any]:
     ✅ Single source of truth — no lazy import confusion.
     """
     from .parent_child import get_chunker_metadata as _get_meta
+
     return _get_meta()
 
 
@@ -106,7 +111,7 @@ def __getattr__(name: str) -> Any:
     """
     Dynamically resolve type/class imports only when accessed.
     ✅ FIXED: Only handles items NOT already defined above.
-    
+
     Prevents circular imports between chunking ↔ ocr ↔ vectorstore modules.
     Enables pytest to collect tests without initializing heavy dependencies.
     """
@@ -115,13 +120,12 @@ def __getattr__(name: str) -> Any:
         module_path, attr_name = _LAZY_IMPORTS[name]
         try:
             import importlib
-            module = importlib.import_module(module_path, package=__name__.rpartition('.')[0])
+
+            module = importlib.import_module(module_path, package=__name__.rpartition(".")[0])
             return getattr(module, attr_name)
         except ImportError as e:
-            raise AttributeError(
-                f"Failed to lazy-import '{name}' from '{module_path}': {e}"
-            ) from e
-    
+            raise AttributeError(f"Failed to lazy-import '{name}' from '{module_path}': {e}") from e
+
     # ✅ Functions already defined above — raise clear error if accessed wrongly
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -135,12 +139,13 @@ def __dir__() -> list[str]:
 # -- TEST HOOKS (DVMELTSS-T: Isolated test runs) ----------------------
 # ========================================================================
 
+
 def _reset_chunker_instance_for_tests() -> None:
     """
     Reset the global chunker instance — for pytest fixtures only.
-    
+
     ✅ FIXED: Resets THIS module's singleton + clears any lru_cache in parent_child.
-    
+
     Usage in conftest.py:
         @pytest.fixture(autouse=True)
         def reset_chunker():
@@ -150,17 +155,18 @@ def _reset_chunker_instance_for_tests() -> None:
     """
     global _chunker_instance
     _chunker_instance = None
-    
+
     # ✅ Clear any lru_cache in parent_child module for clean test state
     try:
         from . import parent_child
+
         for name in dir(parent_child):
             obj = getattr(parent_child, name)
             if hasattr(obj, "cache_clear") and callable(obj.cache_clear):
                 obj.cache_clear()
     except ImportError:
         pass
-    
+
     logging.getLogger(__name__).debug("Chunker instance reset for tests")
 
 
@@ -168,16 +174,15 @@ def _reset_chunker_instance_for_tests() -> None:
 # -- LOGGING (DVMELTSS-L: Idempotent module init logging) -----------
 # ========================================================================
 
+
 def _log_module_init() -> None:
     """Log module load — idempotent to avoid spam in multi-worker setups."""
     global _init_logged
     if _init_logged:
         return
-    
+
     logger = logging.getLogger(__name__)
-    logger.debug(
-        f"Chunking module loaded | version={__version__} | strategy={__chunking_strategy__}"
-    )
+    logger.debug(f"Chunking module loaded | version={__version__} | strategy={__chunking_strategy__}")
     _init_logged = True
 
 

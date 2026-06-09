@@ -1,4 +1,4 @@
-﻿# backend/app/extraction/chart_extractor.py
+# backend/app/extraction/chart_extractor.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # BATMAN-FIX: A - True async, T - Exponential backoff, M - Memory safety
 # OWASP-FIX: 1 - Prompt escaping, 7 - Safe data handling
@@ -23,7 +23,6 @@ from PIL import Image
 from pydantic import BaseModel, ValidationError, Field
 
 # DVMELTSS-M: Import centralized utilities
-from app.config import get_settings
 from app.core.vision_llm import get_vision_llm
 from app.core.retry import retry_async, RetryConfig
 from app.core.prompts import escape_prompt_content
@@ -35,10 +34,20 @@ logger = logging.getLogger(__name__)
 # -- CONSTANTS & CONFIG (DVMELTSS-S, BATMAN-A) -------------------------
 # ========================================================================
 
-_VALID_CHART_TYPES: Final = frozenset({
-    "bar_chart", "line_chart", "pie_chart", "scatter_plot",
-    "flowchart", "org_chart", "table", "diagram", "image", "other"
-})
+_VALID_CHART_TYPES: Final = frozenset(
+    {
+        "bar_chart",
+        "line_chart",
+        "pie_chart",
+        "scatter_plot",
+        "flowchart",
+        "org_chart",
+        "table",
+        "diagram",
+        "image",
+        "other",
+    }
+)
 
 # BATMAN-M: Memory safety limits
 _MAX_IMAGE_DIMENSION: Final = 2048
@@ -50,6 +59,7 @@ _MAX_RETRIES: Final = 3
 _RETRY_BASE_DELAY: Final = 1.0
 _RETRY_MAX_DELAY: Final = 30.0
 
+
 # DVMELTSS-V: Pydantic schemas for structured output
 class AxisSchema(BaseModel):
     x_label: Optional[str] = None
@@ -57,10 +67,12 @@ class AxisSchema(BaseModel):
     x_values: list[str] = Field(default_factory=list)
     y_range: Optional[str] = None
 
+
 class DataPointSchema(BaseModel):
     label: str
     value: str
     note: Optional[str] = None
+
 
 class ChartExtractionSchema(BaseModel):
     chart_type: str = Field(..., pattern=f"^({'|'.join(_VALID_CHART_TYPES)})$")
@@ -78,12 +90,14 @@ class ChartExtractionSchema(BaseModel):
 # -- IMMUTABLE DATA MODEL (DVMELTSS-M, V) -------------------------------
 # ========================================================================
 
+
 @dataclass
 class ExtractedChart:
     """
     Structured representation of a chart or figure.
     ✅ FIXED: Proper field defaults + validation in __post_init__.
     """
+
     chart_id: str
     source_file: str
     page_number: int
@@ -102,10 +116,10 @@ class ExtractedChart:
     def __post_init__(self):
         # ✅ Validate chart_type against allowed values
         if self.chart_type not in _VALID_CHART_TYPES:
-            object.__setattr__(self, 'chart_type', 'other')
+            object.__setattr__(self, "chart_type", "other")
         # ✅ Clamp data_points to max 50 for embedding safety
         if len(self.data_points) > 50:
-            object.__setattr__(self, 'data_points', self.data_points[:50])
+            object.__setattr__(self, "data_points", self.data_points[:50])
 
     def to_embed_text(self) -> str:
         """Rich text for embedding — combines all extracted information."""
@@ -117,10 +131,7 @@ class ExtractedChart:
         if self.key_takeaway:
             parts.append(f"Key insight: {self.key_takeaway}")
         if self.data_points:
-            dp_text = "; ".join(
-                f"{dp.get('label', 'item')}: {dp.get('value', '')}"
-                for dp in self.data_points[:10]
-            )
+            dp_text = "; ".join(f"{dp.get('label', 'item')}: {dp.get('value', '')}" for dp in self.data_points[:10])
             parts.append(f"Data points: {dp_text}")
         axes = self.axes or {}
         if axes.get("x_label") or axes.get("y_label"):
@@ -186,10 +197,11 @@ Rules:
 # -- EXTRACTOR CLASS (DVMELTSS-V, BATMAN-A, OWASP-1) -------------------
 # ========================================================================
 
+
 class ChartExtractor:
     """
     Extracts structured data from charts and figures using GPT-4o Vision.
-    
+
     Features:
     - Centralized vision LLM client via app.core.vision_llm
     - Safe image encoding with memory limits
@@ -208,7 +220,7 @@ class ChartExtractor:
         self.client = get_vision_llm(model_override=model, timeout=30.0)
         self.model = model
         self.max_retries = max_retries
-        
+
         logger.info(f"ChartExtractor initialized: model={model}, async=True")
 
     # ✅ NEW: Input validation helper
@@ -224,22 +236,26 @@ class ChartExtractor:
         if image.ndim == 2:
             # Grayscale -> RGB
             import cv2
+
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         elif image.ndim == 3 and image.shape[2] == 4:
             # RGBA -> RGB
             import cv2
+
             image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
         elif image.ndim == 3 and image.shape[2] not in (1, 3):
             raise ValueError(f"Unsupported channels: {image.shape[2]}")
         return image
 
     # ✅ FIXED: Moved retry logic to dedicated method for testability
-    @retry_async(config=RetryConfig(
-        max_attempts=_MAX_RETRIES,
-        backoff_base=_RETRY_BASE_DELAY,
-        backoff_max=_RETRY_MAX_DELAY,
-        exceptions=(Exception,),
-    ))
+    @retry_async(
+        config=RetryConfig(
+            max_attempts=_MAX_RETRIES,
+            backoff_base=_RETRY_BASE_DELAY,
+            backoff_max=_RETRY_MAX_DELAY,
+            exceptions=(Exception,),
+        )
+    )
     async def _call_vision_api(self, prompt: str, image_b64: str, corr_id: str):
         """Call vision LLM with retry logic."""
         # ✅ FIXED: Run sync OpenAI call in thread to avoid blocking event loop
@@ -299,7 +315,7 @@ class ChartExtractor:
                     max_tokens=1200,
                     response_format={"type": "json_object"},
                     extra_headers={"X-Correlation-ID": corr_id} if corr_id else {},
-                )
+                ),
             )
 
     def _estimate_tokens(self, text: str) -> int:
@@ -334,9 +350,9 @@ class ChartExtractor:
                 scale = 0.5
                 while image_rgb.nbytes > _MAX_IMAGE_MEMORY_MB * 1024 * 1024 and scale > 0.1:
                     h, w = image_rgb.shape[:2]
-                    image_rgb = np.array(Image.fromarray(image_rgb).resize(
-                        (int(w * scale), int(h * scale)), Image.Resampling.LANCZOS
-                    ))
+                    image_rgb = np.array(
+                        Image.fromarray(image_rgb).resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
+                    )
                     scale *= 0.8
 
             # Resize if dimensions too large
@@ -367,13 +383,13 @@ class ChartExtractor:
     ) -> Optional[dict]:
         """DVMELTSS-E: Async LLM call with centralized retry + structured validation."""
         corr_id = correlation_id or "chart_unknown"
-        
+
         # FIXED: Use centralized prompt escaping
         safe_prompt = escape_prompt_content(prompt)
-        
+
         # Token safety
         if self._estimate_tokens(safe_prompt) > 6000:
-            safe_prompt = safe_prompt[:6000 * 4]
+            safe_prompt = safe_prompt[: 6000 * 4]
 
         try:
             response = await self._call_vision_api(safe_prompt, image_b64, corr_id)
@@ -412,14 +428,14 @@ class ChartExtractor:
         ✅ FIXED: Input validation + safe axes conversion + memory cleanup.
         """
         corr_id = correlation_id or "chart_unknown"
-        
+
         # ✅ Validate image first
         try:
             image = self._validate_chart_image(image, corr_id)
         except Exception as e:
             logger.error(f"[{corr_id}] Invalid chart image: {e}")
             return None
-        
+
         if image is None or image.size == 0:
             return None
 
@@ -458,7 +474,9 @@ class ChartExtractor:
             if hasattr(data_points_raw[0], "model_dump") if data_points_raw else False:
                 data_points = [dp.model_dump() for dp in data_points_raw[:20]]
             else:
-                data_points = [dp if isinstance(dp, dict) else {"label": str(dp), "value": ""} for dp in data_points_raw[:20]]
+                data_points = [
+                    dp if isinstance(dp, dict) else {"label": str(dp), "value": ""} for dp in data_points_raw[:20]
+                ]
 
             return ExtractedChart(
                 chart_id=chart_id,
@@ -478,20 +496,25 @@ class ChartExtractor:
             logger.error(f"[{corr_id}] Chart extraction API failed: {type(e).__name__}: {e}")
             return None
         finally:
-            # ✅ Memory cleanup hint
-            del image, b64
-            gc.collect()
-            if hasattr(image, '__cuda_array_interface__'):
+            # ✅ Memory cleanup hint — check CUDA handle before deletion
+            if hasattr(image, "__cuda_array_interface__"):
                 try:
                     import torch
+
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
                 except ImportError:
                     pass
+            del image, b64
+            gc.collect()
 
     @staticmethod
     def _empty_chart(
-        chart_id: str, source_file: str, page_number: int, chunk_id: str, correlation_id: Optional[str] = None
+        chart_id: str,
+        source_file: str,
+        page_number: int,
+        chunk_id: str,
+        correlation_id: Optional[str] = None,
     ) -> ExtractedChart:
         return ExtractedChart(
             chart_id=chart_id,
@@ -522,8 +545,8 @@ class ChartExtractor:
             loop = asyncio.get_running_loop()
             # If yes, we can't use asyncio.run() — warn and return None
             logger.warning(
-                f"⚠️ ChartExtractor.extract_from_image() called from async context — "
-                f"use extract_from_image_async() instead. Returning None."
+                "⚠️ ChartExtractor.extract_from_image() called from async context — "
+                "use extract_from_image_async() instead. Returning None."
             )
             return None
         except RuntimeError:
@@ -535,10 +558,9 @@ class ChartExtractor:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["ChartExtractor", "ExtractedChart"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

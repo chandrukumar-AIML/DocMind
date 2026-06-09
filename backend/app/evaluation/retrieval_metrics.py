@@ -1,4 +1,4 @@
-﻿# backend/app/evaluation/retrieval_metrics.py
+# backend/app/evaluation/retrieval_metrics.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 # ✅ FIXED: Proper async handling + input validation + safe aggregation
 
@@ -15,9 +15,11 @@ import numpy as np
 # DVMELTSS-M: Import centralized utilities
 try:
     from app.core.eval_utils import aggregate_metrics, generate_eval_correlation_id
+
     _HAS_AGGREGATE_METRICS = True
 except ImportError:
     _HAS_AGGREGATE_METRICS = False
+
     # ✅ Fallback: simple aggregation without CI
     def aggregate_metrics(values: List[float], metric_name: str, min_samples: int = 10) -> dict:
         """Simple fallback aggregation without confidence intervals."""
@@ -33,12 +35,14 @@ except ImportError:
             "ci_95_upper": round(min(1.0, mean_val + margin), 4),
         }
 
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class RetrievalResult:
     """Metrics for a single retrieval query."""
+
     query: str
     retrieved_ids: List[str]
     relevant_ids: Set[str]
@@ -51,7 +55,7 @@ class RetrievalResult:
         # ✅ FIXED: Safe division
         if not self.retrieved_ids or self.k <= 0:
             return 0.0
-        hits = sum(1 for cid in self.retrieved_ids[:self.k] if cid in self.relevant_ids)
+        hits = sum(1 for cid in self.retrieved_ids[: self.k] if cid in self.relevant_ids)
         return hits / min(self.k, len(self.retrieved_ids))
 
     @property
@@ -60,7 +64,7 @@ class RetrievalResult:
         # ✅ FIXED: Safe division
         if not self.relevant_ids:
             return 1.0
-        hits = sum(1 for cid in self.retrieved_ids[:self.k] if cid in self.relevant_ids)
+        hits = sum(1 for cid in self.retrieved_ids[: self.k] if cid in self.relevant_ids)
         return hits / len(self.relevant_ids)
 
     @property
@@ -74,15 +78,12 @@ class RetrievalResult:
     @property
     def hit_at_k(self) -> bool:
         """Hit@K: whether at least one relevant doc was retrieved in top-K."""
-        return any(cid in self.relevant_ids for cid in self.retrieved_ids[:self.k])
+        return any(cid in self.relevant_ids for cid in self.retrieved_ids[: self.k])
 
     @property
     def mean_rank(self) -> Optional[float]:
         """Mean rank of relevant docs (for MRR alternative)."""
-        ranks = [
-            rank for rank, cid in enumerate(self.retrieved_ids, start=1)
-            if cid in self.relevant_ids
-        ]
+        ranks = [rank for rank, cid in enumerate(self.retrieved_ids, start=1) if cid in self.relevant_ids]
         return float(np.mean(ranks)) if ranks else None
 
     def to_dict(self) -> dict:
@@ -102,6 +103,7 @@ class RetrievalResult:
 @dataclass
 class RetrievalEvalSuite:
     """Aggregated retrieval metrics for a dataset."""
+
     results: List[RetrievalResult] = field(default_factory=list)
     MIN_SAMPLES_FOR_VALID_EVAL: Final = 10
     correlation_id: str = ""
@@ -142,22 +144,26 @@ class RetrievalEvalSuite:
     def summary(self) -> dict[str, Any]:
         """Return aggregated metrics summary with confidence intervals."""
         n = len(self.results)
-        
+
         if n < self.MIN_SAMPLES_FOR_VALID_EVAL:
             logger.warning(
                 f"[{self.correlation_id}] Evaluation has only {n} samples — "
                 f"results not statistically reliable. Minimum recommended: {self.MIN_SAMPLES_FOR_VALID_EVAL}."
             )
-        
+
         # ✅ FIXED: Safe aggregation with fallback
         precision_values = [r.precision_at_k for r in self.results]
         recall_values = [r.recall_at_k for r in self.results]
         mrr_values = [r.reciprocal_rank for r in self.results]
-        
-        precision_ci = aggregate_metrics(precision_values, "precision_at_k", min_samples=self.MIN_SAMPLES_FOR_VALID_EVAL)
+
+        precision_ci = aggregate_metrics(
+            precision_values,
+            "precision_at_k",
+            min_samples=self.MIN_SAMPLES_FOR_VALID_EVAL,
+        )
         recall_ci = aggregate_metrics(recall_values, "recall_at_k", min_samples=self.MIN_SAMPLES_FOR_VALID_EVAL)
         mrr_ci = aggregate_metrics(mrr_values, "reciprocal_rank", min_samples=self.MIN_SAMPLES_FOR_VALID_EVAL)
-        
+
         return {
             "n_queries": n,
             "statistically_valid": n >= self.MIN_SAMPLES_FOR_VALID_EVAL,
@@ -215,7 +221,7 @@ def _validate_eval_inputs(
 class RetrievalEvaluator:
     """
     Evaluates retrieval quality against a ground truth dataset.
-    
+
     Features:
     - Precision@K, Recall@K, MRR, Hit@K metrics
     - Bootstrap confidence intervals for statistical reliability
@@ -235,13 +241,13 @@ class RetrievalEvaluator:
     ) -> RetrievalEvalSuite:
         """Evaluate retrieval function against ground truth dataset."""
         corr_id = correlation_id or generate_eval_correlation_id("retrieval_eval")
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_eval_inputs(ground_truth, retrieve_fn, k, corr_id)
         if not is_valid:
             logger.error(f"[{corr_id}] Invalid eval inputs: {error}")
             return RetrievalEvalSuite(correlation_id=corr_id)
-        
+
         suite = RetrievalEvalSuite(correlation_id=corr_id)
         semaphore = asyncio.Semaphore(concurrency)
 
@@ -263,7 +269,7 @@ class RetrievalEvaluator:
                             asyncio.to_thread(lambda: retrieve_fn(query=query, k=k)),
                             timeout=timeout_seconds,
                         )
-                    
+
                     # ✅ Safe extraction of chunk IDs
                     retrieved_ids = []
                     for j, doc in enumerate(retrieved_docs or []):
@@ -275,7 +281,7 @@ class RetrievalEvaluator:
                             cid = f"doc_{j}"
                         if cid:
                             retrieved_ids.append(str(cid))
-                    
+
                     return RetrievalResult(
                         query=query,
                         retrieved_ids=retrieved_ids,
@@ -283,22 +289,28 @@ class RetrievalEvaluator:
                         k=k,
                         correlation_id=corr_id,
                     )
-                    
+
                 except asyncio.TimeoutError:
                     logger.error(f"[{corr_id}] Retrieval timed out after {timeout_seconds}s for: {query[:60]}")
                     return RetrievalResult(
-                        query=query, retrieved_ids=[], relevant_ids=relevant_ids, k=k,
+                        query=query,
+                        retrieved_ids=[],
+                        relevant_ids=relevant_ids,
+                        k=k,
                         correlation_id=corr_id,
                     )
                 except Exception as e:
                     logger.error(f"[{corr_id}] Retrieval failed for: {query[:60]}: {e}")
                     return RetrievalResult(
-                        query=query, retrieved_ids=[], relevant_ids=relevant_ids, k=k,
+                        query=query,
+                        retrieved_ids=[],
+                        relevant_ids=relevant_ids,
+                        k=k,
                         correlation_id=corr_id,
                     )
 
         tasks = [evaluate_query(item) for item in ground_truth]
-        
+
         # ✅ FIXED: Handle per-task exceptions without stopping all
         for coro in asyncio.as_completed(tasks):
             try:
@@ -319,7 +331,13 @@ class RetrievalEvaluator:
 def get_retrieval_metrics_metadata() -> dict[str, Any]:
     """✅ NEW: Return retrieval metrics metadata for monitoring."""
     return {
-        "metrics": ["precision_at_k", "recall_at_k", "reciprocal_rank", "hit_at_k", "mean_rank"],
+        "metrics": [
+            "precision_at_k",
+            "recall_at_k",
+            "reciprocal_rank",
+            "hit_at_k",
+            "mean_rank",
+        ],
         "min_samples_for_valid_eval": RetrievalEvalSuite.MIN_SAMPLES_FOR_VALID_EVAL,
         "default_k": 3,
         "default_timeout_seconds": 30,
@@ -335,10 +353,9 @@ __all__ = [
     "RetrievalEvalSuite",
     "get_retrieval_metrics_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

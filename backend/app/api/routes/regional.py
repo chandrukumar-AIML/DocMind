@@ -1,11 +1,12 @@
 # backend/app/api/routes/regional.py
 """Indian regional language support API: query normalization, entity extraction, validation."""
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.auth.dependencies import get_current_user, AuthenticatedUser
@@ -17,7 +18,6 @@ from app.core.regional_language_processor import (
     validate_aadhaar,
     normalize_indian_number,
     extract_indian_entities,
-    parse_indian_date,
     detect_script,
 )
 
@@ -26,6 +26,7 @@ router = APIRouter(prefix="/regional", tags=["regional"])
 
 
 # ── Pydantic models ────────────────────────────────────────────
+
 
 class QueryPreprocessRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
@@ -45,6 +46,7 @@ class NumberParseRequest(BaseModel):
 
 
 # ── Endpoints ─────────────────────────────────────────────────
+
 
 @router.post("/preprocess-query")
 async def preprocess_query(
@@ -110,8 +112,15 @@ async def parse_number(
 async def list_supported_scripts() -> dict[str, Any]:
     return {
         "scripts": [
-            "tamil", "telugu", "kannada", "malayalam",
-            "hindi", "bengali", "gujarati", "punjabi", "odia",
+            "tamil",
+            "telugu",
+            "kannada",
+            "malayalam",
+            "hindi",
+            "bengali",
+            "gujarati",
+            "punjabi",
+            "odia",
         ],
         "features": [
             "Tanglish query normalization",

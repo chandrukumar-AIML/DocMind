@@ -1,4 +1,4 @@
-﻿# backend/app/crag/web_search.py
+# backend/app/crag/web_search.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, M - Modular
 # BATMAN-FIX: A - Async (to_thread), T - Time complexity (retry backoff)
 # OWASP-FIX: 1 - Search injection prevention, 9 - Safe ID generation
@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Final, Optional
 
 from langchain_core.documents import Document
@@ -38,6 +38,7 @@ _RETRY_DELAY_BASE: Final = 1.0  # seconds
 @dataclass(frozen=True)
 class WebSearchResult:
     """Immutable result from web search formatted for RAG pipeline."""
+
     query: str
     documents: list[Document]
     source: str = "web_search"
@@ -59,6 +60,7 @@ def _sanitize_query(query: str) -> str:
 # -- WEB SEARCHER CLASS (BATMAN-A, DVMELTSS-E) -------------------------
 # ========================================================================
 
+
 class WebSearcher:
     """
     DuckDuckGo web search fallback for CRAG pipeline.
@@ -77,7 +79,11 @@ class WebSearcher:
     - Lazy import for optional duckduckgo-search dependency
     """
 
-    def __init__(self, max_results: int = DEFAULT_MAX_RESULTS, retry_attempts: int = _MAX_SEARCH_RETRIES):
+    def __init__(
+        self,
+        max_results: int = DEFAULT_MAX_RESULTS,
+        retry_attempts: int = _MAX_SEARCH_RETRIES,
+    ):
         self.max_results = min(max_results, _MAX_RESULTS_CAP)
         self.retry_attempts = retry_attempts
 
@@ -105,6 +111,7 @@ class WebSearcher:
             try:
                 # FIXED: Lazy import with clear error message
                 from duckduckgo_search import DDGS
+
                 # Context manager ensures proper connection cleanup
                 with DDGS() as ddgs:
                     raw_results = list(ddgs.text(safe_query, max_results=n))
@@ -115,10 +122,11 @@ class WebSearcher:
             except Exception as e:
                 last_error = e
                 if attempt < self.retry_attempts:
-                    wait = _RETRY_DELAY_BASE * (2 ** attempt)
+                    wait = _RETRY_DELAY_BASE * (2**attempt)
                     logger.warning(f"[{corr_id}] Web search attempt {attempt+1} failed: {e}. Retrying in {wait}s...")
                     # FIXED: Use time.sleep only in sync method (acceptable here)
                     import time
+
                     time.sleep(wait)
                 else:
                     logger.error(f"[{corr_id}] Web search failed after {self.retry_attempts+1} attempts: {e}")
@@ -190,10 +198,9 @@ class WebSearcher:
             try:
                 # FIXED: Lazy import with clear error message
                 from duckduckgo_search import DDGS
+
                 # Run blocking DDGS call in thread pool
-                raw_results = await asyncio.to_thread(
-                    lambda: list(DDGS().text(safe_query, max_results=n))
-                )
+                raw_results = await asyncio.to_thread(lambda: list(DDGS().text(safe_query, max_results=n)))
                 break  # Success
             except ImportError:
                 logger.error("duckduckgo-search package not installed. Install with: pip install duckduckgo-search")
@@ -201,7 +208,7 @@ class WebSearcher:
             except Exception as e:
                 last_error = e
                 if attempt < self.retry_attempts:
-                    wait = _RETRY_DELAY_BASE * (2 ** attempt)
+                    wait = _RETRY_DELAY_BASE * (2**attempt)
                     logger.warning(f"[{corr_id}] Web search attempt {attempt+1} failed: {e}. Retrying in {wait}s...")
                     # FIXED: Non-blocking sleep for async context
                     await asyncio.sleep(wait)
@@ -252,10 +259,9 @@ class WebSearcher:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["WebSearcher", "WebSearchResult"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

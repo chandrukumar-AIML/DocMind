@@ -1,4 +1,4 @@
-﻿# backend/app/api/routes/monitoring.py
+# backend/app/api/routes/monitoring.py
 # DVMELTSS-FIX: M/E/S + ASCALE-A/E + OWASP-3
 # ✅ FIXED: Input validation + proper background task handling + timeout handling
 
@@ -13,10 +13,8 @@ from typing import Annotated, Optional, Any, Final
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, status
 from pydantic import BaseModel, Field
 
-from app.config import get_settings, lazy_settings as settings  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.ids import generate_correlation_id
 from app.auth.dependencies import get_current_user, require_admin, AuthenticatedUser
-from app.models import ErrorResponse
 from app.monitoring.metrics_collector import MetricsCollector, QueryMetrics
 from app.monitoring.pipeline import MonitoringPipeline, AutoImprover
 
@@ -81,12 +79,12 @@ async def record_query_metrics(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict:
     corr_id = generate_correlation_id("record_metrics")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_monitoring_inputs(None, None, request.query_id, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     collector = MetricsCollector()
     metrics = QueryMetrics(
         query_id=request.query_id or str(uuid.uuid4())[:8],
@@ -109,7 +107,7 @@ async def record_query_metrics(
         answer_relevancy=request.answer_relevancy,
         context_precision=request.context_precision,
     )
-    
+
     try:
         await asyncio.wait_for(
             collector.record_async(metrics),
@@ -121,7 +119,7 @@ async def record_query_metrics(
     except Exception as e:
         logger.error(f"[{corr_id}] Metrics recording failed: {e}")
         # Still return success to avoid blocking client
-    
+
     return {
         "status": "recorded",
         "query_id": metrics.query_id,
@@ -140,14 +138,14 @@ async def get_monitoring_stats(
 ) -> dict:
     corr_id = generate_correlation_id("monitoring_stats")
     workspace_id = user.workspace_id if user else "default"
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_monitoring_inputs(hours, None, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     collector = MetricsCollector()
-    
+
     try:
         stats = await asyncio.wait_for(
             collector.compute_window_stats_async(
@@ -157,7 +155,7 @@ async def get_monitoring_stats(
             ),
             timeout=_COLLECTOR_TIMEOUT,
         )
-        
+
         return {
             "workspace_id": workspace_id,
             "correlation_id": corr_id,
@@ -182,14 +180,14 @@ async def get_metric_trend(
 ) -> dict:
     corr_id = generate_correlation_id("metric_trend")
     workspace_id = user.workspace_id if user else "default"
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_monitoring_inputs(None, days, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     collector = MetricsCollector()
-    
+
     try:
         try:
             trend_coro = collector.get_daily_trend_async(
@@ -200,7 +198,7 @@ async def get_metric_trend(
         except TypeError:
             trend_coro = collector.get_daily_trend_async(days=days)
         trend = await asyncio.wait_for(trend_coro, timeout=_COLLECTOR_TIMEOUT)
-        
+
         return {
             "workspace_id": workspace_id,
             "correlation_id": corr_id,
@@ -225,9 +223,9 @@ async def run_monitoring_pipeline(
     async_mode: bool = Query(default=True, description="True = fire-and-forget"),
 ) -> dict:
     corr_id = generate_correlation_id("monitoring_pipeline")
-    
+
     pipeline = MonitoringPipeline(workspace_id=user.workspace_id)
-    
+
     if async_mode:
         # ✅ FIXED: Use sync function for background task
         def _run_sync():
@@ -235,7 +233,7 @@ async def run_monitoring_pipeline(
                 asyncio.run(pipeline.run(log_to_mlflow=True, correlation_id=corr_id))
             except Exception as e:
                 logger.error(f"[{corr_id}] Monitoring pipeline failed: {e}", exc_info=True)
-                
+
         background_tasks.add_task(_run_sync)
         return {
             "status": "started",
@@ -253,7 +251,9 @@ async def run_monitoring_pipeline(
                 "run_id": getattr(result, "run_id", None),
                 "is_healthy": getattr(result, "is_healthy", False),
                 "window_stats": getattr(result, "window_stats", {}),
-                "drift_detected": getattr(getattr(result, "drift_report", None), "drift_detected", False) if result else False,
+                "drift_detected": getattr(getattr(result, "drift_report", None), "drift_detected", False)
+                if result
+                else False,
                 "alerts_sent": getattr(result, "alerts_sent", []),
                 "improvement": getattr(getattr(result, "improvement", None), "action_type", None) if result else None,
                 "correlation_id": corr_id,
@@ -274,10 +274,10 @@ async def trigger_rechunk(
     user: Annotated[AuthenticatedUser, Depends(require_admin)],
 ) -> dict:
     corr_id = generate_correlation_id("rechunk_trigger")
-    
+
     try:
         improver = AutoImprover(workspace_id=user.workspace_id)
-        
+
         # ✅ FIXED: Use async method if available
         if hasattr(improver, "execute_async"):
             action = await asyncio.wait_for(
@@ -291,6 +291,7 @@ async def trigger_rechunk(
         else:
             # Fallback: run in executor
             import functools
+
             loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in Python 3.10+
             action = await asyncio.wait_for(
                 loop.run_in_executor(
@@ -304,7 +305,7 @@ async def trigger_rechunk(
                 ),
                 timeout=_PIPELINE_TIMEOUT,
             )
-        
+
         return {
             "action_type": getattr(action, "action_type", None),
             "success": getattr(action, "success", False),
@@ -348,10 +349,9 @@ def get_monitoring_metadata() -> dict[str, Any]:
 
 
 __all__ = ["router", "get_monitoring_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

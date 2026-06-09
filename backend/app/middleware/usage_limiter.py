@@ -3,6 +3,7 @@
 Usage limiter middleware — checks workspace limits before uploads/queries.
 Also supports API key authentication in Authorization header.
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,9 +29,7 @@ class UsageLimiterMiddleware(BaseHTTPMiddleware):
     Returns HTTP 429 with descriptive message if limit exceeded.
     """
 
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         path = request.url.path
         method = request.method
 
@@ -45,6 +44,7 @@ class UsageLimiterMiddleware(BaseHTTPMiddleware):
         try:
             if any(path.startswith(p) for p in _UPLOAD_PATHS):
                 from app.core.usage_tracker import check_doc_limit, check_storage_limit
+
                 ok, msg = await check_doc_limit(workspace_id)
                 if not ok:
                     return _limit_response(msg)
@@ -55,6 +55,7 @@ class UsageLimiterMiddleware(BaseHTTPMiddleware):
 
             elif any(path.startswith(p) for p in _QUERY_PATHS):
                 from app.core.usage_tracker import check_query_limit
+
                 ok, msg = await check_query_limit(workspace_id)
                 if not ok:
                     return _limit_response(msg)
@@ -76,6 +77,7 @@ def _extract_workspace_id(request: Request) -> str | None:
     if auth.startswith("Bearer "):
         try:
             from app.auth.jwt_handler import verify_access_token
+
             payload = verify_access_token(auth.split(" ", 1)[1])
             if payload:
                 return payload.get("workspace_id")
@@ -108,9 +110,7 @@ class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
     JWT-based auth is unaffected — this only activates on ApiKey scheme.
     """
 
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("ApiKey "):
             return await call_next(request)
@@ -118,11 +118,15 @@ class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
         raw_key = auth.split(" ", 1)[1].strip()
         try:
             from app.core.apikey_manager import validate_api_key
+
             ctx = await validate_api_key(raw_key)
             if not ctx:
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    content={"error": "invalid_api_key", "detail": "API key is invalid, inactive, or expired"},
+                    content={
+                        "error": "invalid_api_key",
+                        "detail": "API key is invalid, inactive, or expired",
+                    },
                 )
             request.state.api_key_workspace_id = ctx["workspace_id"]
             request.state.api_key_scopes = ctx["scopes"]

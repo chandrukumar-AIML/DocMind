@@ -16,26 +16,42 @@ Provides end-to-end evaluation pipelines for:
 Public API:
     from app.evaluation import RAGAsPipeline, DatasetManager, AlertEngine
 """
+
 from __future__ import annotations
 from typing import Any
 
 # DVMELTSS-M: Explicit public API surface
 __all__ = [
     # Pipeline & Orchestration
-    "RAGAsPipeline", "PipelineConfig", "PipelineResult",
+    "RAGAsPipeline",
+    "PipelineConfig",
+    "PipelineResult",
     # Dataset Management
-    "DatasetManager", "EvalDataset", "EvalSample",
+    "DatasetManager",
+    "EvalDataset",
+    "EvalSample",
     # RAGAS Evaluation
-    "RAGAsEvaluator", "RAGAsSample", "RAGAsReport",
+    "RAGAsEvaluator",
+    "RAGAsSample",
+    "RAGAsReport",
     # Traditional Metrics
-    "RAGMetricsCalculator", "RAGASMetrics", "RAGEvalSuite",
-    "OCRMetricsCalculator", "OCRPageMetrics", "OCRDocumentMetrics",
+    "RAGMetricsCalculator",
+    "RAGASMetrics",
+    "RAGEvalSuite",
+    "OCRMetricsCalculator",
+    "OCRPageMetrics",
+    "OCRDocumentMetrics",
     # Retrieval Evaluation
-    "RetrievalEvaluator", "RetrievalResult", "RetrievalEvalSuite",
+    "RetrievalEvaluator",
+    "RetrievalResult",
+    "RetrievalEvalSuite",
     # Alerting
-    "AlertEngine", "Alert",
+    "AlertEngine",
+    "Alert",
     # Text Utilities
-    "levenshtein_distance", "normalize_text_for_ocr", "compute_f1_from_counts",
+    "levenshtein_distance",
+    "normalize_text_for_ocr",
+    "compute_f1_from_counts",
     # Metadata helpers
     "get_evaluation_metadata",
 ]
@@ -89,17 +105,17 @@ def __getattr__(name: str) -> Any:
         module_path, attr_name = _LAZY_IMPORTS[name]
         try:
             import importlib
-            module = importlib.import_module(module_path, package=__name__.rpartition('.')[0])
+
+            module = importlib.import_module(module_path, package=__name__.rpartition(".")[0])
             return getattr(module, attr_name)
         except ImportError as e:
-            raise AttributeError(
-                f"Failed to lazy-import '{name}' from '{module_path}': {e}"
-            ) from e
-    
+            raise AttributeError(f"Failed to lazy-import '{name}' from '{module_path}': {e}") from e
+
     if name == "get_evaluation_metadata":
         from .ragas_pipeline import get_pipeline_metadata
+
         return get_pipeline_metadata
-    
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -115,27 +131,34 @@ def _reset_caches_for_tests() -> None:
     """Reset internal caches & singletons for clean pytest runs."""
     import importlib
     import sys
-    
+
     # Invalidate import caches
     for mod_name in [
-        ".ragas_pipeline", ".ragas_dataset", ".ragas_evaluator",
-        ".rag_metrics", ".ocr_metrics", ".retrieval_metrics", ".alert_engine"
+        ".ragas_pipeline",
+        ".ragas_dataset",
+        ".ragas_evaluator",
+        ".rag_metrics",
+        ".ocr_metrics",
+        ".retrieval_metrics",
+        ".alert_engine",
     ]:
         try:
             importlib.invalidate_caches()
         except Exception:
             pass
-    
+
     # ✅ FIXED: Reset module-level singletons if loaded
     try:
         from . import ragas_pipeline
+
         if hasattr(ragas_pipeline, "_pipeline_instance"):
             ragas_pipeline._pipeline_instance = None
     except ImportError:
         pass
-    
+
     try:
         from . import ragas_dataset
+
         if hasattr(ragas_dataset.DatasetManager, "_datasets"):
             ragas_dataset.DatasetManager._datasets.clear()
     except ImportError:
@@ -145,13 +168,15 @@ def _reset_caches_for_tests() -> None:
 # DVMELTSS-L: Module initialization logging for observability
 __init_logged: bool = False
 
+
 def _log_module_init() -> None:
     """Log module load — idempotent to avoid spam in multi-worker setups."""
     global __init_logged
     if __init_logged:
         return
-    
+
     import logging
+
     logger = logging.getLogger(__name__)
     logger.debug(  # ✅ Use debug level to avoid prod log spam
         f"Evaluation module loaded | version={__version__} | {__description__}"
@@ -167,4 +192,5 @@ _log_module_init()
 def get_evaluation_metadata() -> dict[str, Any]:
     """Return evaluation module metadata for monitoring/debugging."""
     from .ragas_pipeline import get_pipeline_metadata as _get_meta
+
     return _get_meta()

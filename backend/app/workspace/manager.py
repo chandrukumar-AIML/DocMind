@@ -46,6 +46,7 @@ class WorkspaceResources:
     Immutable status of all storage resources for a workspace.
     DVMELTSS-M: Frozen dataclass prevents runtime mutation.
     """
+
     workspace_id: str
     chroma_collection: str
     neo4j_namespace: str
@@ -91,18 +92,18 @@ def _validate_workspace_inputs(
 class WorkspaceManager:
     """
     Provisions, validates, and tears down workspace-specific storage.
-    
+
     Called when:
     - A new workspace is created (provision)
     - A workspace is deleted (teardown)
     - Health check needs to verify isolation (validate)
-    
+
     Storage provisioning per workspace:
     1. ChromaDB: create collection docs_{workspace_id}
     2. Neo4j:    create workspace namespace index
     3. BM25:     initialize empty index file
     4. PostgreSQL: RLS policy automatically applies
-    
+
     Features (DVMELTSS-V, BATMAN-A, ACID-E):
     - Async-safe operations with retry logic
     - Centralized path/key generation via app.core.workspace_utils
@@ -173,7 +174,7 @@ class WorkspaceManager:
         BATMAN-A: Non-blocking, yields to event loop between operations.
         """
         corr_id = correlation_id or generate_workspace_correlation_id("provision")
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_workspace_inputs(workspace_id, correlation_id, corr_id)
         if not is_valid:
@@ -211,7 +212,12 @@ class WorkspaceManager:
             )
         except asyncio.TimeoutError:
             logger.error(f"[{corr_id}] ChromaDB provision timed out after {_PROVISION_TIMEOUT}s")
-            resources = WorkspaceResources(**{**resources.__dict__, "errors": resources.errors + [f"chroma: timeout"]})
+            resources = WorkspaceResources(
+                **{
+                    **resources.__dict__,
+                    "errors": resources.errors + ["chroma: timeout"],
+                }
+            )
         except Exception as e:
             logger.error(f"[{corr_id}] ChromaDB provision failed: {e}")
             resources = WorkspaceResources(**{**resources.__dict__, "errors": resources.errors + [f"chroma: {e}"]})
@@ -247,10 +253,7 @@ class WorkspaceManager:
             correlation_id=resources.correlation_id,
         )
 
-        logger.info(
-            f"[{corr_id}] Workspace provisioned: {safe_id} | "
-            f"errors={resources.errors}"
-        )
+        logger.info(f"[{corr_id}] Workspace provisioned: {safe_id} | " f"errors={resources.errors}")
         return resources
 
     async def teardown_async(
@@ -264,7 +267,7 @@ class WorkspaceManager:
         Returns True if fully cleaned up.
         """
         corr_id = correlation_id or generate_workspace_correlation_id("teardown")
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_workspace_inputs(workspace_id, correlation_id, corr_id)
         if not is_valid:
@@ -344,7 +347,7 @@ class WorkspaceManager:
     ) -> dict:
         """Async: Get storage usage statistics for a workspace."""
         corr_id = correlation_id or generate_workspace_correlation_id("stats")
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_workspace_inputs(workspace_id, correlation_id, corr_id)
         if not is_valid:
@@ -364,6 +367,7 @@ class WorkspaceManager:
         # ChromaDB stats
         try:
             from app.vectorstore.chroma_store import _get_chroma_client
+
             client = _get_chroma_client(self.settings.chroma_persist_dir)
             coll = client.get_collection(get_chroma_collection_name(safe_id))
             stats["chroma_chunks"] = coll.count()
@@ -373,17 +377,17 @@ class WorkspaceManager:
         # Neo4j stats
         try:
             from app.graph.neo4j_store import get_neo4j_store
+
             neo4j = get_neo4j_store()
             schema = neo4j.get_schema_summary(workspace_id=safe_id)
-            stats["neo4j_entities"] = sum(
-                n.get("count", 0) for n in schema.get("nodes", []) if isinstance(n, dict)
-            )
+            stats["neo4j_entities"] = sum(n.get("count", 0) for n in schema.get("nodes", []) if isinstance(n, dict))
         except Exception as e:
             logger.debug(f"[{corr_id}] Neo4j stats failed: {e}")
 
         # BM25 stats
         try:
             from app.retrieval.bm25_retriever import get_bm25_index
+
             bm25 = get_bm25_index(safe_id)
             stats["bm25_docs"] = bm25.count() if hasattr(bm25, "count") else 0
         except Exception as e:
@@ -397,6 +401,7 @@ class WorkspaceManager:
     async def _provision_chroma_async(self, workspace_id: str, corr_id: str):
         """Async: Create workspace ChromaDB collection with retry."""
         from app.vectorstore.chroma_store import _get_chroma_client
+
         client = _get_chroma_client(self.settings.chroma_persist_dir)
         client.get_or_create_collection(
             name=get_chroma_collection_name(workspace_id),
@@ -408,6 +413,7 @@ class WorkspaceManager:
     async def _provision_neo4j_async(self, workspace_id: str, corr_id: str):
         """Async: Ensure Neo4j workspace indexes exist with retry."""
         from app.graph.neo4j_store import get_neo4j_store
+
         neo4j = get_neo4j_store()
         # ✅ FIXED: Use public API if available, fallback to private
         if hasattr(neo4j, "ensure_indexes"):
@@ -425,6 +431,7 @@ class WorkspaceManager:
     async def _teardown_chroma_async(self, workspace_id: str, corr_id: str):
         """Async: Delete workspace ChromaDB collection."""
         from app.vectorstore.chroma_store import _get_chroma_client
+
         client = _get_chroma_client(self.settings.chroma_persist_dir)
         try:
             client.delete_collection(get_chroma_collection_name(workspace_id))
@@ -435,6 +442,7 @@ class WorkspaceManager:
     async def _teardown_neo4j_async(self, workspace_id: str, corr_id: str):
         """Async: Delete Neo4j workspace data."""
         from app.graph.neo4j_store import get_neo4j_store
+
         neo4j = get_neo4j_store()
         neo4j.execute_query(
             "MATCH (n {workspace_id: $workspace_id}) DETACH DELETE n",
@@ -460,8 +468,10 @@ class WorkspaceManager:
         Sync wrapper — prefers async version in new code.
         ✅ FIXED: Use run_async_in_task helper to avoid deadlock.
         """
+
         async def _do_provision():
             return await self.provision_async(workspace_id, correlation_id)
+
         return run_async_in_task(_do_provision)
 
     def teardown(
@@ -473,8 +483,10 @@ class WorkspaceManager:
         Sync wrapper — prefers async version in new code.
         ✅ FIXED: Use run_async_in_task helper to avoid deadlock.
         """
+
         async def _do_teardown():
             return await self.teardown_async(workspace_id, correlation_id)
+
         return run_async_in_task(_do_teardown)
 
     def get_usage_stats(
@@ -486,8 +498,10 @@ class WorkspaceManager:
         Sync wrapper — prefers async version in new code.
         ✅ FIXED: Use run_async_in_task helper to avoid deadlock.
         """
+
         async def _do_stats():
             return await self.get_usage_stats_async(workspace_id, correlation_id)
+
         return run_async_in_task(_do_stats)
 
 
@@ -521,8 +535,8 @@ if __name__ == "__main__":
     import asyncio
     import sys
     from pathlib import Path
-    from unittest.mock import AsyncMock, MagicMock, patch
-    
+    from unittest.mock import AsyncMock, patch
+
     # 🔧 ROBUST PATH SETUP
     current_file = Path(__file__).resolve()
     for parent in current_file.parents:
@@ -531,33 +545,35 @@ if __name__ == "__main__":
             break
     else:
         backend_root = current_file.parents[2]
-    
+
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
-    
+
     async def run_tests():
         print("🔍 Testing Workspace Manager module (app/workspace/manager.py)")
         print("=" * 70)
-        
+
         try:
             from app.workspace.manager import (
-                WorkspaceManager, WorkspaceResources,
-                _validate_workspace_inputs, get_workspace_metadata
+                WorkspaceManager,
+                WorkspaceResources,
+                _validate_workspace_inputs,
+                get_workspace_metadata,
             )
             import inspect
-            
+
             # -- Test 1: Module metadata & constants ---------------------
             print("\n📌 Test 1: Module metadata & constants")
-            
+
             metadata = get_workspace_metadata()
             assert "provision_timeout_seconds" in metadata
             assert metadata["provision_timeout_seconds"] == 60
             assert "async_safe" in metadata and metadata["async_safe"] is True
-            print(f"   ✅ get_workspace_metadata: returns config")
-            
+            print("   ✅ get_workspace_metadata: returns config")
+
             # -- Test 2: WorkspaceResources dataclass --------------------
             print("\n📌 Test 2: WorkspaceResources (frozen dataclass)")
-            
+
             # Create valid resources
             resources = WorkspaceResources(
                 workspace_id="test-ws",
@@ -566,18 +582,18 @@ if __name__ == "__main__":
                 bm25_index_path="/tmp/bm25_test-ws",
                 embeddings_cache_path="/tmp/cache_test-ws",
                 postgres_rls=True,
-                correlation_id="test-corr"
+                correlation_id="test-corr",
             )
             assert resources.is_healthy is True
             assert resources.workspace_id == "test-ws"
             print(f"   ✅ WorkspaceResources: created, is_healthy={resources.is_healthy}")
-            
+
             # Test to_dict serialization
             resource_dict = resources.to_dict()
             assert "workspace_id" in resource_dict
             assert resource_dict["is_healthy"] is True
-            print(f"   ✅ to_dict(): serializes correctly")
-            
+            print("   ✅ to_dict(): serializes correctly")
+
             # Test with errors
             resources_with_errors = WorkspaceResources(
                 workspace_id="bad-ws",
@@ -587,117 +603,124 @@ if __name__ == "__main__":
                 embeddings_cache_path="",
                 postgres_rls=False,
                 errors=["chroma: failed", "neo4j: timeout"],
-                correlation_id="test-corr"
+                correlation_id="test-corr",
             )
             assert resources_with_errors.is_healthy is False
             assert len(resources_with_errors.errors) == 2
             print(f"   ✅ Errors tracked: is_healthy={resources_with_errors.is_healthy}")
-            
+
             # -- Test 3: Input validation helper -------------------------
             print("\n📌 Test 3: _validate_workspace_inputs")
-            
+
             # Valid inputs
             is_valid, error = _validate_workspace_inputs("valid-ws", "corr-123", "test")
             assert is_valid is True and error == ""
-            print(f"   ✅ Valid inputs accepted")
-            
+            print("   ✅ Valid inputs accepted")
+
             # Invalid: empty workspace_id
             is_valid, error = _validate_workspace_inputs("", None, "test")
             assert is_valid is False and "non-empty" in error
-            print(f"   ✅ Empty workspace_id rejected")
-            
+            print("   ✅ Empty workspace_id rejected")
+
             # Invalid: non-string correlation_id
             is_valid, error = _validate_workspace_inputs("ws", 123, "test")  # type: ignore
             assert is_valid is False and "string" in error
-            print(f"   ✅ Non-string correlation_id rejected")
-            
+            print("   ✅ Non-string correlation_id rejected")
+
             # -- Test 4: WorkspaceManager class structure ----------------
             print("\n📌 Test 4: WorkspaceManager class structure")
-            
+
             # Verify class exists and has expected methods
             assert hasattr(WorkspaceManager, "__init__")
             assert hasattr(WorkspaceManager, "provision_async")
             assert hasattr(WorkspaceManager, "teardown_async")
             assert hasattr(WorkspaceManager, "get_usage_stats_async")
             assert hasattr(WorkspaceManager, "provision")  # sync wrapper
-            assert hasattr(WorkspaceManager, "teardown")   # sync wrapper
-            print(f"   ✅ WorkspaceManager: all expected methods present")
-            
+            assert hasattr(WorkspaceManager, "teardown")  # sync wrapper
+            print("   ✅ WorkspaceManager: all expected methods present")
+
             # Verify async/sync method pairs
             assert inspect.iscoroutinefunction(WorkspaceManager.provision_async)
             assert not inspect.iscoroutinefunction(WorkspaceManager.provision)
-            print(f"   ✅ Method signatures: async/sync variants correct")
-            
+            print("   ✅ Method signatures: async/sync variants correct")
+
             # -- Test 5: Initialization & settings -----------------------
             print("\n📌 Test 5: Initialization (mocked settings)")
-            
-            with patch('app.workspace.manager.get_settings') as mock_settings:
+
+            with patch("app.workspace.manager.get_settings") as mock_settings:
                 mock_settings.return_value.default_workspace_id = "default"
                 mock_settings.return_value.chroma_persist_dir = "/tmp/chroma"
                 mock_settings.return_value.openai_api_key = "test-key"
-                
+
                 manager = WorkspaceManager()
                 assert manager.settings is not None
-                print(f"   ✅ WorkspaceManager: initialized with settings")
-            
+                print("   ✅ WorkspaceManager: initialized with settings")
+
             # -- Test 6: Async provisioning (mocked external stores) -----
             print("\n📌 Test 6: provision_async (mocked Chroma/Neo4j/BM25)")
-            
-            with patch('app.workspace.manager.get_settings') as mock_settings, \
-                 patch('app.workspace.manager.validate_workspace_id', return_value="test-ws"), \
-                 patch('app.workspace.manager.get_chroma_collection_name', return_value="docs_test-ws"), \
-                 patch('app.workspace.manager.get_neo4j_namespace', return_value="ns_test-ws"), \
-                 patch('app.workspace.manager.get_bm25_index_path', return_value=Path("/tmp/bm25_test-ws")), \
-                 patch('app.workspace.manager.get_embeddings_cache_path', return_value=Path("/tmp/cache_test-ws")), \
-                 patch('app.workspace.manager.generate_workspace_correlation_id', return_value="test-corr"):
-                
+
+            with patch("app.workspace.manager.get_settings") as mock_settings, patch(
+                "app.workspace.manager.validate_workspace_id", return_value="test-ws"
+            ), patch(
+                "app.workspace.manager.get_chroma_collection_name",
+                return_value="docs_test-ws",
+            ), patch("app.workspace.manager.get_neo4j_namespace", return_value="ns_test-ws"), patch(
+                "app.workspace.manager.get_bm25_index_path",
+                return_value=Path("/tmp/bm25_test-ws"),
+            ), patch(
+                "app.workspace.manager.get_embeddings_cache_path",
+                return_value=Path("/tmp/cache_test-ws"),
+            ), patch(
+                "app.workspace.manager.generate_workspace_correlation_id",
+                return_value="test-corr",
+            ):
                 mock_settings.return_value.default_workspace_id = "default"
                 mock_settings.return_value.chroma_persist_dir = "/tmp/chroma"
-                
+
                 # Mock private provisioning methods
-                with patch.object(WorkspaceManager, '_provision_chroma_async', new_callable=AsyncMock), \
-                     patch.object(WorkspaceManager, '_provision_neo4j_async', new_callable=AsyncMock), \
-                     patch.object(WorkspaceManager, '_provision_bm25_async', new_callable=AsyncMock):
-                    
+                with patch.object(WorkspaceManager, "_provision_chroma_async", new_callable=AsyncMock), patch.object(
+                    WorkspaceManager, "_provision_neo4j_async", new_callable=AsyncMock
+                ), patch.object(WorkspaceManager, "_provision_bm25_async", new_callable=AsyncMock):
                     manager = WorkspaceManager()
                     resources = await manager.provision_async("test-ws", correlation_id="test-corr")
-                    
+
                     assert isinstance(resources, WorkspaceResources)
                     assert resources.workspace_id == "test-ws"
                     assert resources.postgres_rls is True  # Should be set to True at end
-                    print(f"   ✅ provision_async: returned WorkspaceResources with postgres_rls=True")
-            
+                    print("   ✅ provision_async: returned WorkspaceResources with postgres_rls=True")
+
             # -- Test 7: Async teardown (mocked) -------------------------
             print("\n📌 Test 7: teardown_async (mocked cleanup)")
-            
-            with patch('app.workspace.manager.get_settings') as mock_settings, \
-                 patch('app.workspace.manager.validate_workspace_id', return_value="test-ws"), \
-                 patch('app.workspace.manager.generate_workspace_correlation_id', return_value="test-corr"):
-                
+
+            with patch("app.workspace.manager.get_settings") as mock_settings, patch(
+                "app.workspace.manager.validate_workspace_id", return_value="test-ws"
+            ), patch(
+                "app.workspace.manager.generate_workspace_correlation_id",
+                return_value="test-corr",
+            ):
                 mock_settings.return_value.default_workspace_id = "default"
-                
+
                 # Mock private teardown methods
-                with patch.object(WorkspaceManager, '_teardown_chroma_async', new_callable=AsyncMock), \
-                     patch.object(WorkspaceManager, '_teardown_neo4j_async', new_callable=AsyncMock), \
-                     patch.object(WorkspaceManager, '_teardown_bm25_async', new_callable=AsyncMock):
-                    
+                with patch.object(WorkspaceManager, "_teardown_chroma_async", new_callable=AsyncMock), patch.object(
+                    WorkspaceManager, "_teardown_neo4j_async", new_callable=AsyncMock
+                ), patch.object(WorkspaceManager, "_teardown_bm25_async", new_callable=AsyncMock):
                     manager = WorkspaceManager()
                     result = await manager.teardown_async("test-ws", correlation_id="test-corr")
-                    
+
                     assert result is True  # Should succeed with mocked methods
-                    print(f"   ✅ teardown_async: returned success=True")
-            
+                    print("   ✅ teardown_async: returned success=True")
+
             # -- Test 8: Sync wrappers use async bridge ------------------
             print("\n📌 Test 8: Sync wrappers (run_async_in_task)")
-            
+
             # Just verify the methods exist and are callable
             # Full testing would require mocking run_async_in_task which is complex
             manager = WorkspaceManager()
             assert callable(manager.provision)
             assert callable(manager.teardown)
             assert callable(manager.get_usage_stats)
-            print(f"   ✅ Sync wrappers: provision/teardown/get_usage_stats are callable")
-            
+            print("   ✅ Sync wrappers: provision/teardown/get_usage_stats are callable")
+
             print("\n" + "=" * 70)
             print("✅ ALL TESTS PASSED! Workspace Manager module verified.")
             print("\n💡 What we verified:")
@@ -710,13 +733,14 @@ if __name__ == "__main__":
             print("   • Sync wrappers: callable methods using async bridge ✅")
             print("\n🔐 Production: Multi-tenant isolation with graceful degradation ready")
             return True
-            
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
-    
+
     # Run async tests
     success = asyncio.run(run_tests())
     sys.exit(0 if success else 1)

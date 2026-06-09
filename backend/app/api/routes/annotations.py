@@ -1,5 +1,6 @@
 # backend/app/api/routes/annotations.py
 """Collaborative annotation API with WebSocket real-time broadcast."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,20 +8,31 @@ import json
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from pydantic import BaseModel, Field
 
 from app.auth.dependencies import get_current_user, AuthenticatedUser
 from app.core.ids import generate_correlation_id
 from app.core.annotation_store import (
-    create_annotation, get_annotations, resolve_annotation,
-    delete_annotation, _VALID_TYPES,
+    create_annotation,
+    get_annotations,
+    resolve_annotation,
+    delete_annotation,
+    _VALID_TYPES,
 )
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/annotations", tags=["annotations"])
 
 # ── WebSocket connection manager ──────────────────────────────
+
 
 class _ConnectionManager:
     def __init__(self):
@@ -56,6 +68,7 @@ _manager = _ConnectionManager()
 
 # ── Pydantic models ────────────────────────────────────────────
 
+
 class AnnotationCreateRequest(BaseModel):
     source_file: str = Field(..., min_length=1, max_length=1024)
     type: str = Field(...)
@@ -66,6 +79,7 @@ class AnnotationCreateRequest(BaseModel):
 
 
 # ── REST endpoints ────────────────────────────────────────────
+
 
 @router.post("/create", status_code=status.HTTP_201_CREATED)
 async def add_annotation(
@@ -96,10 +110,14 @@ async def add_annotation(
 
     # Broadcast to all viewers of this document
     asyncio.create_task(
-        _manager.broadcast(user.workspace_id, req.source_file, {
-            "event": "annotation_created",
-            "annotation": ann,
-        })
+        _manager.broadcast(
+            user.workspace_id,
+            req.source_file,
+            {
+                "event": "annotation_created",
+                "annotation": ann,
+            },
+        )
     )
 
     ann["correlation_id"] = corr_id
@@ -138,11 +156,15 @@ async def resolve(
         raise HTTPException(status_code=404, detail="Annotation not found")
 
     asyncio.create_task(
-        _manager.broadcast(user.workspace_id, source_file, {
-            "event": "annotation_resolved",
-            "annotation_id": annotation_id,
-            "resolved_by": user.user_id,
-        })
+        _manager.broadcast(
+            user.workspace_id,
+            source_file,
+            {
+                "event": "annotation_resolved",
+                "annotation_id": annotation_id,
+                "resolved_by": user.user_id,
+            },
+        )
     )
     return {"resolved": True, "annotation_id": annotation_id, "correlation_id": corr_id}
 
@@ -159,15 +181,20 @@ async def remove_annotation(
         raise HTTPException(status_code=404, detail="Annotation not found or not yours")
 
     asyncio.create_task(
-        _manager.broadcast(user.workspace_id, source_file, {
-            "event": "annotation_deleted",
-            "annotation_id": annotation_id,
-        })
+        _manager.broadcast(
+            user.workspace_id,
+            source_file,
+            {
+                "event": "annotation_deleted",
+                "annotation_id": annotation_id,
+            },
+        )
     )
     return {"deleted": True, "annotation_id": annotation_id, "correlation_id": corr_id}
 
 
 # ── WebSocket endpoint ────────────────────────────────────────
+
 
 @router.websocket("/ws/{workspace_id}")
 async def annotation_ws(
@@ -183,10 +210,14 @@ async def annotation_ws(
             try:
                 msg = json.loads(data)
                 # Echo back to other clients in same room
-                await _manager.broadcast(workspace_id, source_file, {
-                    "event": "annotation_update",
-                    "data": msg,
-                })
+                await _manager.broadcast(
+                    workspace_id,
+                    source_file,
+                    {
+                        "event": "annotation_update",
+                        "data": msg,
+                    },
+                )
             except json.JSONDecodeError:
                 pass
     except WebSocketDisconnect:

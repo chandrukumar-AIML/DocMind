@@ -1,5 +1,6 @@
 # backend/app/core/compliance_checker.py
 """Regulatory compliance checker: GDPR, HIPAA, RBI, SEBI, Indian Contract Act, GST."""
+
 from __future__ import annotations
 
 import asyncio
@@ -93,7 +94,8 @@ async def ensure_compliance_schema() -> None:
     async with async_engine.begin() as conn:
         if conn.dialect.name != "postgresql":
             return
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS compliance_results (
                 id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 workspace_id   VARCHAR(64) NOT NULL,
@@ -107,10 +109,11 @@ async def ensure_compliance_schema() -> None:
                 created_by     VARCHAR(64),
                 created_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             )
-        """))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_compliance_workspace ON compliance_results(workspace_id)"
-        ))
+        """)
+        )
+        await conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_compliance_workspace ON compliance_results(workspace_id)")
+        )
     logger.info("Compliance schema verified")
 
 
@@ -156,11 +159,13 @@ async def check_compliance(
     # Fetch document text
     try:
         from app.dependencies import get_store_manager
+
         store = get_store_manager()
         results = store.similarity_search(
             "regulatory compliance requirements",
-            k=20, workspace_id=workspace_id,
-            filter={"source_file": source_file}
+            k=20,
+            workspace_id=workspace_id,
+            filter={"source_file": source_file},
         )
         doc_text = "\n".join(r.page_content for r in results if hasattr(r, "page_content"))[:5000]
     except Exception as e:
@@ -171,11 +176,14 @@ async def check_compliance(
 
     try:
         from app.core.vision_llm import get_vision_llm
+
         llm = get_vision_llm()
 
         async def _call():
-            return await asyncio.get_running_loop().run_in_executor(  # FIXED: get_event_loop() deprecated in Python 3.10+
-                None, lambda: llm.invoke(prompt)
+            return (
+                await asyncio.get_running_loop().run_in_executor(  # FIXED: get_event_loop() deprecated in Python 3.10+
+                    None, lambda: llm.invoke(prompt)
+                )
             )
 
         raw = await asyncio.wait_for(_call(), timeout=_LLM_TIMEOUT)
@@ -208,25 +216,28 @@ async def check_compliance(
     result_id = str(uuid.uuid4())
     try:
         async with async_engine.begin() as conn:
-            await conn.execute(text("""
+            await conn.execute(
+                text("""
                 INSERT INTO compliance_results
                     (id, workspace_id, source_file, regulations, scores,
                      violations, recommendations, overall_score, raw_output, created_by)
                 VALUES
                     (:id, :ws, :sf, CAST(:regs AS jsonb), CAST(:scores AS jsonb),
                      CAST(:violations AS jsonb), CAST(:recs AS jsonb), :score, :raw, :by)
-            """), {
-                "id": result_id,
-                "ws": workspace_id,
-                "sf": source_file,
-                "regs": json.dumps(regulations),
-                "scores": json.dumps(scores, default=str),
-                "violations": json.dumps(violations, default=str),
-                "recs": json.dumps(recommendations, default=str),
-                "score": float(overall_score),
-                "raw": content[:5000] if isinstance(content, str) else "",
-                "by": created_by,
-            })
+            """),
+                {
+                    "id": result_id,
+                    "ws": workspace_id,
+                    "sf": source_file,
+                    "regs": json.dumps(regulations),
+                    "scores": json.dumps(scores, default=str),
+                    "violations": json.dumps(violations, default=str),
+                    "recs": json.dumps(recommendations, default=str),
+                    "score": float(overall_score),
+                    "raw": content[:5000] if isinstance(content, str) else "",
+                    "by": created_by,
+                },
+            )
     except Exception as e:
         logger.warning(f"[{corr_id}] Could not persist compliance result: {e}")
 

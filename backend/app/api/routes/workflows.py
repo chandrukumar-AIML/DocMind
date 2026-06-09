@@ -1,5 +1,6 @@
 # backend/app/api/routes/workflows.py
 """Workflow automation API: create, list, update, delete, and view run history."""
+
 from __future__ import annotations
 
 import json
@@ -11,22 +12,25 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from app.auth.dependencies import get_current_user, require_admin, AuthenticatedUser
+from app.auth.dependencies import get_current_user, AuthenticatedUser
 from app.core.ids import generate_correlation_id
-from app.core.workflow_engine import evaluate_conditions
 from app.database.engine import async_engine
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
 _VALID_TRIGGERS = {
-    "document_ingested", "query_answered", "extraction_complete",
-    "alert_triggered", "manual",
+    "document_ingested",
+    "query_answered",
+    "extraction_complete",
+    "alert_triggered",
+    "manual",
 }
 _VALID_ACTION_TYPES = {"webhook", "email", "tag", "domain_analysis"}
 
 
 # ── Pydantic models ────────────────────────────────────────────
+
 
 class WorkflowCondition(BaseModel):
     field: str = Field(..., max_length=64)
@@ -63,6 +67,7 @@ class WorkflowUpdateRequest(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────
 
+
 @router.post("/create", status_code=status.HTTP_201_CREATED)
 async def create_workflow(
     req: WorkflowCreateRequest,
@@ -71,32 +76,32 @@ async def create_workflow(
     corr_id = generate_correlation_id("wf-create")
 
     if req.trigger_event not in _VALID_TRIGGERS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid trigger. Valid: {_VALID_TRIGGERS}"
-        )
+        raise HTTPException(status_code=422, detail=f"Invalid trigger. Valid: {_VALID_TRIGGERS}")
 
     wf_id = str(uuid.uuid4())
     try:
         async with async_engine.begin() as conn:
-            await conn.execute(text("""
+            await conn.execute(
+                text("""
                 INSERT INTO workflows
                     (id, workspace_id, name, description, trigger_event,
                      conditions, actions, is_active, created_by)
                 VALUES
                     (:id, :ws, :name, :desc, :trigger,
                      CAST(:conditions AS jsonb), CAST(:actions AS jsonb), :active, :by)
-            """), {
-                "id": wf_id,
-                "ws": user.workspace_id,
-                "name": req.name,
-                "desc": req.description,
-                "trigger": req.trigger_event,
-                "conditions": json.dumps([c.model_dump() for c in req.conditions]),
-                "actions": json.dumps([a.model_dump() for a in req.actions]),
-                "active": req.is_active,
-                "by": user.user_id,
-            })
+            """),
+                {
+                    "id": wf_id,
+                    "ws": user.workspace_id,
+                    "name": req.name,
+                    "desc": req.description,
+                    "trigger": req.trigger_event,
+                    "conditions": json.dumps([c.model_dump() for c in req.conditions]),
+                    "actions": json.dumps([a.model_dump() for a in req.actions]),
+                    "active": req.is_active,
+                    "by": user.user_id,
+                },
+            )
     except Exception as e:
         logger.error(f"[{corr_id}] Failed to create workflow: {e}")
         raise HTTPException(status_code=500, detail="Failed to create workflow")
@@ -111,7 +116,8 @@ async def list_workflows(
     corr_id = generate_correlation_id("wf-list")
     try:
         async with async_engine.begin() as conn:
-            rows = await conn.execute(text("""
+            rows = await conn.execute(
+                text("""
                 SELECT id, name, description, trigger_event, is_active,
                        created_at, updated_at,
                        jsonb_array_length(conditions) as cond_count,
@@ -119,7 +125,9 @@ async def list_workflows(
                 FROM workflows
                 WHERE workspace_id = :ws
                 ORDER BY created_at DESC
-            """), {"ws": user.workspace_id})
+            """),
+                {"ws": user.workspace_id},
+            )
             wfs = rows.fetchall()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list workflows: {e}")
@@ -151,12 +159,15 @@ async def get_workflow(
 ) -> dict[str, Any]:
     corr_id = generate_correlation_id("wf-get")
     async with async_engine.begin() as conn:
-        row = await conn.execute(text("""
+        row = await conn.execute(
+            text("""
             SELECT id, name, description, trigger_event, conditions, actions,
                    is_active, created_by, created_at
             FROM workflows
             WHERE id = :id AND workspace_id = :ws
-        """), {"id": workflow_id, "ws": user.workspace_id})
+        """),
+            {"id": workflow_id, "ws": user.workspace_id},
+        )
         wf = row.fetchone()
 
     if not wf:
@@ -198,10 +209,7 @@ async def update_workflow(
     if not updates:
         raise HTTPException(status_code=422, detail="No fields to update")
 
-    set_clause = ", ".join(
-        f"{k} = :{k}{'::jsonb' if k in ('conditions','actions') else ''}"
-        for k in updates
-    )
+    set_clause = ", ".join(f"{k} = :{k}{'::jsonb' if k in ('conditions','actions') else ''}" for k in updates)
     updates["id"] = workflow_id
     updates["ws"] = user.workspace_id
 
@@ -228,10 +236,13 @@ async def delete_workflow(
 ) -> dict[str, Any]:
     corr_id = generate_correlation_id("wf-del")
     async with async_engine.begin() as conn:
-        result = await conn.execute(text("""
+        result = await conn.execute(
+            text("""
             UPDATE workflows SET is_active = FALSE
             WHERE id = :id AND workspace_id = :ws
-        """), {"id": workflow_id, "ws": user.workspace_id})
+        """),
+            {"id": workflow_id, "ws": user.workspace_id},
+        )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Workflow not found")
     return {"deleted": True, "workflow_id": workflow_id, "correlation_id": corr_id}
@@ -245,13 +256,16 @@ async def get_workflow_runs(
 ) -> dict[str, Any]:
     corr_id = generate_correlation_id("wf-runs")
     async with async_engine.begin() as conn:
-        rows = await conn.execute(text("""
+        rows = await conn.execute(
+            text("""
             SELECT id, status, actions_log, error_msg, created_at, completed_at
             FROM workflow_runs
             WHERE workflow_id = :wf_id AND workspace_id = :ws
             ORDER BY created_at DESC
             LIMIT :lim
-        """), {"wf_id": workflow_id, "ws": user.workspace_id, "lim": min(limit, 100)})
+        """),
+            {"wf_id": workflow_id, "ws": user.workspace_id, "lim": min(limit, 100)},
+        )
         runs = rows.fetchall()
 
     return {

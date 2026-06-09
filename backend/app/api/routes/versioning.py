@@ -1,4 +1,4 @@
-﻿# backend/app/api/routes/versioning.py
+# backend/app/api/routes/versioning.py
 # DVMELTSS-FIX: M/E/S + ASCALE-L + Workspace isolation
 # ✅ FIXED: Input validation + timeout handling + safe registry ops + proper error codes
 
@@ -8,13 +8,11 @@ import asyncio
 import logging
 from typing import Annotated, Optional, Any, Final
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 
-from app.config import get_settings, lazy_settings as settings  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.ids import generate_correlation_id
 from app.auth.dependencies import get_current_user, AuthenticatedUser
-from app.models import ErrorResponse
 from app.versioning.registry import VersionRegistry
 
 logger = logging.getLogger(__name__)
@@ -73,14 +71,14 @@ async def get_version_history(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> VersionHistoryResponse:
     corr_id = generate_correlation_id("version_history")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_versioning_inputs(source_file, None, None, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     registry = VersionRegistry()
-    
+
     try:
         versions = await asyncio.wait_for(
             registry.list_versions(
@@ -90,10 +88,10 @@ async def get_version_history(
             ),
             timeout=_REGISTRY_TIMEOUT,
         )
-        
+
         # ✅ FIXED: Safe serialization with fallback
         version_dicts = []
-        for v in (versions or []):
+        for v in versions or []:
             if hasattr(v, "model_dump"):
                 version_dicts.append(v.model_dump())
             elif hasattr(v, "to_dict"):
@@ -102,7 +100,7 @@ async def get_version_history(
                 version_dicts.append(v)
             else:
                 version_dicts.append(str(v))
-        
+
         return VersionHistoryResponse(
             source_file=source_file,
             workspace_id=user.workspace_id,
@@ -128,20 +126,20 @@ async def get_version_diff(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)] = None,
 ) -> DiffResponse:
     corr_id = generate_correlation_id("version_diff")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_versioning_inputs(source_file, v1, v2, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     workspace_id = user.workspace_id if user else "default"
-    
+
     # ✅ FIXED: Strict v1 < v2 check
     if v1 >= v2:
         raise HTTPException(status_code=400, detail="v1 must be strictly less than v2")
-    
+
     registry = VersionRegistry()
-    
+
     try:
         diff = await asyncio.wait_for(
             registry.get_or_compute_diff(
@@ -153,7 +151,7 @@ async def get_version_diff(
             ),
             timeout=_REGISTRY_TIMEOUT,
         )
-        
+
         # ✅ FIXED: Safe serialization with fallback
         changes_list = []
         raw_changes = getattr(diff, "changes", None) or getattr(diff, "modified_sections", []) or []
@@ -166,7 +164,7 @@ async def get_version_diff(
                 changes_list.append(c)
             else:
                 changes_list.append(str(c))
-        
+
         return DiffResponse(
             version_1=v1,
             version_2=v2,
@@ -192,16 +190,16 @@ async def get_version_details(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)] = None,
 ) -> dict:
     corr_id = generate_correlation_id("version_details")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_versioning_inputs(source_file, None, None, version_num, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     workspace_id = user.workspace_id if user else "default"
-    
+
     registry = VersionRegistry()
-    
+
     try:
         version = await asyncio.wait_for(
             registry.get_version(
@@ -218,10 +216,10 @@ async def get_version_details(
     except Exception as e:
         logger.error(f"[{corr_id}] Version details failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve version details")
-    
+
     if not version:
         raise HTTPException(status_code=404, detail="Version not found")
-    
+
     # ✅ FIXED: Safe serialization with fallback
     if hasattr(version, "model_dump"):
         version_dict = version.model_dump()
@@ -231,7 +229,7 @@ async def get_version_details(
         version_dict = version
     else:
         version_dict = {"version": str(version)}
-    
+
     return {
         "source_file": source_file,
         "workspace_id": workspace_id,
@@ -256,10 +254,9 @@ def get_versioning_api_metadata() -> dict[str, Any]:
 
 
 __all__ = ["router", "get_versioning_api_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

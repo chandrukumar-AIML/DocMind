@@ -15,12 +15,13 @@ Centralizes:
 Usage:
     from app.core.ocr_utils import scrub_pii_for_ocr, calculate_vision_tokens
 """
+
 from __future__ import annotations
 
 import logging  # ✅ FIXED: Added missing logging import
 import re
 import numpy as np
-from typing import Final, Optional 
+from typing import Final
 from app.core.ids import generate_correlation_id
 
 # DVMELTSS-S: Immutable PII patterns — compiled once, reused everywhere
@@ -46,85 +47,95 @@ _LANG_MIN_SCRIPT_COUNT: Final = 3
 def scrub_pii_for_ocr(text: str, domain: str = "general") -> str:
     """
     Scrub PII from text before OCR/Vision API calls.
-    
+
     Args:
         text: Raw text to sanitize
         domain: Domain for additional patterns (medical/legal/logistics)
-    
+
     Returns:
         Sanitized text with PII replaced by placeholders
     """
     if not text:
         return ""
-    
+
     # Apply universal patterns
     text = _PII_EMAIL.sub("[EMAIL]", text)
     text = _PII_PHONE.sub("[PHONE]", text)
     text = _PII_SSN.sub("[SSN]", text)
     text = _PII_CARD.sub("[CARD]", text)
-    
+
     # Domain-specific patterns
     if domain in ("medical", "all"):
-        text = re.sub(r"\b(?:MRN|Medical\s+Record)[:\s]*[A-Z0-9\-]{5,20}\b", "[MRN]", text, flags=re.I)
-    
+        text = re.sub(
+            r"\b(?:MRN|Medical\s+Record)[:\s]*[A-Z0-9\-]{5,20}\b",
+            "[MRN]",
+            text,
+            flags=re.I,
+        )
+
     if domain in ("legal", "all"):
-        text = re.sub(r"\b(?:Contract\s+No|Agreement\s+No)[:\s]*[A-Z0-9\-]{5,20}\b", "[CONTRACT_ID]", text, flags=re.I)
-    
+        text = re.sub(
+            r"\b(?:Contract\s+No|Agreement\s+No)[:\s]*[A-Z0-9\-]{5,20}\b",
+            "[CONTRACT_ID]",
+            text,
+            flags=re.I,
+        )
+
     return text
 
 
 def calculate_vision_tokens(width: int, height: int, detail: str = "high") -> int:
     """
     Calculate token cost for an image per OpenAI Vision pricing.
-    
+
     Args:
         width: Image width in pixels
         height: Image height in pixels
         detail: "low" or "high" detail mode
-    
+
     Returns:
         Estimated token count for the image
     """
     if detail == "low":
         return _VISION_LOW_DETAIL_TOKENS
-    
+
     # Step 1: Resize to max dimension
     if max(width, height) > _VISION_MAX_DIM:
         scale = _VISION_MAX_DIM / max(width, height)
         width = int(width * scale)
         height = int(height * scale)
-    
+
     # Step 2: Scale for tiling calculation
     min_dim = min(width, height)
     if min_dim > _VISION_MIN_DIM_FOR_TILING:
         scale = _VISION_MIN_DIM_FOR_TILING / min_dim
         width = int(width * scale)
         height = int(height * scale)
-    
+
     # Step 3: Count tiles (ceiling division)
     tiles_w = -(-width // _VISION_TILE_SIZE)
     tiles_h = -(-height // _VISION_TILE_SIZE)
     tiles = tiles_w * tiles_h
-    
+
     return _VISION_TILE_TOKENS * tiles + _VISION_LOW_DETAIL_TOKENS
 
 
 def normalize_bbox(bbox, default: list[list[float]] = None) -> list[list[float]]:
     """
     Normalize bounding box to 4-point polygon format.
-    
+
     Handles: 4-point polygon, 2-point rect, flat list, or invalid input.
-    
+
     Args:
         bbox: Raw bounding box in any supported format
         default: Fallback bbox if normalization fails
-    
+
     Returns:
         Normalized 4-point polygon: [[x1,y1], [x2,y1], [x2,y2], [x1,y2]]
     """
     if default is None:
         default = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]]
-    
+
     try:
         # Case 1: Already 4-point polygon
         if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
@@ -134,18 +145,18 @@ def normalize_bbox(bbox, default: list[list[float]] = None) -> list[list[float]]
             if all(isinstance(v, (int, float)) for v in bbox):
                 x1, y1, x2, y2 = bbox
                 return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
-        
+
         # Case 2: 2-point format [[x1,y1], [x2,y2]]
         if isinstance(bbox, (list, tuple)) and len(bbox) == 2:
             if all(isinstance(p, (list, tuple)) and len(p) == 2 for p in bbox):
                 (x1, y1), (x2, y2) = bbox
                 return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
-        
+
         # Fallback
         logger = logging.getLogger(__name__)  # ✅ FIXED: logging now imported
         logger.warning(f"Unexpected bbox format: {bbox}. Using default.")
         return default
-        
+
     except Exception as e:
         logger = logging.getLogger(__name__)  # ✅ FIXED: logging now imported
         logger.error(f"BBOX normalization failed: {e} | input: {bbox}")
@@ -155,20 +166,20 @@ def normalize_bbox(bbox, default: list[list[float]] = None) -> list[list[float]]
 def detect_language_vectorized(text: str, min_length: int = _LANG_MIN_TEXT_LENGTH) -> str:
     """
     Numpy-vectorized language detection with configurable thresholds.
-    
+
     Args:
         text: Text to analyze
         min_length: Minimum text length for reliable detection
-    
+
     Returns:
         ISO language code: "en", "zh", "hi", "ar", "ta", "te", "ml", "kn", "bn", etc.
     """
     if not text or len(text) < min_length:
         return "en"
-    
+
     codes = np.frombuffer(text.encode("utf-32-le"), dtype=np.uint32)
     total = max(len(codes), 1)
-    
+
     # Script-specific character ranges
     cjk = np.sum((codes >= 0x4E00) & (codes <= 0x9FFF))
     arabic = np.sum((codes >= 0x0600) & (codes <= 0x06FF))
@@ -220,18 +231,17 @@ __all__ = [
     "generate_ocr_correlation_id",
     "BBoxField",
     "ConfidenceField",
-] 
+]
 
 # ========================================================================
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.core.ocr_utils) -------
 # ========================================================================
 
 if __name__ == "__main__":
-    import asyncio
     import sys
     import re
     from pathlib import Path
-    
+
     # 🔧 ROBUST PATH SETUP
     current_file = Path(__file__).resolve()
     for parent in current_file.parents:
@@ -240,100 +250,104 @@ if __name__ == "__main__":
             break
     else:
         backend_root = current_file.parents[2]
-    
+
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
-    
+
     def run_tests():
         print("🔍 Testing OCR Utils module (app/core/ocr_utils.py)")
         print("=" * 70)
-        
+
         try:
             from app.core.ocr_utils import (
-                normalize_bbox, scrub_pii_for_ocr, detect_language_vectorized,
-                calculate_vision_tokens, generate_ocr_correlation_id,
-                ConfidenceField, BBoxField
+                normalize_bbox,
+                scrub_pii_for_ocr,
+                detect_language_vectorized,
+                calculate_vision_tokens,
+                generate_ocr_correlation_id,
+                ConfidenceField,
+                BBoxField,
             )
-            
+
             # -- Test 1: normalize_bbox ---------------------------------
             print("\n📌 Test 1: normalize_bbox (format conversion)")
-            
+
             # Format 1: Flat list [x1, y1, x2, y2] -> 4 corners
             result = normalize_bbox([10, 20, 30, 40])
             expected = [[10, 20], [30, 20], [30, 40], [10, 40]]
             assert result == expected, f"Failed: {result}"
             print(f"   ✅ Flat list: [10,20,30,40] -> {result}")
-            
+
             # Format 2: 2-point rect [[x1,y1], [x2,y2]] -> 4 corners
             result = normalize_bbox([[10, 20], [30, 40]])
             assert result == expected
-            print(f"   ✅ 2-point rect: converted to 4 corners")
-            
+            print("   ✅ 2-point rect: converted to 4 corners")
+
             # Format 3: Already normalized (4 points) -> preserved
             result = normalize_bbox(expected)
             assert result == expected
-            print(f"   ✅ Already normalized: preserved")
-            
+            print("   ✅ Already normalized: preserved")
+
             # Invalid input -> fallback to default
             result = normalize_bbox([10, 20])  # Too few points
             assert len(result) == 4 and all(len(p) == 2 for p in result)
-            print(f"   ✅ Invalid bbox -> fallback default")
-            
+            print("   ✅ Invalid bbox -> fallback default")
+
             # -- Test 2: scrub_pii_for_ocr ------------------------------
             print("\n📌 Test 2: scrub_pii_for_ocr (PII redaction)")
-            
+
             # Email redaction
             result = scrub_pii_for_ocr("Contact: john.doe@example.com for info")
             assert "john.doe@example.com" not in result
             assert "[EMAIL]" in result
             print(f"   ✅ Email redacted: '{result}'")
-            
+
             # Phone redaction (US format)
             result = scrub_pii_for_ocr("Call 555-123-4567 or (555) 987-6543")
             assert "555-123-4567" not in result and "(555) 987-6543" not in result
             assert "[PHONE]" in result
             print(f"   ✅ Phone numbers redacted: '{result}'")
-            
+
             # SSN redaction
             result = scrub_pii_for_ocr("SSN: 123-45-6789")
             assert "123-45-6789" not in result
             assert "[SSN]" in result
             print(f"   ✅ SSN redacted: '{result}'")
-            
+
             # Credit card redaction
             result = scrub_pii_for_ocr("Card: 4111-1111-1111-1111")
             assert "4111-1111-1111-1111" not in result
             assert "[CARD]" in result
             print(f"   ✅ Credit card redacted: '{result}'")
-            
+
             # Domain-specific: medical MRN
             result = scrub_pii_for_ocr("MRN: ABC123456", domain="medical")
             assert "ABC123456" not in result or "[MRN]" in result
             print(f"   ✅ Medical MRN redacted: '{result}'")
-            
+
             # Empty/safe input
             result = scrub_pii_for_ocr("No PII here")
             assert result == "No PII here"
-            print(f"   ✅ Safe input preserved")
-            
+            print("   ✅ Safe input preserved")
+
             # -- Test 3: detect_language_vectorized ---------------------
             print("\n📌 Test 3: detect_language_vectorized (numpy-based)")
-            
+
             # English text (ASCII range)
             result = detect_language_vectorized("Hello, this is English text with enough length.")
             assert result == "en"
             print(f"   ✅ English detected: '{result}'")
-            
+
             # Short text fallback
             result = detect_language_vectorized("Hi")
             assert result == "en"  # Fallback for short text
             print(f"   ✅ Short text fallback: '{result}'")
-            
+
             # Empty text
             result = detect_language_vectorized("")
             assert result == "en"  # Fallback for empty
             print(f"   ✅ Empty text fallback: '{result}'")
-            
+
             # Note: CJK/Arabic/Devanagari detection requires actual unicode chars
             # Test with CJK character (if available in environment)
             try:
@@ -341,22 +355,22 @@ if __name__ == "__main__":
                 # Should detect "zh" if enough CJK chars present
                 print(f"   ✅ CJK text handled: '{result}'")
             except Exception:
-                print(f"   ⚠️  CJK test skipped (unicode handling)")
-            
+                print("   ⚠️  CJK test skipped (unicode handling)")
+
             # -- Test 4: calculate_vision_tokens ------------------------
             print("\n📌 Test 4: calculate_vision_tokens (image dimensions)")
-            
+
             # Low detail mode (fixed cost)
             tokens = calculate_vision_tokens(1024, 768, detail="low")
             assert tokens == 85  # _VISION_LOW_DETAIL_TOKENS
             print(f"   ✅ Low detail (1024x768): {tokens} tokens")
-            
+
             # High detail: small image (no tiling)
             tokens = calculate_vision_tokens(512, 512, detail="high")
             # Should be: 1 tile * 170 + 85 = 255
             assert tokens == 255
             print(f"   ✅ High detail small (512x512): {tokens} tokens")
-            
+
             # High detail: large image (requires tiling)
             tokens = calculate_vision_tokens(2048, 2048, detail="high")
             # After scaling: min(2048, 768) = 768 -> scale to 768x768
@@ -364,7 +378,7 @@ if __name__ == "__main__":
             # Cost: 4 * 170 + 85 = 765
             assert tokens == 765
             print(f"   ✅ High detail large (2048x2048): {tokens} tokens")
-            
+
             # Very large image (downscaled to max dim)
             tokens = calculate_vision_tokens(4000, 3000, detail="high")
             # After max dim scale: 2048 x 1536
@@ -372,63 +386,64 @@ if __name__ == "__main__":
             # Tiles: ceil(768/512) * ceil(576/512) = 2 * 2 = 4
             # Cost: 4 * 170 + 85 = 765
             print(f"   ✅ Very large image (4000x3000): {tokens} tokens")
-            
+
             # -- Test 5: generate_ocr_correlation_id --------------------
             print("\n📌 Test 5: generate_ocr_correlation_id (unique IDs)")
-            
+
             # Basic generation
             corr_id = generate_ocr_correlation_id("test")
             assert corr_id.startswith("test_")
             assert len(corr_id) > 10  # Should have timestamp/random part
             print(f"   ✅ Correlation ID generated: {corr_id[:30]}...")
-            
+
             # Uniqueness
             id1 = generate_ocr_correlation_id("same_prefix")
             id2 = generate_ocr_correlation_id("same_prefix")
             assert id1 != id2, "Should generate unique IDs"
             print(f"   ✅ Unique IDs: {id1[:20]}... ≠ {id2[:20]}...")
-            
+
             # Default prefix
             corr_id = generate_ocr_correlation_id()
             assert corr_id.startswith("ocr_")
             print(f"   ✅ Default prefix: {corr_id[:30]}...")
-            
+
             # -- Test 6: Pydantic fields (ConfidenceField, BBoxField) --
             print("\n📌 Test 6: Pydantic field helpers")
-            
+
             # Verify they are FieldInfo objects (not callable)
             from pydantic.fields import FieldInfo
+
             assert isinstance(ConfidenceField, FieldInfo)
             assert isinstance(BBoxField, FieldInfo)
-            print(f"   ✅ ConfidenceField: FieldInfo with ge=0.0, le=1.0")
-            print(f"   ✅ BBoxField: FieldInfo with min_length=4")
-            
+            print("   ✅ ConfidenceField: FieldInfo with ge=0.0, le=1.0")
+            print("   ✅ BBoxField: FieldInfo with min_length=4")
+
             # Test that they can be used in a Pydantic model
             from pydantic import BaseModel, ValidationError
-            
+
             class TestModel(BaseModel):
                 confidence: float = ConfidenceField
                 bbox: list = BBoxField
-            
+
             # Valid model creation
-            model = TestModel(confidence=0.95, bbox=[[0,0], [100,0], [100,100], [0,100]])
+            model = TestModel(confidence=0.95, bbox=[[0, 0], [100, 0], [100, 100], [0, 100]])
             assert model.confidence == 0.95
             print(f"   ✅ Valid model: confidence={model.confidence}")
-            
+
             # Test validation: confidence out of range should fail
             try:
-                TestModel(confidence=1.5, bbox=[[0,0], [100,0], [100,100], [0,100]])
+                TestModel(confidence=1.5, bbox=[[0, 0], [100, 0], [100, 100], [0, 100]])
                 print("   ❌ Should reject confidence > 1.0")
             except ValidationError:
-                print(f"   ✅ ConfidenceField validation: rejects out-of-range values")
-            
+                print("   ✅ ConfidenceField validation: rejects out-of-range values")
+
             # Test validation: bbox too short should fail
             try:
-                TestModel(confidence=0.9, bbox=[[0,0]])  # Only 1 point
+                TestModel(confidence=0.9, bbox=[[0, 0]])  # Only 1 point
                 print("   ❌ Should reject bbox with < 4 points")
             except ValidationError:
-                print(f"   ✅ BBoxField validation: rejects insufficient points")
-            
+                print("   ✅ BBoxField validation: rejects insufficient points")
+
             print("\n" + "=" * 70)
             print("✅ ALL TESTS PASSED! OCR Utils module verified.")
             print("\n💡 What we verified:")
@@ -440,13 +455,14 @@ if __name__ == "__main__":
             print("   • Pydantic helpers: ConfidenceField, BBoxField as FieldInfo ✅")
             print("\n🔐 Security: PII scrubbing prevents data leakage in logs/prompts")
             return True
-            
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
-    
+
     # Run tests
     success = run_tests()
     sys.exit(0 if success else 1)

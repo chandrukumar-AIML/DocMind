@@ -1,4 +1,4 @@
-﻿# backend/app/retrieval/dense_retriever.py
+# backend/app/retrieval/dense_retriever.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, A - Async
 # BATMAN-FIX: A - True async, M - Memory safety
 # ✅ FIXED: Safe sync wrapper (no deadlock in FastAPI)
@@ -28,19 +28,21 @@ except ImportError:
         try:
             return await asyncio.wait_for(
                 search_fn(query_embedding=query_embedding, k=k, filter_dict=filter_dict),
-                timeout=timeout
+                timeout=timeout,
             )
         except Exception as e:
             logging.warning(f"[{correlation_id}] Fallback vector search failed: {e}")
             return []
-    
+
     def validate_top_k(k: int, max_k: int = 100) -> int:
         return max(1, min(k, max_k))
-    
+
     def generate_retrieval_correlation_id(prefix: str = "retrieval") -> str:
-        import time, secrets
+        import time
+        import secrets
+
         return f"{prefix}_{int(time.time())}_{secrets.token_hex(4)}"
-    
+
     logging.warning("⚠️ retrieval_utils imports failed — using fallback implementations")
 
 from app.config import get_settings
@@ -58,11 +60,12 @@ _MAX_EMBEDDING_DIM: Final = 4096  # ✅ NEW: Memory safety guard
 @dataclass(frozen=True)
 class DenseRetrievalResult:
     """Immutable result from dense vector retrieval."""
+
     chunk_id: str
     score: float
     metadata: dict[str, any]
     correlation_id: Optional[str] = None
-    
+
     def to_dict(self) -> dict[str, any]:
         return {
             "id": self.chunk_id,
@@ -75,14 +78,14 @@ class DenseRetrievalResult:
 class DenseRetriever:
     """
     Dense vector retrieval using ChromaDB/FAISS embeddings.
-    
+
     Features (DVMELTSS-V, BATMAN-A):
     - Async-safe search with timeout guards
     - Workspace-scoped filtering
     - Memory-safe batch processing
     - Correlation ID tracing for distributed debugging
     """
-    
+
     def __init__(self, workspace_id: str = "default"):
         self.workspace_id = workspace_id
         self.settings = get_settings()
@@ -94,11 +97,11 @@ class DenseRetriever:
             logger.error(f"Failed to initialize VectorStoreManager for workspace {workspace_id}: {e}")
             self._store_manager = None
         logger.info(f"DenseRetriever initialized: workspace={workspace_id}")
-    
+
     def _get_store(self) -> Optional[VectorStoreManager]:
         """Get vector store manager — returns None if init failed."""
         return self._store_manager
-    
+
     async def search_async(
         self,
         query_embedding: list[float],
@@ -111,20 +114,20 @@ class DenseRetriever:
         ✅ FIXED: Added embedding dimension validation + memory guard.
         """
         corr_id = correlation_id or generate_retrieval_correlation_id("dense")
-        
+
         # DVMELTSS-V: Validate top_k
         k = validate_top_k(k, max_k=_MAX_TOP_K)
-        
+
         # ✅ NEW: Validate query embedding
         if not query_embedding:
             logger.warning(f"[{corr_id}] Empty query embedding")
             return []
-        
+
         # ✅ NEW: Memory safety — reject huge embeddings
         if len(query_embedding) > _MAX_EMBEDDING_DIM:
             logger.error(f"[{corr_id}] Query embedding too large: {len(query_embedding)} > {_MAX_EMBEDDING_DIM}")
             return []
-        
+
         # ✅ NEW: Validate dimension matches expected (if known)
         expected_dim = getattr(self.settings, "embedding_dimension", None)
         if expected_dim and len(query_embedding) != expected_dim:
@@ -132,12 +135,12 @@ class DenseRetriever:
                 f"[{corr_id}] Embedding dimension mismatch: got {len(query_embedding)}, expected {expected_dim}"
             )
             # Continue anyway — some models support variable dims
-        
+
         store = self._get_store()
         if not store:
             logger.error(f"[{corr_id}] VectorStoreManager not available")
             return []
-        
+
         try:
             # Use centralized safe search with timeout
             raw_results = await safe_vector_search(
@@ -148,7 +151,7 @@ class DenseRetriever:
                 timeout=_SEARCH_TIMEOUT,
                 correlation_id=corr_id,
             )
-            
+
             # Convert to typed results with safe dict access
             results = [
                 DenseRetrievalResult(
@@ -160,10 +163,10 @@ class DenseRetriever:
                 for r in raw_results
                 if r and (r.get("chunk_id") or r.get("id"))
             ]
-            
+
             logger.debug(f"[{corr_id}] Dense retrieval: {len(results)} results")
             return results
-            
+
         except Exception as e:
             # ✅ Distinguish retriable vs non-retriable errors
             error_type = type(e).__name__
@@ -172,7 +175,7 @@ class DenseRetriever:
             else:
                 logger.error(f"[{corr_id}] Dense retrieval failed: {error_type}: {e}")
             return []
-    
+
     def search(
         self,
         query_embedding: list[float],
@@ -189,23 +192,20 @@ class DenseRetriever:
             loop = asyncio.get_running_loop()
             # If yes, we can't use asyncio.run() — warn and return empty
             logger.warning(
-                f"⚠️ DenseRetriever.search() called from async context — "
-                f"use search_async() instead. Returning empty results."
+                "⚠️ DenseRetriever.search() called from async context — "
+                "use search_async() instead. Returning empty results."
             )
             return []
         except RuntimeError:
             # No running loop — safe to use asyncio.run()
-            return asyncio.run(
-                self.search_async(query_embedding, k, filter_dict, correlation_id)
-            )
+            return asyncio.run(self.search_async(query_embedding, k, filter_dict, correlation_id))
 
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["DenseRetriever", "DenseRetrievalResult"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

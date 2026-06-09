@@ -3,10 +3,10 @@
 Usage tracker — logs workspace actions, enforces plan limits,
 provides aggregates for billing.
 """
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -17,26 +17,36 @@ logger = logging.getLogger(__name__)
 
 # Action types logged
 ACTION_DOCUMENT_UPLOADED = "document_uploaded"
-ACTION_OCR_PROCESSED      = "ocr_processed"
-ACTION_QUERY_EXECUTED     = "query_executed"
-ACTION_AGENT_QUERY        = "agent_query"
-ACTION_GRAPH_QUERY        = "graph_query"
-ACTION_DOCUMENT_DELETED   = "document_deleted"
-ACTION_API_KEY_USED       = "api_key_used"
+ACTION_OCR_PROCESSED = "ocr_processed"
+ACTION_QUERY_EXECUTED = "query_executed"
+ACTION_AGENT_QUERY = "agent_query"
+ACTION_GRAPH_QUERY = "graph_query"
+ACTION_DOCUMENT_DELETED = "document_deleted"
+ACTION_API_KEY_USED = "api_key_used"
 
 # Plan limits
 _PLAN_LIMITS = {
-    "starter":    {"max_docs": 100,           "max_queries_per_day": 500,   "max_storage_gb": 5.0},
-    "business":   {"max_docs": 1_000,         "max_queries_per_day": 5_000, "max_storage_gb": 50.0},
-    "enterprise": {"max_docs": 10_000_000,    "max_queries_per_day": 10_000_000, "max_storage_gb": 99999.0},
+    "starter": {"max_docs": 100, "max_queries_per_day": 500, "max_storage_gb": 5.0},
+    "business": {
+        "max_docs": 1_000,
+        "max_queries_per_day": 5_000,
+        "max_storage_gb": 50.0,
+    },
+    "enterprise": {
+        "max_docs": 10_000_000,
+        "max_queries_per_day": 10_000_000,
+        "max_storage_gb": 99999.0,
+    },
 }
 
 
 # ── Schema bootstrap ─────────────────────────────────────────────────────────
 
+
 async def ensure_usage_schema() -> None:
     async with async_engine.begin() as conn:
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS usage_logs (
                 id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 workspace_id     UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -50,18 +60,16 @@ async def ensure_usage_schema() -> None:
                 metadata         JSONB DEFAULT '{}',
                 created_at       TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             )
-        """))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_usage_logs_workspace_id "
-            "ON usage_logs(workspace_id)"
-        ))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_usage_logs_ws_date "
-            "ON usage_logs(workspace_id, created_at)"
-        ))
+        """)
+        )
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usage_logs_workspace_id " "ON usage_logs(workspace_id)"))
+        await conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_usage_logs_ws_date " "ON usage_logs(workspace_id, created_at)")
+        )
 
 
 # ── Core log function ─────────────────────────────────────────────────────────
+
 
 async def log_action(
     workspace_id: str,
@@ -77,33 +85,38 @@ async def log_action(
     """Fire-and-forget usage event. Never raises — failures are logged only."""
     try:
         async with async_engine.begin() as conn:
-            await conn.execute(text("""
+            await conn.execute(
+                text("""
                 INSERT INTO usage_logs
                     (workspace_id, user_id, action_type, resource_type,
                      resource_id, tokens_used, ocr_pages, storage_delta_mb, metadata)
                 VALUES
                     (:ws_id, :user_id, :action, :res_type,
                      :res_id, :tokens, :ocr, :storage, CAST(:meta AS jsonb))
-            """), {
-                "ws_id": workspace_id,
-                "user_id": user_id,
-                "action": action_type,
-                "res_type": resource_type,
-                "res_id": resource_id,
-                "tokens": tokens_used,
-                "ocr": ocr_pages,
-                "storage": storage_delta_mb,
-                "meta": str(metadata or {}).replace("'", '"'),
-            })
+            """),
+                {
+                    "ws_id": workspace_id,
+                    "user_id": user_id,
+                    "action": action_type,
+                    "res_type": resource_type,
+                    "res_id": resource_id,
+                    "tokens": tokens_used,
+                    "ocr": ocr_pages,
+                    "storage": storage_delta_mb,
+                    "meta": str(metadata or {}).replace("'", '"'),
+                },
+            )
 
         # Update workspace running counters
         if action_type == ACTION_DOCUMENT_UPLOADED:
-            await _increment_workspace(workspace_id, "doc_count", 1,
-                                       "storage_used_mb", storage_delta_mb)
+            await _increment_workspace(workspace_id, "doc_count", 1, "storage_used_mb", storage_delta_mb)
         elif action_type == ACTION_DOCUMENT_DELETED:
-            await _increment_workspace(workspace_id, "doc_count", -1,
-                                       "storage_used_mb", -storage_delta_mb)
-        elif action_type in (ACTION_QUERY_EXECUTED, ACTION_AGENT_QUERY, ACTION_GRAPH_QUERY):
+            await _increment_workspace(workspace_id, "doc_count", -1, "storage_used_mb", -storage_delta_mb)
+        elif action_type in (
+            ACTION_QUERY_EXECUTED,
+            ACTION_AGENT_QUERY,
+            ACTION_GRAPH_QUERY,
+        ):
             await _increment_workspace(workspace_id, "query_count_today", 1)
 
     except Exception as e:
@@ -124,19 +137,27 @@ async def _increment_workspace(
         params["storage_delta"] = storage_delta
 
     async with async_engine.begin() as conn:
-        await conn.execute(text(
-            f"UPDATE workspaces SET {', '.join(sets)} WHERE id = :wsid"
-        ), params)
+        await conn.execute(text(f"UPDATE workspaces SET {', '.join(sets)} WHERE id = :wsid"), params)
 
 
 # ── Limit checkers ────────────────────────────────────────────────────────────
 
+
 async def check_doc_limit(workspace_id: str) -> tuple[bool, str]:
     """Returns (ok, message). ok=True means under limit."""
     async with async_engine.connect() as conn:
-        row = (await conn.execute(text("""
+        row = (
+            (
+                await conn.execute(
+                    text("""
             SELECT doc_count, max_docs, plan FROM workspaces WHERE id = :wsid
-        """), {"wsid": workspace_id})).mappings().fetchone()
+        """),
+                    {"wsid": workspace_id},
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
 
     if not row:
         return False, "Workspace not found"
@@ -150,10 +171,19 @@ async def check_doc_limit(workspace_id: str) -> tuple[bool, str]:
 
 async def check_query_limit(workspace_id: str) -> tuple[bool, str]:
     async with async_engine.connect() as conn:
-        row = (await conn.execute(text("""
+        row = (
+            (
+                await conn.execute(
+                    text("""
             SELECT query_count_today, max_queries_per_day, plan
             FROM workspaces WHERE id = :wsid
-        """), {"wsid": workspace_id})).mappings().fetchone()
+        """),
+                    {"wsid": workspace_id},
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
 
     if not row:
         return False, "Workspace not found"
@@ -167,9 +197,18 @@ async def check_query_limit(workspace_id: str) -> tuple[bool, str]:
 
 async def check_storage_limit(workspace_id: str, incoming_mb: float) -> tuple[bool, str]:
     async with async_engine.connect() as conn:
-        row = (await conn.execute(text("""
+        row = (
+            (
+                await conn.execute(
+                    text("""
             SELECT storage_used_mb, max_storage_gb FROM workspaces WHERE id = :wsid
-        """), {"wsid": workspace_id})).mappings().fetchone()
+        """),
+                    {"wsid": workspace_id},
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
 
     if not row:
         return False, "Workspace not found"
@@ -177,29 +216,31 @@ async def check_storage_limit(workspace_id: str, incoming_mb: float) -> tuple[bo
     if (row["storage_used_mb"] + incoming_mb) > max_mb:
         used_gb = row["storage_used_mb"] / 1024
         return False, (
-            f"Storage limit reached ({used_gb:.1f}/{row['max_storage_gb']} GB). "
-            f"Upgrade your plan for more storage."
+            f"Storage limit reached ({used_gb:.1f}/{row['max_storage_gb']} GB). " f"Upgrade your plan for more storage."
         )
     return True, "ok"
 
 
 # ── Daily counter reset (call from a scheduled Celery task) ──────────────────
 
+
 async def reset_daily_query_counts() -> int:
     """Reset query_count_today for all workspaces. Returns rows updated."""
     async with async_engine.begin() as conn:
-        result = await conn.execute(text(
-            "UPDATE workspaces SET query_count_today = 0 WHERE query_count_today > 0"
-        ))
+        result = await conn.execute(text("UPDATE workspaces SET query_count_today = 0 WHERE query_count_today > 0"))
         return result.rowcount
 
 
 # ── Monthly aggregate ─────────────────────────────────────────────────────────
 
+
 async def get_workspace_monthly_usage(workspace_id: str, month: str) -> dict[str, Any]:
     year_str, month_str = month.split("-")
     async with async_engine.connect() as conn:
-        row = (await conn.execute(text("""
+        row = (
+            (
+                await conn.execute(
+                    text("""
             SELECT
                 COALESCE(SUM(tokens_used), 0)       AS total_tokens,
                 COALESCE(SUM(ocr_pages), 0)         AS total_ocr_pages,
@@ -211,11 +252,17 @@ async def get_workspace_monthly_usage(workspace_id: str, month: str) -> dict[str
             WHERE workspace_id = :wsid
               AND EXTRACT(YEAR FROM created_at) = :year
               AND EXTRACT(MONTH FROM created_at) = :month
-        """), {
-            "wsid": workspace_id,
-            "year": int(year_str),
-            "month": int(month_str),
-        })).mappings().fetchone()
+        """),
+                    {
+                        "wsid": workspace_id,
+                        "year": int(year_str),
+                        "month": int(month_str),
+                    },
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
         return dict(row) if row else {}
 
 

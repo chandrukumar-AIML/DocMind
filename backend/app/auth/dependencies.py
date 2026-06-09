@@ -30,6 +30,7 @@ _ADMIN_ROLE_VALUES: Final = UserRole.admin_values()  # workspace_admin + admin (
 
 # -- Helper: Standardized auth errors ----------------------------------------
 
+
 def _auth_error(detail: str, status_code: int, corr_id: str, www_authenticate: bool = False) -> HTTPException:
     """Create standardized auth error with correlation ID header."""
     headers = {"X-Correlation-ID": corr_id}
@@ -40,10 +41,11 @@ def _auth_error(detail: str, status_code: int, corr_id: str, www_authenticate: b
 
 # -- Helper: Workspace ID validator (accepts UUID + "default" + slugs) -------
 
+
 def _validate_workspace_id(workspace_id: str) -> str:
     """
     Validate workspace ID — accepts UUIDs, "default", and slug format.
-    
+
     ✅ FIXED: Original validate_workspace_id() was UUID-only, which rejected
     the literal "default" workspace ID used throughout the codebase.
     """
@@ -52,22 +54,23 @@ def _validate_workspace_id(workspace_id: str) -> str:
     workspace_id = workspace_id.strip()
     if len(workspace_id) > 64:
         raise ValueError("workspace_id too long")
-    
+
     # Accept UUID format
     try:
         uuid.UUID(workspace_id)
         return workspace_id
     except ValueError:
         pass
-    
+
     # Accept literal "default" or slug format (letters/digits/hyphens/underscores)
-    if workspace_id == "default" or re.match(r'^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$', workspace_id):
+    if workspace_id == "default" or re.match(r"^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$", workspace_id):
         return workspace_id
-    
+
     raise ValueError(f"Invalid workspace_id format: '{workspace_id}'")
 
 
 # -- AuthenticatedUser dataclass ---------------------------------------------
+
 
 @dataclass(frozen=True)
 class AuthenticatedUser:
@@ -75,6 +78,7 @@ class AuthenticatedUser:
     Injected by auth dependency into every protected route.
     frozen=True prevents accidental mutation during request lifecycle.
     """
+
     user_id: str
     email: str
     workspace_id: str
@@ -118,9 +122,7 @@ class AuthenticatedUser:
 
     def assert_can_write(self):
         if not self.can_write():
-            logger.warning(
-                f"[{self.correlation_id}] Forbidden write attempt: user={self.user_id} role={self.role}"
-            )
+            logger.warning(f"[{self.correlation_id}] Forbidden write attempt: user={self.user_id} role={self.role}")
             raise _auth_error(
                 "Write access required (editor or admin role).",
                 status.HTTP_403_FORBIDDEN,
@@ -129,9 +131,7 @@ class AuthenticatedUser:
 
     def assert_can_admin(self):
         if not self.can_admin():
-            logger.warning(
-                f"[{self.correlation_id}] Forbidden admin attempt: user={self.user_id} role={self.role}"
-            )
+            logger.warning(f"[{self.correlation_id}] Forbidden admin attempt: user={self.user_id} role={self.role}")
             raise _auth_error(
                 "Workspace admin access required.",
                 status.HTTP_403_FORBIDDEN,
@@ -140,9 +140,7 @@ class AuthenticatedUser:
 
     def assert_superadmin(self):
         if not self.can_superadmin():
-            logger.warning(
-                f"[{self.correlation_id}] Forbidden superadmin attempt: user={self.user_id}"
-            )
+            logger.warning(f"[{self.correlation_id}] Forbidden superadmin attempt: user={self.user_id}")
             raise _auth_error(
                 "Superadmin access required.",
                 status.HTTP_403_FORBIDDEN,
@@ -183,6 +181,7 @@ async def _get_dev_user(request: Request) -> AuthenticatedUser:
 
 
 # -- Production auth dependency ----------------------------------------------
+
 
 def _extract_token(request: Request, credentials: Optional[HTTPAuthorizationCredentials]) -> Optional[str]:
     """
@@ -231,7 +230,12 @@ async def get_current_user(
     token = _extract_token(request, credentials)
     if not token:
         logger.warning(f"[{corr_id}] Auth failed: missing token (no cookie, no Bearer header)")
-        raise _auth_error("Authentication required. Provide Bearer token.", 401, corr_id, www_authenticate=True)
+        raise _auth_error(
+            "Authentication required. Provide Bearer token.",
+            401,
+            corr_id,
+            www_authenticate=True,
+        )
 
     payload = verify_access_token(token)
     if not payload:
@@ -270,6 +274,7 @@ async def get_current_user(
 
 # -- Role-based dependencies -------------------------------------------------
 
+
 async def require_editor(
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> AuthenticatedUser:
@@ -303,7 +308,7 @@ async def require_superadmin(
 
 
 # ✅ REMOVED: get_correlation_id() — duplicate of security.add_correlation_id middleware
-# If you need correlation_id in a route, use: request.state.correlation_id  
+# If you need correlation_id in a route, use: request.state.correlation_id
 
 # ========================================================================
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.auth.dependencies) ---
@@ -314,10 +319,10 @@ if __name__ == "__main__":
     import sys
     import os
     from pathlib import Path
-    from unittest.mock import AsyncMock, MagicMock, patch
+    from unittest.mock import MagicMock, patch
     from fastapi import HTTPException, Request
     from fastapi.security import HTTPAuthorizationCredentials
-    
+
     # 🔧 ROBUST PATH SETUP
     current_file = Path(__file__).resolve()
     for parent in current_file.parents:
@@ -326,98 +331,100 @@ if __name__ == "__main__":
             break
     else:
         backend_root = current_file.parents[2]
-    
+
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
-    
+
     # Set test JWT secret
     if not os.getenv("JWT_SECRET_KEY"):
         os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-local-testing-only-do-not-use-in-prod-1234567890"
-    
+
     async def run_tests():
         print("🔍 Testing Auth Dependencies module (app/auth/dependencies.py)")
         print("=" * 70)
-        
+
         try:
             from app.auth.dependencies import (
-                get_current_user, require_editor, require_admin,
-                AuthenticatedUser, _validate_workspace_id
+                get_current_user,
+                require_editor,
+                require_admin,
+                AuthenticatedUser,
+                _validate_workspace_id,
             )
-            from app.auth.jwt_handler import create_access_token
             from app.auth.models import UserRole
-            
+
             # -- Test 1: Workspace ID validation --------------------------
             print("\n📌 Test 1: _validate_workspace_id (UUID + slug + 'default')")
-            
+
             # Valid UUID
             uuid_ws = "c7099a0d-b028-4b6d-a574-b110cc36475b"
             assert _validate_workspace_id(uuid_ws) == uuid_ws
             print(f"   ✅ UUID workspace: {uuid_ws[:8]}...")
-            
+
             # Valid slug
             slug_ws = "my-workspace-123"
             assert _validate_workspace_id(slug_ws) == slug_ws
             print(f"   ✅ Slug workspace: {slug_ws}")
-            
+
             # Literal "default"
             assert _validate_workspace_id("default") == "default"
-            print(f"   ✅ Literal 'default' workspace")
-            
+            print("   ✅ Literal 'default' workspace")
+
             # Invalid workspace ID
             try:
                 _validate_workspace_id("invalid@workspace!")
                 print("   ❌ Should reject invalid format")
             except ValueError:
-                print(f"   ✅ Invalid workspace rejected")
-            
+                print("   ✅ Invalid workspace rejected")
+
             # -- Test 2: AuthenticatedUser dataclass ---------------------
             print("\n📌 Test 2: AuthenticatedUser (frozen, validation)")
-            
+
             user = AuthenticatedUser(
                 user_id="user-123",
                 email="test@docmind.ai",
                 workspace_id="default",
-                role=UserRole.EDITOR.value
+                role=UserRole.EDITOR.value,
             )
             assert user.can_write() is True, "Editor can write"
             assert user.can_admin() is False, "Editor cannot admin"
             print(f"   ✅ AuthenticatedUser: role={user.role}, can_write={user.can_write()}")
-            
+
             # Test with_correlation_id (was broken, now fixed)
             user_with_corr = user.with_correlation_id("corr-abc123")
             assert user_with_corr.correlation_id == "corr-abc123"
             assert user_with_corr.user_id == user.user_id  # Immutable
             print(f"   ✅ with_correlation_id: new instance with corr_id={user_with_corr.correlation_id}")
-            
+
             # Frozen: cannot mutate
             try:
                 user.role = "admin"  # Should fail
                 print("   ❌ Should reject mutation (frozen)")
             except (AttributeError, Exception):
-                print(f"   ✅ AuthenticatedUser is immutable (frozen)")
-            
+                print("   ✅ AuthenticatedUser is immutable (frozen)")
+
             # Invalid email should raise in __post_init__
             try:
                 AuthenticatedUser(
                     user_id="user-123",
                     email="invalid-email",  # Invalid
                     workspace_id="default",
-                    role=UserRole.VIEWER.value
+                    role=UserRole.VIEWER.value,
                 )
                 print("   ❌ Should reject invalid email")
             except ValueError as e:
                 if "email" in str(e).lower():
-                    print(f"   ✅ Invalid email rejected in __post_init__")
-            
+                    print("   ✅ Invalid email rejected in __post_init__")
+
             # -- Test 3: get_current_user dependency (mocked JWT) ---------
             print("\n📌 Test 3: get_current_user (mocked JWT decode)")
-            
-            with patch("app.auth.dependencies.verify_access_token") as mock_verify, \
-                 patch("app.auth.dependencies.get_settings") as mock_settings:
-                
+
+            with patch("app.auth.dependencies.verify_access_token") as mock_verify, patch(
+                "app.auth.dependencies.get_settings"
+            ) as mock_settings:
                 # Mock settings: auth enabled
                 mock_settings.return_value.auth_enabled = True
-                
+
                 # Mock valid token payload
                 mock_verify.return_value = {
                     "sub": "user-123",
@@ -426,30 +433,30 @@ if __name__ == "__main__":
                     "role": "editor",
                     "is_superuser": False,
                 }
-                
+
                 # Mock request with correlation ID
                 mock_request = MagicMock(spec=Request)
                 mock_request.headers = {"x-correlation-id": "test-corr-123"}
-                
+
                 # Mock credentials
                 creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="mock-token")
-                
+
                 # Call dependency
                 user = await get_current_user(request=mock_request, credentials=creds)
-                
+
                 assert isinstance(user, AuthenticatedUser)
                 assert user.user_id == "user-123"
                 assert user.correlation_id == "test-corr-123"
                 print(f"   ✅ get_current_user: resolved user={user.user_id}, corr_id={user.correlation_id}")
-                
+
                 # Missing credentials -> 401
                 try:
                     await get_current_user(request=mock_request, credentials=None)
                     print("   ❌ Should reject missing token")
                 except HTTPException as e:
                     if e.status_code == 401:
-                        print(f"   ✅ Missing token rejected: 401 Unauthorized")
-                
+                        print("   ✅ Missing token rejected: 401 Unauthorized")
+
                 # Invalid token -> 401
                 mock_verify.return_value = None
                 try:
@@ -457,83 +464,84 @@ if __name__ == "__main__":
                     print("   ❌ Should reject invalid token")
                 except HTTPException as e:
                     if e.status_code == 401:
-                        print(f"   ✅ Invalid token rejected: 401")
-            
+                        print("   ✅ Invalid token rejected: 401")
+
             # -- Test 4: Role-based dependencies -------------------------
             print("\n📌 Test 4: require_editor / require_admin guards")
-            
+
             # Editor user
             editor_user = AuthenticatedUser(
                 user_id="user-123",
                 email="editor@docmind.ai",
                 workspace_id="default",
-                role=UserRole.EDITOR.value
+                role=UserRole.EDITOR.value,
             )
-            
+
             # require_editor should pass for editor
             result = await require_editor(user=editor_user)
             assert result.user_id == "user-123"
-            print(f"   ✅ require_editor: passed for editor role")
-            
+            print("   ✅ require_editor: passed for editor role")
+
             # require_admin should fail for editor
             try:
                 await require_admin(user=editor_user)
                 print("   ❌ Should reject editor for admin guard")
             except HTTPException as e:
                 if e.status_code == 403:
-                    print(f"   ✅ require_admin: rejected editor (403 Forbidden)")
-            
+                    print("   ✅ require_admin: rejected editor (403 Forbidden)")
+
             # Admin user
             admin_user = AuthenticatedUser(
                 user_id="user-456",
                 email="admin@docmind.ai",
                 workspace_id="default",
-                role=UserRole.ADMIN.value
+                role=UserRole.ADMIN.value,
             )
-            
+
             # Both guards should pass for admin
             await require_editor(user=admin_user)
             await require_admin(user=admin_user)
-            print(f"   ✅ Both guards: passed for admin role")
-            
+            print("   ✅ Both guards: passed for admin role")
+
             # -- Test 5: Dev mode bypass ---------------------------------
             print("\n📌 Test 5: Dev mode bypass (AUTH_ENABLED=false)")
-            
+
             with patch("app.auth.dependencies.get_settings") as mock_settings:
                 mock_settings.return_value.auth_enabled = False  # Dev mode
-                
+
                 mock_request = MagicMock(spec=Request)
                 mock_request.headers = {"x-correlation-id": "dev-corr"}
-                
+
                 # Should return dev user without token
                 user = await get_current_user(request=mock_request, credentials=None)
-                
+
                 assert user.user_id == "dev-user-001"
                 assert user.email == "dev@documind.local"
                 assert user.role == UserRole.ADMIN.value
                 assert user.correlation_id == "dev-corr"
-                print(f"   ✅ Dev mode: returned immutable dev user with corr_id")
-            
+                print("   ✅ Dev mode: returned immutable dev user with corr_id")
+
             # -- Test 6: Error handling patterns -------------------------
             print("\n📌 Test 6: Error handling (HTTPException vs ValueError)")
-            
+
             # Auth errors should be HTTPException (for FastAPI to convert to 401/403)
             # Validation errors should be ValueError (for input validation)
-            
+
             # Test workspace validation error (ValueError)
             try:
                 _validate_workspace_id("invalid@id!")
             except ValueError:
-                print(f"   ✅ Workspace validation: raises ValueError (API converts to 400)")
-            
+                print("   ✅ Workspace validation: raises ValueError (API converts to 400)")
+
             # Test auth error (HTTPException)
             try:
                 from app.auth.dependencies import _auth_error
+
                 raise _auth_error("Test auth error", 401, "test-corr")
             except HTTPException as e:
                 if e.status_code == 401 and "X-Correlation-ID" in e.headers:
-                    print(f"   ✅ Auth errors: raise HTTPException with corr_id header")
-            
+                    print("   ✅ Auth errors: raise HTTPException with corr_id header")
+
             print("\n" + "=" * 70)
             print("✅ ALL TESTS PASSED! Auth dependencies module verified.")
             print("\n💡 What we verified:")
@@ -548,13 +556,14 @@ if __name__ == "__main__":
             print("   • Or run: python scripts/test_auth_flow.py (full automation)")
             print("\n🔐 Security: Token validation server-side, immutable user objects")
             return True
-            
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
-    
+
     # Run async tests
     success = asyncio.run(run_tests())
     sys.exit(0 if success else 1)

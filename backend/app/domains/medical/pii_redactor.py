@@ -1,4 +1,4 @@
-﻿# backend/app/domains/medical/pii_redactor.py
+# backend/app/domains/medical/pii_redactor.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, M - Modular
 # OWASP-FIX: 1 - HIPAA compliance: REDACT BEFORE EXTERNAL CALLS
 # HIPAA: All PII must be redacted BEFORE any external API calls
@@ -19,21 +19,40 @@ logger = logging.getLogger(__name__)
 # Structured PII patterns - HIPAA covered entities
 PII_PATTERNS: Final = {
     "SSN": (r"\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b", "[SSN REDACTED]"),
-    "PHONE": (r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b", "[PHONE REDACTED]"),
-    "EMAIL": (r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Z|a-z]{2,}\b", "[EMAIL REDACTED]"),
-    "DOB": (r"\b(?:DOB|Date of Birth|born):?\s*\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b", "[DOB REDACTED]"),
-    "MRN": (r"\b(?:MRN|Medical Record(?:\s+Number)?|Patient ID):?\s*[\w\-]{5,15}\b", "[MRN REDACTED]"),
+    "PHONE": (
+        r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b",
+        "[PHONE REDACTED]",
+    ),
+    "EMAIL": (
+        r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Z|a-z]{2,}\b",
+        "[EMAIL REDACTED]",
+    ),
+    "DOB": (
+        r"\b(?:DOB|Date of Birth|born):?\s*\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b",
+        "[DOB REDACTED]",
+    ),
+    "MRN": (
+        r"\b(?:MRN|Medical Record(?:\s+Number)?|Patient ID):?\s*[\w\-]{5,15}\b",
+        "[MRN REDACTED]",
+    ),
     "NPI": (r"\b(?:NPI):?\s*\d{10}\b", "[NPI REDACTED]"),
-    "INSURANCE": (r"\b(?:Policy|Member|Group)\s*(?:No|Number|#):?\s*[\w\-]{5,20}\b", "[INSURANCE ID REDACTED]"),
+    "INSURANCE": (
+        r"\b(?:Policy|Member|Group)\s*(?:No|Number|#):?\s*[\w\-]{5,20}\b",
+        "[INSURANCE ID REDACTED]",
+    ),
     "ZIP": (r"\b\d{5}(?:-\d{4})?\b", "[ZIP REDACTED]"),
     # HIPAA additional: Names, addresses in medical context
-    "PATIENT_NAME": (r"\b(?:Patient|Name|Pt):\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", "[PATIENT NAME REDACTED]"),
+    "PATIENT_NAME": (
+        r"\b(?:Patient|Name|Pt):\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)",
+        "[PATIENT NAME REDACTED]",
+    ),
 }
 
 
 @dataclass
 class RedactionResult:
     """Result of PII redaction."""
+
     original_text: str
     redacted_text: str
     redacted_items: dict[str, int]  # {type: count}
@@ -60,16 +79,19 @@ class PIIRedactor:
     def __init__(self, model: str = "gpt-4o"):
         # FIXED: Use centralized LLM pool for LLM pass (only if enabled)
         from app.core.domain_utils import get_domain_llm
+
         self.llm = get_domain_llm(streaming=False, model_override=model)
-        self._llm_retry = retry_async(config=RetryConfig(
-            max_attempts=1,  # Only one attempt for redaction to avoid leaking PII on retry
-            backoff_base=0.1,
-            exceptions=(Exception,),
-        ))
+        self._llm_retry = retry_async(
+            config=RetryConfig(
+                max_attempts=1,  # Only one attempt for redaction to avoid leaking PII on retry
+                backoff_base=0.1,
+                exceptions=(Exception,),
+            )
+        )
 
     def redact(
-        self, 
-        text: str, 
+        self,
+        text: str,
         use_llm_pass: bool = True,
         correlation_id: Optional[str] = None,  # FIXED: Added param
     ) -> RedactionResult:
@@ -84,7 +106,7 @@ class PIIRedactor:
             correlation_id: Request ID for distributed tracing
         """
         corr_id = correlation_id or generate_domain_correlation_id("medical")
-        
+
         # PASS 1: Regex patterns - ALWAYS RUN FIRST, BEFORE ANY LLM CALLS
         redacted = text
         redacted_items: dict[str, int] = {}
@@ -117,7 +139,7 @@ class PIIRedactor:
     async def _llm_redact(self, redacted_text: str, corr_id: str) -> str:
         """
         Use GPT-4o to redact contextual PII missed by regex.
-        
+
         ⚠️ HIPAA: This method receives ALREADY-REDACTED text from regex pass.
         Never send original/unredacted text to external APIs.
         """
@@ -134,9 +156,7 @@ Text (already partially redacted):
 """
         try:
             # FIXED: Apply retry + ensure we're working with redacted text only
-            response = await self._llm_retry(
-                lambda: self.llm.ainvoke([{"role": "user", "content": prompt}])
-            )
+            response = await self._llm_retry(lambda: self.llm.ainvoke([{"role": "user", "content": prompt}]))
             return response.content.strip()
         except Exception as e:
             logger.warning(f"[{corr_id}] LLM redaction failed: {e}. Using regex-only result.")
@@ -146,10 +166,9 @@ Text (already partially redacted):
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["PIIRedactor", "RedactionResult", "PII_PATTERNS"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

@@ -7,7 +7,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-import os
 import time
 from contextlib import asynccontextmanager
 from typing import Awaitable, Callable, Any, Final
@@ -17,7 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.config import get_settings, lazy_settings as settings  # [OK] FIXED: lazy proxy avoids import-time crash
+from app.config import (
+    get_settings,
+    lazy_settings as settings,
+)  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.logging_config import configure_logging
 from app.core.exceptions import DocuMindError, ValidationError, NotFoundError
 from .security import add_security_headers, add_correlation_id
@@ -33,30 +35,38 @@ _STARTUP_TIMEOUT: Final = 120.0
 # -- Middleware -----------------------------------------------
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Log requests with correlation_id and duration."""
-    
+
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         start_time = time.perf_counter()
         corr_id = getattr(request.state, "correlation_id", "unknown")
-        
+
         log_level = logging.DEBUG if settings.api_reload else logging.INFO
         if request.url.path in ["/health", "/ready", "/live"]:
             # FIXED: Keep request logs ASCII-safe for Windows consoles.
             logger.log(log_level, f"[{corr_id}] HEALTH -> {request.method} {request.url.path}")
         else:
             logger.info(f"[{corr_id}] -> {request.method} {request.url.path}")
-        
+
         try:
             response = await call_next(request)
             duration = (time.perf_counter() - start_time) * 1000
-            
+
             if request.url.path in ["/health", "/ready", "/live"]:
-                logger.log(log_level, f"[{corr_id}] HEALTH <- {response.status_code} {duration:.0f}ms")
+                logger.log(
+                    log_level,
+                    f"[{corr_id}] HEALTH <- {response.status_code} {duration:.0f}ms",
+                )
             else:
-                logger.info(f"[{corr_id}] <- {request.method} {request.url.path} {response.status_code} {duration:.0f}ms")
+                logger.info(
+                    f"[{corr_id}] <- {request.method} {request.url.path} {response.status_code} {duration:.0f}ms"
+                )
             return response
-            
+
         except Exception as e:
-            logger.error(f"[{corr_id}] ERROR {request.method} {request.url.path} {e}", exc_info=True)
+            logger.error(
+                f"[{corr_id}] ERROR {request.method} {request.url.path} {e}",
+                exc_info=True,
+            )
             raise
 
 
@@ -64,7 +74,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 def _validate_startup_config() -> tuple[bool, list[str]]:
     """Validate startup configuration before initialization."""
     errors = []
-    
+
     if not isinstance(settings.api_host, str) or not settings.api_host:
         errors.append("api_host must be a non-empty string")
     if not isinstance(settings.api_port, int) or settings.api_port < 1 or settings.api_port > 65535:
@@ -73,7 +83,7 @@ def _validate_startup_config() -> tuple[bool, list[str]]:
         errors.append("app_name must be a non-empty string")
     if not isinstance(settings.app_version, str):
         errors.append("app_version must be a string")
-    
+
     return len(errors) == 0, errors
 
 
@@ -83,14 +93,14 @@ async def lifespan(app: FastAPI):
     """Manage application lifecycle with async-safe initialization."""
     settings = get_settings()
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
-    
+
     is_valid, errors = _validate_startup_config()
     if not is_valid:
         logger.error(f"Startup config validation failed: {errors}")
         app.state.startup_errors = errors
     else:
         app.state.startup_errors = []
-    
+
     try:
         loop = asyncio.get_running_loop()
 
@@ -104,6 +114,7 @@ async def lifespan(app: FastAPI):
         from app.core.compliance_checker import ensure_compliance_schema
         from app.core.invite_manager import ensure_invite_schema
         from app.core.superadmin_utils import ensure_superadmin_schema
+
         try:
             # Create base tables first (idempotent — only creates missing tables,
             # never drops). Required on fresh DBs (e.g. Supabase) so the
@@ -111,12 +122,15 @@ async def lifespan(app: FastAPI):
             async def _create_base_tables() -> None:
                 from app.database.base import Base
                 from app.database.engine import async_engine
+
                 # Import model modules so they register on Base.metadata
                 import app.auth.models  # noqa: F401
                 import app.provenance.models  # noqa: F401
+
                 async with async_engine.begin() as conn:
                     await conn.run_sync(Base.metadata.create_all)
                 logger.info("Base tables ensured (create_all)")
+
             await asyncio.wait_for(_create_base_tables(), timeout=_STARTUP_TIMEOUT)
 
             await asyncio.wait_for(ensure_auth_schema(), timeout=_STARTUP_TIMEOUT)
@@ -142,7 +156,11 @@ async def lifespan(app: FastAPI):
         app.state.neo4j_store = None
 
         if settings.eager_startup_services:
-            from app.dependencies import get_ocr_pipeline, get_store_manager, get_rag_chain
+            from app.dependencies import (
+                get_ocr_pipeline,
+                get_store_manager,
+                get_rag_chain,
+            )
 
             try:
                 app.state.ocr_pipeline = await asyncio.wait_for(
@@ -194,6 +212,7 @@ async def lifespan(app: FastAPI):
 
             try:
                 from app.graph.neo4j_store import get_neo4j_store
+
                 app.state.neo4j_store = await asyncio.wait_for(
                     loop.run_in_executor(None, get_neo4j_store),
                     timeout=_STARTUP_TIMEOUT,
@@ -204,6 +223,7 @@ async def lifespan(app: FastAPI):
 
             try:
                 from app.cache import get_cache
+
                 cache = await asyncio.wait_for(get_cache(), timeout=_STARTUP_TIMEOUT)
                 if cache:
                     logger.info("Cache initialized")
@@ -216,11 +236,12 @@ async def lifespan(app: FastAPI):
 
         try:
             from app.observability.langsmith_config import configure_langsmith
+
             if configure_langsmith():
                 logger.info("LangSmith tracing enabled")
         except Exception as e:
             logger.warning(f"LangSmith configuration failed: {e}")
-        
+
         logger.info("Core services initialized successfully")
 
         # Pre-warm CrossEncoder and check OpenAI status in background (don't block startup)
@@ -230,7 +251,10 @@ async def lifespan(app: FastAPI):
             if getattr(settings, "rerank_enabled", True):
                 try:
                     await asyncio.wait_for(
-                        loop.run_in_executor(None, lambda: __import__("app.rag.reranker", fromlist=["get_reranker"]).get_reranker().model),
+                        loop.run_in_executor(
+                            None,
+                            lambda: __import__("app.rag.reranker", fromlist=["get_reranker"]).get_reranker().model,
+                        ),
                         timeout=60.0,
                     )
                     logger.info("CrossEncoder pre-warmed ✅")
@@ -241,13 +265,18 @@ async def lifespan(app: FastAPI):
             try:
                 from app.vectorstore.embeddings import CachedOpenAIEmbeddings
                 from app.config import get_settings as _gs
+
                 _s = _gs()
                 if getattr(_s, "openai_api_key", None):
                     _emb = CachedOpenAIEmbeddings(api_key=_s.openai_api_key)
-                    await asyncio.wait_for(loop.run_in_executor(None, lambda: _emb.embed_query("startup check")), timeout=10.0)
+                    await asyncio.wait_for(
+                        loop.run_in_executor(None, lambda: _emb.embed_query("startup check")),
+                        timeout=10.0,
+                    )
                     logger.info("OpenAI embeddings available ✅")
             except Exception as e:
                 logger.warning(f"OpenAI startup check failed (will use local fallback): {e}")
+
         asyncio.create_task(_prewarm())
 
     except Exception as e:
@@ -256,18 +285,19 @@ async def lifespan(app: FastAPI):
         app.state.startup_errors.append(error_msg)
 
     yield
-    
+
     logger.info("Shutting down...")
-    
+
     try:
         from app.cache import get_cache
+
         cache = await get_cache()
         if cache and hasattr(cache, "close"):
             await asyncio.wait_for(cache.close(), timeout=30.0)
             logger.debug("QueryCache connection closed")
     except Exception as e:
         logger.warning(f"Cache cleanup failed: {e}")
-    
+
     logger.info("Shutdown complete")
 
 
@@ -275,7 +305,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """Factory function for creating the FastAPI application."""
     settings = get_settings()
-    
+
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
@@ -284,12 +314,12 @@ def create_app() -> FastAPI:
         docs_url="/docs" if settings.api_reload else None,
         redoc_url="/redoc" if settings.api_reload else None,
     )
-    
+
     # -- Middleware Stack ---------------------
     cors_origins = settings.cors_origins if settings.cors_origins else []
     if not cors_origins and settings.api_reload:
         cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
-    
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
@@ -298,13 +328,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=["X-Correlation-ID"],
     )
-    
+
     app.middleware("http")(add_correlation_id)
     app.middleware("http")(add_security_headers)
     app.add_middleware(RequestLoggingMiddleware)
-    
+
     # -- Exception Handlers -------
-    
+
     @app.exception_handler(DocuMindError)
     async def handle_documind_error(request: Request, exc: DocuMindError):
         corr_id = getattr(request.state, "correlation_id", "unknown")
@@ -314,25 +344,33 @@ def create_app() -> FastAPI:
             content={**exc.to_api_response(), "correlation_id": corr_id},
             headers={"X-Correlation-ID": corr_id},
         )
-    
+
     @app.exception_handler(ValidationError)
     async def handle_validation_error(request: Request, exc: ValidationError):
         corr_id = getattr(request.state, "correlation_id", "unknown")
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"error": "validation_failed", "detail": str(exc), "correlation_id": corr_id},
+            content={
+                "error": "validation_failed",
+                "detail": str(exc),
+                "correlation_id": corr_id,
+            },
             headers={"X-Correlation-ID": corr_id},
         )
-    
+
     @app.exception_handler(NotFoundError)
     async def handle_not_found(request: Request, exc: NotFoundError):
         corr_id = getattr(request.state, "correlation_id", "unknown")
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
-            content={"error": "not_found", "detail": str(exc), "correlation_id": corr_id},
+            content={
+                "error": "not_found",
+                "detail": str(exc),
+                "correlation_id": corr_id,
+            },
             headers={"X-Correlation-ID": corr_id},
         )
-    
+
     @app.exception_handler(Exception)
     async def handle_generic_error(request: Request, exc: Exception):
         corr_id = getattr(request.state, "correlation_id", "unknown")
@@ -346,16 +384,38 @@ def create_app() -> FastAPI:
             },
             headers={"X-Correlation-ID": corr_id},
         )
-    
+
     # -- ROUTES -----------------------------------------------
     from app.api.routes import (
-        health, auth, query, ingest, documents, agent, graph, retrieval,
-        extraction, evaluation, provenance, workspace, versioning,
-        tasks, monitoring, finetuning, domains,
-        webhooks, comparison, workflows, templates,
+        health,
+        auth,
+        query,
+        ingest,
+        documents,
+        agent,
+        graph,
+        retrieval,
+        extraction,
+        evaluation,
+        provenance,
+        workspace,
+        versioning,
+        tasks,
+        monitoring,
+        finetuning,
+        domains,
+        webhooks,
+        comparison,
+        workflows,
+        templates,
         annotations as annotations_route,
-        esignature, compliance, superadmin, onboarding, regional,
-        apikeys, audit,
+        esignature,
+        compliance,
+        superadmin,
+        onboarding,
+        regional,
+        apikeys,
+        audit,
     )
 
     app.include_router(health.router, prefix="", tags=["health"])
@@ -393,8 +453,14 @@ def create_app() -> FastAPI:
 
     # Backward-compatible auth aliases used by earlier tests and Swagger clients.
     app.add_api_route(f"{api_prefix}/verify-email", auth.verify_email, methods=["POST"], tags=["auth"])
-    app.add_api_route(f"{api_prefix}/token", auth.oauth2_token, methods=["POST"], tags=["auth"], include_in_schema=False)
-    
+    app.add_api_route(
+        f"{api_prefix}/token",
+        auth.oauth2_token,
+        methods=["POST"],
+        tags=["auth"],
+        include_in_schema=False,
+    )
+
     @app.get("/", tags=["root"])
     async def root():
         return {
@@ -403,7 +469,7 @@ def create_app() -> FastAPI:
             "status": "running",
             "docs": "/docs" if settings.api_reload else None,
         }
-    
+
     return app
 
 
@@ -414,14 +480,14 @@ app = create_app()
 # -- CLI Entry Point ------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    
+
     settings = get_settings()
-    
+
     is_valid, errors = _validate_startup_config()
     if not is_valid:
         logger.error(f"Cannot start server: {errors}")
         sys.exit(1)
-    
+
     uvicorn.run(
         "app.main:app",
         host=settings.api_host,
@@ -458,4 +524,3 @@ def get_main_metadata() -> dict[str, Any]:
 
 
 __all__ = ["app", "create_app", "lifespan", "get_main_metadata"]
-

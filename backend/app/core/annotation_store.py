@@ -1,5 +1,6 @@
 # backend/app/core/annotation_store.py
 """Collaborative annotation store with PostgreSQL persistence."""
+
 from __future__ import annotations
 
 import asyncio
@@ -10,7 +11,6 @@ from typing import Any, Optional
 
 from sqlalchemy import text
 
-from app.core.ids import generate_correlation_id
 from app.database.engine import async_engine
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,8 @@ async def ensure_annotation_schema() -> None:
     async with async_engine.begin() as conn:
         if conn.dialect.name != "postgresql":
             return
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS annotations (
                 id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 workspace_id  VARCHAR(64) NOT NULL,
@@ -39,7 +40,8 @@ async def ensure_annotation_schema() -> None:
                 created_at    TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 updated_at    TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             )
-        """))
+        """)
+        )
         for idx in [
             "CREATE INDEX IF NOT EXISTS ix_annotations_workspace ON annotations(workspace_id)",
             "CREATE INDEX IF NOT EXISTS ix_annotations_source_file ON annotations(source_file)",
@@ -65,25 +67,28 @@ async def create_annotation(
 
     ann_id = str(uuid.uuid4())
     async with async_engine.begin() as conn:
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             INSERT INTO annotations
                 (id, workspace_id, source_file, user_id, username, type,
                  content, page_number, position, parent_id)
             VALUES
                 (:id, :ws, :sf, :uid, :uname, :type,
                  :content, :page, CAST(:pos AS jsonb), :parent)
-        """), {
-            "id": ann_id,
-            "ws": workspace_id,
-            "sf": source_file,
-            "uid": user_id,
-            "uname": username,
-            "type": annotation_type,
-            "content": content,
-            "page": page_number,
-            "pos": json.dumps(position) if position else "{}",
-            "parent": parent_id,
-        })
+        """),
+            {
+                "id": ann_id,
+                "ws": workspace_id,
+                "sf": source_file,
+                "uid": user_id,
+                "uname": username,
+                "type": annotation_type,
+                "content": content,
+                "page": page_number,
+                "pos": json.dumps(position) if position else "{}",
+                "parent": parent_id,
+            },
+        )
 
     return {
         "id": ann_id,
@@ -145,11 +150,14 @@ async def resolve_annotation(
     user_id: str,
 ) -> bool:
     async with async_engine.begin() as conn:
-        result = await conn.execute(text("""
+        result = await conn.execute(
+            text("""
             UPDATE annotations
             SET resolved = TRUE, updated_at = NOW()
             WHERE id = :id AND workspace_id = :ws
-        """), {"id": annotation_id, "ws": workspace_id})
+        """),
+            {"id": annotation_id, "ws": workspace_id},
+        )
     return result.rowcount > 0
 
 
@@ -159,10 +167,13 @@ async def delete_annotation(
     user_id: str,
 ) -> bool:
     async with async_engine.begin() as conn:
-        result = await conn.execute(text("""
+        result = await conn.execute(
+            text("""
             DELETE FROM annotations
             WHERE id = :id AND workspace_id = :ws AND user_id = :uid
-        """), {"id": annotation_id, "ws": workspace_id, "uid": user_id})
+        """),
+            {"id": annotation_id, "ws": workspace_id, "uid": user_id},
+        )
     return result.rowcount > 0
 
 
@@ -175,8 +186,7 @@ if __name__ == "__main__":
         assert "comment" in _VALID_TYPES
         assert "risk_flag" in _VALID_TYPES
         try:
-            await create_annotation("ws", "test.pdf", "u1", "Alice",
-                                    "invalid_type", "note", None, None)
+            await create_annotation("ws", "test.pdf", "u1", "Alice", "invalid_type", "note", None, None)
             assert False, "Should have raised"
         except ValueError:
             print("Invalid type rejection OK")

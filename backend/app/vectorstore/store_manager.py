@@ -17,9 +17,7 @@ from langchain_core.documents import Document
 
 # ✅ FIXED: Use TYPE_CHECKING for forward references
 if TYPE_CHECKING:
-    from .embeddings import CachedOpenAIEmbeddings
-    from .chroma_store import ChromaVectorStore
-    from .faiss_store import FAISSVectorStore
+    pass
 
 # DVMELTSS-M: Import centralized utilities
 from app.config import get_settings
@@ -48,7 +46,7 @@ def _get_store_executor(max_workers: int = 2) -> ThreadPoolExecutor:
 class VectorStoreManager:
     """
     Unified interface to FAISS + ChromaDB dual store.
-    
+
     Features:
     - Async ingest with concurrent writes + timeout guards
     - Smart routing: FAISS for speed, Chroma for filtering
@@ -74,15 +72,15 @@ class VectorStoreManager:
         self._circuit_open_until: Optional[float] = None
         self._executor: Optional[ThreadPoolExecutor] = None
         corr_id = correlation_id or generate_vectorstore_correlation_id("vsm_init")
-        
+
         try:
             settings = get_settings()
-            
+
             # ✅ FIXED: Lazy import to avoid circular imports
             from .embeddings import CachedOpenAIEmbeddings
             from .chroma_store import ChromaVectorStore
             from .faiss_store import FAISSVectorStore
-            
+
             self.embeddings = embeddings or CachedOpenAIEmbeddings(
                 api_key=settings.openai_api_key,
                 model=settings.openai_embedding_model,
@@ -90,7 +88,7 @@ class VectorStoreManager:
             )
             self.chroma = ChromaVectorStore(self.embeddings)
             self.faiss = FAISSVectorStore(self.embeddings, self.chroma)
-            
+
             # Validate FAISS index dimension matches expected
             if self.faiss._store is not None:
                 actual_dim = self.faiss._store.index.d
@@ -99,13 +97,13 @@ class VectorStoreManager:
                         f"[{corr_id}] FAISS index dim mismatch: index={actual_dim}, "
                         f"expected={EMBEDDING_DIM}. Delete index and rebuild."
                     )
-            
+
             # ✅ FIXED: Create executor at instance level for proper shutdown
             self._executor = _get_store_executor(max_workers=2)
-            
+
             self._initialized = True
             logger.info(f"[{corr_id}] VectorStoreManager initialized successfully.")
-            
+
         except Exception as e:
             logger.error(f"[{corr_id}] VectorStoreManager initialization failed: {e}")
             self._failure_count += 1
@@ -132,12 +130,12 @@ class VectorStoreManager:
         """Raise error if manager not initialized or circuit is open."""
         if not self._initialized:
             raise VectorStoreError(f"[{correlation_id}] VectorStoreManager not initialized.")
-        
+
         # ✅ Use time.time() for sync-safe check
         now = time.time()
         if self._circuit_open_until and now < self._circuit_open_until:
             raise VectorStoreError(f"[{correlation_id}] VectorStoreManager circuit is open — try again later.")
-        
+
         # Reset circuit if timeout passed
         if self._circuit_open_until and now >= self._circuit_open_until:
             logger.info(f"[{correlation_id}] VectorStoreManager circuit reset — attempting re-initialization")
@@ -153,9 +151,7 @@ class VectorStoreManager:
             raise VectorStoreError(f"[{corr_id}] {chunk_type} must be a list, got {type(chunks).__name__}")
         for i, chunk in enumerate(chunks):
             if not isinstance(chunk, Document):
-                raise VectorStoreError(
-                    f"[{corr_id}] {chunk_type}[{i}] must be Document, got {type(chunk).__name__}"
-                )
+                raise VectorStoreError(f"[{corr_id}] {chunk_type}[{i}] must be Document, got {type(chunk).__name__}")
             if not hasattr(chunk, "page_content") or not hasattr(chunk, "metadata"):
                 raise VectorStoreError(f"[{corr_id}] {chunk_type}[{i}] missing required Document attributes")
 
@@ -171,12 +167,12 @@ class VectorStoreManager:
         """Internal ingest with retry logic."""
         loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in Python 3.10+
         now = datetime.now(timezone.utc).isoformat()
-        
+
         for chunk in child_chunks + parent_chunks:
             chunk.metadata.setdefault("ingest_timestamp", now)
             chunk.metadata.setdefault("char_count", len(chunk.page_content))
             chunk.metadata.setdefault("correlation_id", corr_id)
-        
+
         # Run blocking I/O in thread pool with timeout
         chroma_task = asyncio.wait_for(
             loop.run_in_executor(
@@ -206,9 +202,10 @@ class VectorStoreManager:
                 ),
                 timeout=timeout_seconds,
             )
-            if parent_chunks else asyncio.sleep(0)
+            if parent_chunks
+            else asyncio.sleep(0)
         )
-        
+
         await asyncio.gather(chroma_task, faiss_task, parent_task)
         return {"child_chunks": len(child_chunks), "parent_chunks": len(parent_chunks)}
 
@@ -221,14 +218,14 @@ class VectorStoreManager:
         """Synchronous ingest to both stores."""
         corr_id = correlation_id or generate_vectorstore_correlation_id("vsm_ingest")
         self._check_ready(corr_id)
-        
+
         # ✅ Validate inputs
         self._validate_chunks(child_chunks, "child_chunks", corr_id)
         self._validate_chunks(parent_chunks, "parent_chunks", corr_id)
-        
+
         if not child_chunks:
             return {"child_chunks": 0, "parent_chunks": 0}
-        
+
         # Validate parent references
         parent_ids_provided = {p.metadata.get("chunk_id") for p in parent_chunks}
         for child in child_chunks:
@@ -238,21 +235,24 @@ class VectorStoreManager:
                     f"[{corr_id}] Child chunk '{child.metadata.get('chunk_id')}' "
                     f"references parent_id='{pid}' not in provided parents."
                 )
-        
+
         # Add common metadata
         now = datetime.now(timezone.utc).isoformat()
         for chunk in child_chunks + parent_chunks:
             chunk.metadata.setdefault("ingest_timestamp", now)
             chunk.metadata.setdefault("char_count", len(chunk.page_content))
             chunk.metadata.setdefault("correlation_id", corr_id)
-        
+
         # Write to both stores
         self.chroma.add_chunks(child_chunks, correlation_id=corr_id)
         self.faiss.add_chunks(child_chunks, correlation_id=corr_id)
         if parent_chunks:
             self.chroma.add_parent_chunks(parent_chunks, correlation_id=corr_id)
-        
-        result = {"child_chunks": len(child_chunks), "parent_chunks": len(parent_chunks)}
+
+        result = {
+            "child_chunks": len(child_chunks),
+            "parent_chunks": len(parent_chunks),
+        }
         logger.info(f"[{corr_id}] Ingested: {result}")
         return result
 
@@ -270,18 +270,16 @@ class VectorStoreManager:
         """
         corr_id = correlation_id or generate_vectorstore_correlation_id("vsm_ingest_async")
         self._check_ready(corr_id)
-        
+
         # ✅ Validate inputs
         self._validate_chunks(child_chunks, "child_chunks", corr_id)
         self._validate_chunks(parent_chunks, "parent_chunks", corr_id)
-        
+
         if not child_chunks:
             return {"child_chunks": 0, "parent_chunks": 0}
-        
+
         try:
-            return await self._do_ingest_with_retry(
-                child_chunks, parent_chunks, corr_id, timeout_seconds
-            )
+            return await self._do_ingest_with_retry(child_chunks, parent_chunks, corr_id, timeout_seconds)
         except asyncio.TimeoutError:
             logger.error(f"[{corr_id}] Ingest timed out after {timeout_seconds}s")
             self._failure_count += 1
@@ -311,7 +309,7 @@ class VectorStoreManager:
         """
         corr_id = correlation_id or generate_vectorstore_correlation_id("vsm_search")
         self._check_ready(corr_id)
-        
+
         if filter_dict or use_chroma:
             docs = self.chroma.similarity_search_with_scores(
                 query=query, k=k, filter_dict=filter_dict, correlation_id=corr_id
@@ -367,10 +365,7 @@ class VectorStoreManager:
             docs = [doc for doc, _score in results]
         else:
             rows = await asyncio.to_thread(self.list_documents, correlation_id)
-            docs = [
-                Document(page_content="", metadata=row if isinstance(row, dict) else {})
-                for row in rows
-            ]
+            docs = [Document(page_content="", metadata=row if isinstance(row, dict) else {}) for row in rows]
         total = len(docs)
         return docs[offset : offset + limit], total
 
@@ -384,7 +379,10 @@ class VectorStoreManager:
         for row in rows:
             if not isinstance(row, dict):
                 continue
-            if document_id in {str(row.get("document_id")), str(row.get("source_file"))}:
+            if document_id in {
+                str(row.get("document_id")),
+                str(row.get("source_file")),
+            }:
                 return row
         return None
 
@@ -426,7 +424,10 @@ class VectorStoreManager:
             return {"reindexed_count": 0, "status": "skipped"}
 
         exists = await self.document_exists_async(source_file)
-        return {"reindexed_count": 1 if exists else 0, "status": "completed" if exists else "not_found"}
+        return {
+            "reindexed_count": 1 if exists else 0,
+            "status": "completed" if exists else "not_found",
+        }
 
     def delete_document(self, source_file: str, correlation_id: Optional[str] = None) -> dict:
         """Delete document from both stores; rebuild FAISS if needed."""
@@ -472,7 +473,12 @@ def get_vectorstore_metadata() -> dict[str, Any]:
 
 
 # DVMELTSS-M: Explicit module exports
-__all__ = ["VectorStoreManager", "EMBEDDING_DIM", "_get_store_executor", "get_vectorstore_metadata"]  
+__all__ = [
+    "VectorStoreManager",
+    "EMBEDDING_DIM",
+    "_get_store_executor",
+    "get_vectorstore_metadata",
+]
 
 
 # ========================================================================
@@ -483,8 +489,8 @@ if __name__ == "__main__":
     import asyncio
     import sys
     from pathlib import Path
-    from unittest.mock import AsyncMock, MagicMock, patch
-    
+    from unittest.mock import MagicMock, patch
+
     # 🔧 ROBUST PATH SETUP
     current_file = Path(__file__).resolve()
     for parent in current_file.parents:
@@ -493,41 +499,43 @@ if __name__ == "__main__":
             break
     else:
         backend_root = current_file.parents[2]
-    
+
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
-    
+
     async def run_tests():
         print("🔍 Testing VectorStore Manager module (app/vectorstore/store_manager.py)")
         print("=" * 70)
-        
+
         try:
             from app.vectorstore.store_manager import (
-                VectorStoreManager, EMBEDDING_DIM,
-                _get_store_executor, get_vectorstore_metadata
+                VectorStoreManager,
+                EMBEDDING_DIM,
+                _get_store_executor,
+                get_vectorstore_metadata,
             )
             from langchain_core.documents import Document
             import inspect
-            
+
             # -- Test 1: Module constants & helpers -----------------------
             print("\n📌 Test 1: Module constants & helpers")
-            
+
             assert EMBEDDING_DIM == 3072
             print(f"   ✅ EMBEDDING_DIM: {EMBEDDING_DIM}")
-            
+
             executor = _get_store_executor(max_workers=2)
             assert executor._max_workers == 2
             executor.shutdown(wait=False)
-            print(f"   ✅ _get_store_executor: creates ThreadPoolExecutor")
-            
+            print("   ✅ _get_store_executor: creates ThreadPoolExecutor")
+
             metadata = get_vectorstore_metadata()
             assert "embedding_dim" in metadata
             assert metadata["embedding_dim"] == 3072
-            print(f"   ✅ get_vectorstore_meta returns config")
-            
+            print("   ✅ get_vectorstore_meta returns config")
+
             # -- Test 2: Class structure & methods -----------------------
             print("\n📌 Test 2: VectorStoreManager class structure")
-            
+
             # Verify class exists and has expected methods
             assert hasattr(VectorStoreManager, "__init__")
             assert hasattr(VectorStoreManager, "ingest_chunks")
@@ -537,141 +545,139 @@ if __name__ == "__main__":
             assert hasattr(VectorStoreManager, "embed_query")
             assert hasattr(VectorStoreManager, "delete_document")
             assert hasattr(VectorStoreManager, "stats")
-            print(f"   ✅ VectorStoreManager: all expected methods present")
-            
+            print("   ✅ VectorStoreManager: all expected methods present")
+
             # Verify method signatures
             assert inspect.iscoroutinefunction(VectorStoreManager.ingest_chunks_async)
             assert not inspect.iscoroutinefunction(VectorStoreManager.ingest_chunks)
-            print(f"   ✅ Method signatures: sync/async variants correct")
-            
+            print("   ✅ Method signatures: sync/async variants correct")
+
             # -- Test 3: Initialization (mocked stores at SOURCE modules) -
             print("\n📌 Test 3: Initialization (mocked dependencies at source)")
-            
+
             # ✅ FIX: Patch at actual source modules, not store_manager
-            with patch('app.vectorstore.embeddings.CachedOpenAIEmbeddings') as mock_emb, \
-                 patch('app.vectorstore.chroma_store.ChromaVectorStore') as mock_chroma, \
-                 patch('app.vectorstore.faiss_store.FAISSVectorStore') as mock_faiss, \
-                 patch('app.config.get_settings') as mock_settings:
-                
+            with patch("app.vectorstore.embeddings.CachedOpenAIEmbeddings") as mock_emb, patch(
+                "app.vectorstore.chroma_store.ChromaVectorStore"
+            ) as mock_chroma, patch("app.vectorstore.faiss_store.FAISSVectorStore") as mock_faiss, patch(
+                "app.config.get_settings"
+            ) as mock_settings:
                 # Setup mocks
                 mock_settings.return_value.openai_api_key = "test-key"
                 mock_settings.return_value.openai_embedding_model = "test-model"
                 mock_emb.return_value = MagicMock()
                 mock_chroma.return_value = MagicMock()
-                
+
                 # Setup FAISS with correct dimension
                 mock_faiss_instance = MagicMock()
                 mock_faiss_instance._store = MagicMock()
                 mock_faiss_instance._store.index.d = EMBEDDING_DIM  # Match expected dim
                 mock_faiss.return_value = mock_faiss_instance
-                
+
                 # Create manager
                 manager = VectorStoreManager(workspace_id="test-ws")
                 assert manager._initialized is True
                 assert manager.workspace_id == "test-ws"
-                print(f"   ✅ Initialization: manager created with workspace_id")
-                
+                print("   ✅ Initialization: manager created with workspace_id")
+
                 # Verify executor created
                 assert manager._executor is not None
-                print(f"   ✅ Thread pool executor: created")
-                
+                print("   ✅ Thread pool executor: created")
+
                 # Cleanup
                 manager.shutdown()
-            
+
             # -- Test 4: Circuit breaker logic (dimension mismatch) ------
             print("\n📌 Test 4: Circuit breaker (dimension validation)")
-            
-            with patch('app.vectorstore.embeddings.CachedOpenAIEmbeddings'), \
-                 patch('app.vectorstore.chroma_store.ChromaVectorStore'), \
-                 patch('app.vectorstore.faiss_store.FAISSVectorStore') as mock_faiss_cls, \
-                 patch('app.config.get_settings'):
-                
+
+            with patch("app.vectorstore.embeddings.CachedOpenAIEmbeddings"), patch(
+                "app.vectorstore.chroma_store.ChromaVectorStore"
+            ), patch("app.vectorstore.faiss_store.FAISSVectorStore") as mock_faiss_cls, patch(
+                "app.config.get_settings"
+            ):
                 # Setup FAISS mock with WRONG dimension to trigger validation error
                 mock_faiss_instance = MagicMock()
                 mock_faiss_instance._store = MagicMock()
                 mock_faiss_instance._store.index.d = 128  # Wrong! Should be 3072
                 mock_faiss_cls.return_value = mock_faiss_instance
-                
+
                 # Should raise VectorStoreError on init due to dim mismatch
                 try:
                     VectorStoreManager()
                     print("   ❌ Should reject dimension mismatch")
                 except Exception as e:
                     if "dim mismatch" in str(e).lower() or "FAISS" in str(e) or "3072" in str(e):
-                        print(f"   ✅ Dimension validation: rejected mismatch")
-            
+                        print("   ✅ Dimension validation: rejected mismatch")
+
             # -- Test 5: Input validation helpers ------------------------
             print("\n📌 Test 5: Input validation (mocked manager)")
-            
-            with patch('app.vectorstore.embeddings.CachedOpenAIEmbeddings'), \
-                 patch('app.vectorstore.chroma_store.ChromaVectorStore'), \
-                 patch('app.vectorstore.faiss_store.FAISSVectorStore') as mock_faiss_cls, \
-                 patch('app.config.get_settings'):
-                
+
+            with patch("app.vectorstore.embeddings.CachedOpenAIEmbeddings"), patch(
+                "app.vectorstore.chroma_store.ChromaVectorStore"
+            ), patch("app.vectorstore.faiss_store.FAISSVectorStore") as mock_faiss_cls, patch(
+                "app.config.get_settings"
+            ):
                 # Setup FAISS with correct dimension
                 mock_faiss_instance = MagicMock()
                 mock_faiss_instance._store = MagicMock()
                 mock_faiss_instance._store.index.d = EMBEDDING_DIM
                 mock_faiss_cls.return_value = mock_faiss_instance
-                
+
                 manager = VectorStoreManager()
-                
+
                 # Valid chunks
                 valid_child = Document(page_content="test", metadata={"chunk_id": "c1"})
                 valid_parent = Document(page_content="parent", metadata={"chunk_id": "p1"})
-                
+
                 # Should not raise
                 manager._validate_chunks([valid_child], "child_chunks", "test-corr")
                 manager._validate_chunks([valid_parent], "parent_chunks", "test-corr")
-                print(f"   ✅ _validate_chunks: accepted valid Documents")
-                
+                print("   ✅ _validate_chunks: accepted valid Documents")
+
                 # Invalid: not a list
                 try:
                     manager._validate_chunks("not-a-list", "chunks", "test-corr")
                     print("   ❌ Should reject non-list input")
                 except Exception:
-                    print(f"   ✅ _validate_chunks: rejected non-list")
-                
+                    print("   ✅ _validate_chunks: rejected non-list")
+
                 # Invalid: not a Document
                 try:
                     manager._validate_chunks(["not-a-doc"], "chunks", "test-corr")
                     print("   ❌ Should reject non-Document items")
                 except Exception:
-                    print(f"   ✅ _validate_chunks: rejected non-Document items")
-            
+                    print("   ✅ _validate_chunks: rejected non-Document items")
+
             # -- Test 6: Search routing logic ---------------------------
             print("\n📌 Test 6: Search routing (Chroma vs FAISS)")
-            
-            with patch('app.vectorstore.embeddings.CachedOpenAIEmbeddings'), \
-                 patch('app.vectorstore.chroma_store.ChromaVectorStore') as mock_chroma_cls, \
-                 patch('app.vectorstore.faiss_store.FAISSVectorStore'), \
-                 patch('app.config.get_settings'):
-                
+
+            with patch("app.vectorstore.embeddings.CachedOpenAIEmbeddings"), patch(
+                "app.vectorstore.chroma_store.ChromaVectorStore"
+            ) as mock_chroma_cls, patch("app.vectorstore.faiss_store.FAISSVectorStore"), patch(
+                "app.config.get_settings"
+            ):
                 mock_chroma = MagicMock()
-                mock_chroma.similarity_search_with_scores.return_value = [
-                    (Document(page_content="result"), 0.9)
-                ]
+                mock_chroma.similarity_search_with_scores.return_value = [(Document(page_content="result"), 0.9)]
                 mock_chroma_cls.return_value = mock_chroma
-                
+
                 manager = VectorStoreManager()
-                
+
                 # With filter_dict -> use Chroma
                 results = manager.search("query", k=5, filter_dict={"workspace": "ws1"})
                 mock_chroma.similarity_search_with_scores.assert_called_once()
-                print(f"   ✅ Search with filter: routed to Chroma")
-                
+                print("   ✅ Search with filter: routed to Chroma")
+
                 # Without filter -> use FAISS (mocked to return list[Document])
                 mock_faiss = MagicMock()
                 manager.faiss = mock_faiss
                 mock_faiss.similarity_search.return_value = [Document(page_content="faiss-result")]
-                
+
                 results = manager.search("query", k=5)
                 # Should normalize to list[tuple[Document, float]]
                 assert len(results) == 1
                 assert isinstance(results[0], tuple)
                 assert isinstance(results[0][0], Document)
-                print(f"   ✅ Search without filter: routed to FAISS + normalized")
-            
+                print("   ✅ Search without filter: routed to FAISS + normalized")
+
             print("\n" + "=" * 70)
             print("✅ ALL TESTS PASSED! VectorStore Manager module verified.")
             print("\n💡 What we verified:")
@@ -683,13 +689,14 @@ if __name__ == "__main__":
             print("   • Search routing: Chroma for filters, FAISS for speed ✅")
             print("\n🔐 Production: Dual-store with graceful degradation ready")
             return True
-            
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
-    
+
     # Run async tests
     success = asyncio.run(run_tests())
     sys.exit(0 if success else 1)

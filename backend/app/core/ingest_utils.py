@@ -1,4 +1,4 @@
-﻿# backend/app/core/ingest_utils.py
+# backend/app/core/ingest_utils.py
 # DVMELTSS-FIX: M - Modular, S - Security, V - Validate
 # ASCALE-FIX: S - Separation, C - Coupling
 # OWASP-FIX: 7 - PII redaction, 9 - Path safety
@@ -14,6 +14,7 @@ Centralizes:
 Usage:
     from app.core.ingest_utils import redact_pii, validate_upload_path
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -45,30 +46,32 @@ _MAX_FILE_SIZE_MB: Final = 500
 def redact_pii(text: str) -> str:
     """
     Redact common PII patterns from strings.
-    
+
     Args:
         text: Raw text that may contain PII
-    
+
     Returns:
         Text with PII replaced by placeholders
     """
     if not isinstance(text, str):
         return str(text) if text is not None else ""
-    
+
     for pattern, replacement in _PII_PATTERNS:
         text = pattern.sub(replacement, text)
-    
+
     return text
 
 
-def validate_upload_path(file_path: Union[str, Path], allowed_root: Optional[Path] = None) -> tuple[Path, Optional[str]]:
+def validate_upload_path(
+    file_path: Union[str, Path], allowed_root: Optional[Path] = None
+) -> tuple[Path, Optional[str]]:
     """
     Validate and sanitize file path to prevent traversal attacks.
-    
+
     Args:
         file_path: Raw file path string or Path
         allowed_root: Optional root directory to restrict uploads
-    
+
     Returns:
         (resolved_path, error_message) — error is None if valid
     """
@@ -78,7 +81,7 @@ def validate_upload_path(file_path: Union[str, Path], allowed_root: Optional[Pat
         return Path(file_path), f"File not found: {file_path}"
     except OSError as e:
         return Path(file_path), f"Path validation failed: {e}"
-    
+
     # Optional: Restrict to specific upload directory
     if allowed_root:
         try:
@@ -87,23 +90,23 @@ def validate_upload_path(file_path: Union[str, Path], allowed_root: Optional[Pat
                 return Path(file_path), "Path traversal detected"
         except Exception:
             pass  # If allowed_root is invalid, skip this check
-    
+
     return path, None
 
 
 def neutralize_formula(value) -> str:
     """
     Neutralize dangerous Excel formulas to prevent code execution.
-    
+
     Args:
         value: Cell value that may contain a formula
-    
+
     Returns:
         Safe string representation
     """
     if not isinstance(value, str):
         return str(value) if value is not None else ""
-    
+
     stripped = value.strip()
     if stripped and stripped[0] in _DANGEROUS_FORMULA_PREFIXES:
         return "'" + value  # Prefix with apostrophe to make literal
@@ -113,20 +116,20 @@ def neutralize_formula(value) -> str:
 async def read_file_bytes_async(file_path: Path, max_bytes: Optional[int] = None) -> bytes:
     """
     Async-safe file read via thread executor.
-    
+
     Args:
         file_path: Path to file
         max_bytes: Optional limit on bytes to read
-    
+
     Returns:
         File content as bytes
     """
     loop = asyncio.get_running_loop()
-    
+
     def _read():
         with open(file_path, "rb") as f:
             return f.read(max_bytes) if max_bytes else f.read()
-    
+
     return await loop.run_in_executor(None, _read)
 
 
@@ -144,10 +147,9 @@ __all__ = [
     "read_file_bytes_async",
     "generate_ingest_correlation_id",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

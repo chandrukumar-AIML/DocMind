@@ -1,4 +1,4 @@
-﻿# backend/app/evaluation/rag_metrics.py
+# backend/app/evaluation/rag_metrics.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 # ✅ FIXED: Proper async embedding handling + input validation + safe division
 
@@ -6,12 +6,9 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import json
 import logging
-import re
-import time
 from dataclasses import dataclass, field
-from typing import Final, List, Optional, Any, Union
+from typing import Final, List, Optional, Any
 
 import numpy as np
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
@@ -22,7 +19,7 @@ from app.config import get_settings
 from app.core.llm_pool import get_llm
 from app.core.retry import retry_async, RetryConfig
 from app.core.eval_utils import call_llm_with_retry, generate_eval_correlation_id
-from app.core.pii_utils import scrub_pii_for_evaluation, is_pii_present
+from app.core.pii_utils import scrub_pii_for_evaluation
 from app.vectorstore.embeddings import CachedOpenAIEmbeddings
 
 logger = logging.getLogger(__name__)
@@ -37,6 +34,7 @@ _METRIC_TIMEOUT: Final = 60.0
 @dataclass
 class RAGASMetrics:
     """Structured metrics for a single RAG evaluation sample."""
+
     query: str
     answer: str
     contexts: List[str]
@@ -68,6 +66,7 @@ class RAGASMetrics:
 @dataclass
 class RAGEvalSuite:
     """Aggregated metrics for a RAG evaluation dataset."""
+
     results: List[RAGASMetrics] = field(default_factory=list)
     correlation_id: str = ""
 
@@ -118,7 +117,7 @@ def _validate_eval_inputs(
 class RAGMetricsCalculator:
     """
     Computes RAG quality metrics: RAGAS-style + BLEU + ROUGE.
-    
+
     Features:
     - Faithfulness: Are claims in answer supported by context?
     - Answer Relevance: Does answer address the query?
@@ -141,33 +140,35 @@ class RAGMetricsCalculator:
         self.model = model
         self.max_retries = max_retries
         self.timeout_seconds = timeout_seconds
-        
+
         # FIXED: Use centralized LLM pool instead of creating new client
         self.llm = get_llm(
             streaming=False,
             temperature_override=0.0,  # Evaluation needs deterministic output
         )
-        
+
         self._embedder = CachedOpenAIEmbeddings(
             api_key=self.api_key,
             cache_dir=".cache/eval_embeddings",
         )
-        
+
         # BLEU smoothing
         self._smoother_bleu1 = SmoothingFunction().method1
         self._smoother_bleu4 = SmoothingFunction().method3
-        
+
         # ROUGE with and without stemming
         self._rouge_stemmed = rouge_scorer.RougeScorer(["rouge1", "rougeL"], use_stemmer=True)
         self._rouge_unstemmed = rouge_scorer.RougeScorer(["rouge1", "rougeL"], use_stemmer=False)
-        
+
         # FIXED: Retry config for LLM calls
-        self._llm_retry = retry_async(config=RetryConfig(
-            max_attempts=max_retries,
-            backoff_base=0.5,
-            exceptions=(Exception,),
-        ))
-        
+        self._llm_retry = retry_async(
+            config=RetryConfig(
+                max_attempts=max_retries,
+                backoff_base=0.5,
+                exceptions=(Exception,),
+            )
+        )
+
         logger.info(f"RAGMetricsCalculator initialized: model={model}, retries={max_retries}")
 
     async def evaluate_sample(
@@ -180,34 +181,42 @@ class RAGMetricsCalculator:
     ) -> RAGASMetrics:
         """Evaluate a single RAG sample with all metrics."""
         corr_id = correlation_id or generate_eval_correlation_id("rag_metrics")
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_eval_inputs(query, answer, contexts, ground_truth, corr_id)
         if not is_valid:
             logger.error(f"[{corr_id}] Invalid eval inputs: {error}")
             return RAGASMetrics(
-                query=query or "", answer=answer or "", contexts=contexts or [],
-                ground_truth=ground_truth or "", correlation_id=corr_id
+                query=query or "",
+                answer=answer or "",
+                contexts=contexts or [],
+                ground_truth=ground_truth or "",
+                correlation_id=corr_id,
             )
-        
+
         metrics = RAGASMetrics(
-            query=query, answer=answer, contexts=contexts, ground_truth=ground_truth,
+            query=query,
+            answer=answer,
+            contexts=contexts,
+            ground_truth=ground_truth,
             correlation_id=corr_id,
         )
 
         # === BLEU scores ===
         reference = ground_truth.lower().split()
         hypothesis = answer.lower().split()
-        
+
         metrics.bleu_1 = sentence_bleu(
-            [reference], hypothesis,
+            [reference],
+            hypothesis,
             weights=(1, 0, 0, 0),
-            smoothing_function=self._smoother_bleu1
+            smoothing_function=self._smoother_bleu1,
         )
         metrics.bleu_4 = sentence_bleu(
-            [reference], hypothesis,
+            [reference],
+            hypothesis,
             weights=(0.25, 0.25, 0.25, 0.25),
-            smoothing_function=self._smoother_bleu4
+            smoothing_function=self._smoother_bleu4,
         )
 
         # === ROUGE scores ===
@@ -224,7 +233,7 @@ class RAGMetricsCalculator:
         except asyncio.TimeoutError:
             logger.warning(f"[{corr_id}] Faithfulness eval timed out")
             metrics.faithfulness = 0.5
-            
+
         try:
             metrics.answer_relevance = await asyncio.wait_for(
                 self._eval_answer_relevance(query, answer, corr_id),
@@ -233,7 +242,7 @@ class RAGMetricsCalculator:
         except asyncio.TimeoutError:
             logger.warning(f"[{corr_id}] Answer relevance eval timed out")
             metrics.answer_relevance = 0.5
-            
+
         try:
             metrics.context_precision = await asyncio.wait_for(
                 self._eval_context_precision(query, answer, contexts, corr_id),
@@ -246,15 +255,15 @@ class RAGMetricsCalculator:
         return metrics
 
     async def evaluate_dataset(
-        self, 
-        dataset: List[dict], 
+        self,
+        dataset: List[dict],
         rag_fn,
         correlation_id: Optional[str] = None,
     ) -> RAGEvalSuite:
         """Evaluate a full dataset using the provided RAG function."""
         corr_id = correlation_id or generate_eval_correlation_id("rag_dataset")
         suite = RAGEvalSuite(correlation_id=corr_id)
-        
+
         for i, item in enumerate(dataset):
             logger.info(f"[{corr_id}] Evaluating [{i+1}/{len(dataset)}]: {item.get('query', '')[:60]}")
             try:
@@ -271,20 +280,23 @@ class RAGMetricsCalculator:
             except Exception as e:
                 logger.error(f"[{corr_id}] Failed to evaluate sample {i+1}: {e}")
                 # Add placeholder result to keep dataset aligned
-                suite.add(RAGASMetrics(
-                    query=item.get("query", ""), answer="", contexts=[],
-                    ground_truth=item.get("ground_truth", ""), correlation_id=corr_id
-                ))
+                suite.add(
+                    RAGASMetrics(
+                        query=item.get("query", ""),
+                        answer="",
+                        contexts=[],
+                        ground_truth=item.get("ground_truth", ""),
+                        correlation_id=corr_id,
+                    )
+                )
         return suite
 
     async def _eval_faithfulness(self, answer: str, contexts: List[str], corr_id: str) -> float:
         """Evaluate if answer claims are supported by retrieved contexts."""
         # FIXED: Use centralized PII scrubbing
-        context_str = "\n\n".join(
-            scrub_pii_for_evaluation(c, domain="all") for c in contexts[:3]
-        )
+        context_str = "\n\n".join(scrub_pii_for_evaluation(c, domain="all") for c in contexts[:3])
         scrubbed_answer = scrub_pii_for_evaluation(answer, domain="all")
-        
+
         prompt = f"""Given this context:
 {context_str}
 
@@ -299,7 +311,7 @@ Return JSON only:
   "total_count": 3,
   "faithfulness_score": 0.67
 }}"""
-        
+
         # FIXED: Use centralized retry + JSON parsing
         data = await call_llm_with_retry(
             prompt=prompt,
@@ -311,7 +323,7 @@ Return JSON only:
             default_value=0.5,
             correlation_id=corr_id,
         )
-        
+
         # ✅ FIXED: Safe float conversion + clamping
         if isinstance(data, (int, float)):
             return max(0.0, min(1.0, float(data)))
@@ -325,11 +337,11 @@ Return JSON only:
     async def _eval_answer_relevance(self, query: str, answer: str, corr_id: str) -> float:
         """Evaluate if answer is relevant to the query."""
         scrubbed_answer = scrub_pii_for_evaluation(answer, domain="all")
-        
+
         prompt = f"""Generate 3 questions that this answer is trying to answer.
 Answer: {scrubbed_answer}
 Return only the 3 questions, one per line."""
-        
+
         try:
             content = await call_llm_with_retry(
                 prompt=prompt,
@@ -338,15 +350,12 @@ Return only the 3 questions, one per line."""
                 temperature=0.3,
                 correlation_id=corr_id,
             )
-            
+
             if not content or not isinstance(content, str):
                 return 0.5
-                
-            generated_questions = [
-                q.strip() for q in content.strip().split("\n")
-                if q.strip()
-            ][:3]
-            
+
+            generated_questions = [q.strip() for q in content.strip().split("\n") if q.strip()][:3]
+
             if not generated_questions:
                 return 0.5
 
@@ -358,27 +367,21 @@ Return only the 3 questions, one per line."""
                 else:
                     # Run sync embed in thread
                     import sys
+
                     if sys.version_info >= (3, 9):
-                        query_vec = await asyncio.to_thread(
-                            lambda: self._embedder.embed_query(query)
-                        )
-                        gen_vecs = await asyncio.to_thread(
-                            lambda: self._embedder.embed_documents(generated_questions)
-                        )
+                        query_vec = await asyncio.to_thread(lambda: self._embedder.embed_query(query))
+                        gen_vecs = await asyncio.to_thread(lambda: self._embedder.embed_documents(generated_questions))
                     else:
                         loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in Python 3.10+
-                        query_vec = await loop.run_in_executor(
-                            None,
-                            lambda: self._embedder.embed_query(query)
-                        )
+                        query_vec = await loop.run_in_executor(None, lambda: self._embedder.embed_query(query))
                         gen_vecs = await loop.run_in_executor(
                             None,
-                            lambda: self._embedder.embed_documents(generated_questions)
+                            lambda: self._embedder.embed_documents(generated_questions),
                         )
                 return np.array(query_vec), np.array(gen_vecs)
-            
+
             query_vec, gen_vecs = await _get_embeddings()
-            
+
             query_norm = np.linalg.norm(query_vec)
             if query_norm < 1e-6:
                 return 0.5
@@ -389,7 +392,7 @@ Return only the 3 questions, one per line."""
             sims = np.dot(gen_vecs, query_vec) / (gen_norms * query_norm)
             sims = np.clip(sims, 0.0, 1.0)
             return float(np.mean(sims))
-            
+
         except Exception as e:
             logger.warning(f"[{corr_id}] Answer relevance eval failed: {e}")
             return 0.5
@@ -398,12 +401,11 @@ Return only the 3 questions, one per line."""
         """Evaluate if retrieved contexts are useful for answering the query."""
         if not contexts or not answer:
             return 0.0
-            
+
         contexts_formatted = "\n\n".join(
-            f"Context {i+1}: {scrub_pii_for_evaluation(ctx[:400], domain='all')}"
-            for i, ctx in enumerate(contexts[:5])
+            f"Context {i+1}: {scrub_pii_for_evaluation(ctx[:400], domain='all')}" for i, ctx in enumerate(contexts[:5])
         )
-        
+
         prompt = f"""Question: {query}
 
 {contexts_formatted}
@@ -416,7 +418,7 @@ Return JSON only:
   "total_count": 2,
   "precision_score": 0.5
 }}"""
-        
+
         data = await call_llm_with_retry(
             prompt=prompt,
             model=self.model,
@@ -427,7 +429,7 @@ Return JSON only:
             default_value=0.5,
             correlation_id=corr_id,
         )
-        
+
         # ✅ FIXED: Safe float conversion + clamping
         if isinstance(data, (int, float)):
             return max(0.0, min(1.0, float(data)))
@@ -442,6 +444,7 @@ Return JSON only:
     def _scrub_pii_for_api(text: str) -> str:
         """DEPRECATED: Use app.core.pii_utils.scrub_pii_for_evaluation instead."""
         import warnings
+
         warnings.warn(
             "RAGMetricsCalculator._scrub_pii_for_api is deprecated. "
             "Use app.core.pii_utils.scrub_pii_for_evaluation instead.",
@@ -455,7 +458,15 @@ def get_rag_metrics_metadata() -> dict[str, Any]:
     """✅ NEW: Return RAG metrics metadata for monitoring."""
     return {
         "model": get_settings().openai_chat_model,
-        "metrics": ["faithfulness", "answer_relevance", "context_precision", "bleu_1", "bleu_4", "rouge_1_f", "rouge_l_f"],
+        "metrics": [
+            "faithfulness",
+            "answer_relevance",
+            "context_precision",
+            "bleu_1",
+            "bleu_4",
+            "rouge_1_f",
+            "rouge_l_f",
+        ],
         "timeout_per_metric": _METRIC_TIMEOUT,
         "retry_config": {
             "max_attempts": 3,
@@ -479,10 +490,9 @@ __all__ = [
     "RAGEvalSuite",
     "get_rag_metrics_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

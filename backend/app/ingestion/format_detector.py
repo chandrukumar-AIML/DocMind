@@ -1,4 +1,4 @@
-﻿# backend/app/ingest/format_detector.py
+# backend/app/ingest/format_detector.py
 # DVMELTSS-FIX: V - Validate, S - Security, M - Modular
 # OWASP-FIX: 9 - File handling, 1 - Input sanitization
 # BATMAN-FIX: M - Memory safety
@@ -38,7 +38,12 @@ class FileFormat(str, Enum):
 
 _MAGIC_SIGNATURES: Final = [
     (b"%PDF", 0, FileFormat.PDF, "application/pdf"),
-    (b"PK\x03\x04", 0, FileFormat.DOCX, "application/vnd.openxmlformats-officedocument"),
+    (
+        b"PK\x03\x04",
+        0,
+        FileFormat.DOCX,
+        "application/vnd.openxmlformats-officedocument",
+    ),
     (b"\x89PNG\r\n\x1a\n", 0, FileFormat.PNG, "image/png"),
     (b"\xff\xd8\xff", 0, FileFormat.JPEG, "image/jpeg"),
     (b"II*\x00", 0, FileFormat.TIFF, "image/tiff"),
@@ -60,8 +65,14 @@ _EXTENSION_MAP: Final = {
     ".tiff": (FileFormat.TIFF, "image/tiff"),
     ".tif": (FileFormat.TIFF, "image/tiff"),
     ".bmp": (FileFormat.BMP, "image/bmp"),
-    ".docx": (FileFormat.DOCX, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
-    ".xlsx": (FileFormat.XLSX, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    ".docx": (
+        FileFormat.DOCX,
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ),
+    ".xlsx": (
+        FileFormat.XLSX,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ),
     ".mp3": (FileFormat.MP3, "audio/mpeg"),
     ".mp4": (FileFormat.MP4, "video/mp4"),
     ".wav": (FileFormat.WAV, "audio/wav"),
@@ -70,8 +81,20 @@ _EXTENSION_MAP: Final = {
     ".webm": (FileFormat.WEBM, "video/webm"),
 }
 
-_AUDIO_VIDEO_FORMATS: Final = {FileFormat.MP3, FileFormat.MP4, FileFormat.WAV, FileFormat.M4A, FileFormat.OGG, FileFormat.WEBM}
-_IMAGE_FORMATS: Final = {FileFormat.PNG, FileFormat.JPEG, FileFormat.TIFF, FileFormat.BMP}
+_AUDIO_VIDEO_FORMATS: Final = {
+    FileFormat.MP3,
+    FileFormat.MP4,
+    FileFormat.WAV,
+    FileFormat.M4A,
+    FileFormat.OGG,
+    FileFormat.WEBM,
+}
+_IMAGE_FORMATS: Final = {
+    FileFormat.PNG,
+    FileFormat.JPEG,
+    FileFormat.TIFF,
+    FileFormat.BMP,
+}
 _DOC_FORMATS: Final = {FileFormat.PDF, FileFormat.DOCX}
 _SHEET_FORMATS: Final = {FileFormat.XLSX}
 
@@ -79,6 +102,7 @@ _SHEET_FORMATS: Final = {FileFormat.XLSX}
 @dataclass(frozen=True)
 class DetectedFormat:
     """Immutable format detection result."""
+
     format: FileFormat
     mime_type: str
     is_image: bool
@@ -92,7 +116,7 @@ class DetectedFormat:
         # ✅ FIXED: Proper immutable pattern for frozen dataclass
         if not (0.0 <= self.confidence <= 1.0):
             # Use object.__setattr__ for frozen dataclass
-            object.__setattr__(self, 'confidence', max(0.0, min(1.0, self.confidence)))
+            object.__setattr__(self, "confidence", max(0.0, min(1.0, self.confidence)))
 
 
 # ✅ NEW: Input validation helper
@@ -115,44 +139,47 @@ class FormatDetector:
     def detect(self, file_bytes: bytes, filename: str) -> DetectedFormat:
         """Detect format from file content and name."""
         corr_id = "format_detect"
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_detect_inputs(file_bytes, filename, corr_id)
         if not is_valid:
             logger.error(f"[{corr_id}] Invalid detect inputs: {error}")
             return self._build_unknown("")
-        
+
         # ✅ FIXED: Safe filename check (no path traversal)
         if not _SAFE_FILENAME_PATTERN.match(filename):
             logger.warning(f"[{corr_id}] Potentially unsafe filename: {filename}")
             return self._build_unknown(Path(filename).suffix.lower())
-        
+
         suffix = Path(filename).suffix.lower()
-        
+
         # ✅ FIXED: Safe magic signature matching with length checks
         for magic, offset, fmt, mime in _MAGIC_SIGNATURES:
-            if len(file_bytes) > offset + len(magic) and file_bytes[offset:offset + len(magic)] == magic:
+            if len(file_bytes) > offset + len(magic) and file_bytes[offset : offset + len(magic)] == magic:
                 # Handle DOCX/XLSX distinction
                 if fmt == FileFormat.DOCX:
                     if suffix == ".xlsx":
-                        fmt, mime = FileFormat.XLSX, _EXTENSION_MAP.get(".xlsx", (FileFormat.XLSX, ""))[1]
+                        fmt, mime = (
+                            FileFormat.XLSX,
+                            _EXTENSION_MAP.get(".xlsx", (FileFormat.XLSX, ""))[1],
+                        )
                     else:
                         # Safe mime type lookup
                         ext_info = _EXTENSION_MAP.get(suffix)
                         if ext_info:
                             mime = ext_info[1]
-                
+
                 return self._build(fmt, mime, suffix, confidence=1.0)
-        
+
         # Fallback: extension-based detection with reduced confidence
         if suffix in (".mp4", ".m4a"):
             fmt, mime = _EXTENSION_MAP.get(suffix, (FileFormat.UNKNOWN, ""))
             return self._build(fmt, mime, suffix, confidence=0.9)
-        
+
         if suffix in _EXTENSION_MAP:
             fmt, mime = _EXTENSION_MAP[suffix]
             return self._build(fmt, mime, suffix, confidence=0.8)
-        
+
         logger.warning(f"[{corr_id}] Unknown format: {filename}")
         return self._build_unknown(suffix)
 
@@ -162,7 +189,7 @@ class FormatDetector:
         safe_mime = mime if mime and isinstance(mime, str) else "application/octet-stream"
         safe_ext = extension if extension and isinstance(extension, str) else ""
         safe_confidence = max(0.0, min(1.0, confidence))
-        
+
         return DetectedFormat(
             format=fmt,
             mime_type=safe_mime,
@@ -211,10 +238,9 @@ __all__ = [
     "DetectedFormat",
     "get_format_detector_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

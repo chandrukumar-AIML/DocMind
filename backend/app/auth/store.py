@@ -16,10 +16,13 @@ from typing import Optional, List, Dict, Any
 
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.validators import validate_email, validate_slug, validate_password_strength
+from app.core.validators import (
+    validate_email,
+    validate_slug,
+    validate_password_strength,
+)
 from .models import User, Workspace, WorkspaceMember, UserRole
 from .jwt_handler import hash_password, verify_password
 from app.database.engine import AsyncSessionLocal
@@ -53,17 +56,15 @@ class UserStore:
         is_valid, pwd_error = validate_password_strength(password)
         if not is_valid:
             raise ValueError(f"Password validation failed: {pwd_error}")
-        
+
         # ✅ FIXED: Move blocking bcrypt hash OUTSIDE async transaction
         # bcrypt is CPU-bound and will freeze the event loop if run inside async context
         hashed_pw = hash_password(password)
-        
+
         async with self._session_factory() as session:
             async with session.begin():
                 # Check email uniqueness
-                existing = await session.scalar(
-                    select(User).where(User.email == email)
-                )
+                existing = await session.scalar(select(User).where(User.email == email))
                 if existing:
                     raise ValueError(f"Email already registered: {email}")
 
@@ -98,7 +99,7 @@ class UserStore:
                         raise ValueError(f"Workspace not found: {target_ws_id}")
                     if not ws.is_active:
                         raise ValueError("Target workspace is inactive")
-                    
+
                     # ✅ FIXED: Early check for existing membership (clearer error than UniqueConstraint)
                     existing_member = await session.scalar(
                         select(WorkspaceMember).where(
@@ -122,18 +123,13 @@ class UserStore:
         logger.info(f"User created: {email} | workspace={target_ws_id}")
         return user
 
-    async def authenticate(
-        self, email: str, password: str
-    ) -> Optional[tuple[User, str]]:
+    async def authenticate(self, email: str, password: str) -> Optional[tuple[User, str]]:
         """Authenticate user with email + password."""
         email = validate_email(email)
         async with self._session_factory() as session:
             user = await session.scalar(
                 select(User)
-                .options(
-                    selectinload(User.memberships)
-                    .selectinload(WorkspaceMember.workspace)
-                )
+                .options(selectinload(User.memberships).selectinload(WorkspaceMember.workspace))
                 .where(User.email == email)
             )
             if not user or not user.is_active:
@@ -151,10 +147,7 @@ class UserStore:
         async with self._session_factory() as session:
             return await session.scalar(
                 select(User)
-                .options(
-                    selectinload(User.memberships)
-                    .selectinload(WorkspaceMember.workspace)
-                )
+                .options(selectinload(User.memberships).selectinload(WorkspaceMember.workspace))
                 .where(User.id == uuid.UUID(user_id))
             )
 
@@ -194,12 +187,10 @@ class UserStore:
     ) -> Workspace:
         """Create a new workspace and optionally add creator as admin."""
         slug = validate_slug(slug)
-        
+
         async with self._session_factory() as session:
             async with session.begin():
-                existing = await session.scalar(
-                    select(Workspace).where(Workspace.slug == slug)
-                )
+                existing = await session.scalar(select(Workspace).where(Workspace.slug == slug))
                 if existing:
                     raise ValueError(f"Workspace slug already taken: {slug}")
 
@@ -242,7 +233,7 @@ class UserStore:
                     raise ValueError(f"Workspace not found: {workspace_id}")
                 if not ws.is_active:
                     raise ValueError("Cannot add member to inactive workspace")
-                
+
                 # Check for existing membership
                 existing = await session.scalar(
                     select(WorkspaceMember).where(
@@ -285,7 +276,7 @@ class UserStore:
                         ws = await session.scalar(select(Workspace).where(Workspace.slug == "default"))
                         if ws:
                             return ws
-                            
+
                         ws = Workspace(
                             name="Default Workspace",
                             slug="default",
@@ -312,14 +303,12 @@ class UserStore:
     async def get_workspace_by_slug(self, slug: str) -> Optional[Workspace]:
         """Safe lookup by slug."""
         async with self._session_factory() as session:
-            return await session.scalar(
-                select(Workspace).where(Workspace.slug == validate_slug(slug))
-            )
+            return await session.scalar(select(Workspace).where(Workspace.slug == validate_slug(slug)))
 
     async def get_workspace_stats(self, workspace_id: str) -> Dict[str, Any]:
         """Usage metrics for a workspace."""
         ws_uuid = uuid.UUID(workspace_id)
-        
+
         try:
             async with self._session_factory() as session:
                 user_count = await session.scalar(
@@ -330,14 +319,14 @@ class UserStore:
                         WorkspaceMember.is_active == True,
                     )
                 )
-                
+
                 # NOTE: This endpoint returns membership stats only. Document and
                 # query counts are served by the dedicated monitoring endpoint
                 # (/api/v1/monitoring/stats) which owns the ingestion + provenance
                 # tables — kept separate to avoid cross-module coupling here.
                 doc_count = 0
                 query_count = 0
-                
+
                 return {
                     "workspace_id": workspace_id,
                     "doc_count": doc_count,
@@ -362,7 +351,7 @@ if __name__ == "__main__":
     import asyncio
     import sys
     from pathlib import Path
-    
+
     # 🔧 ROBUST PATH SETUP
     current_file = Path(__file__).resolve()
     for parent in current_file.parents:
@@ -371,18 +360,18 @@ if __name__ == "__main__":
             break
     else:
         backend_root = current_file.parents[2]
-    
+
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
-    
+
     async def run_tests():
         print("🔍 Testing UserStore module (app/auth/store.py)")
         print("=" * 70)
-        
+
         try:
             from app.auth.store import UserStore, _generate_safe_slug_suffix
             from app.auth.jwt_handler import hash_password, verify_password
-            
+
             # -- Test 1: Password hashing (NO MOCKS - REAL bcrypt) ---------
             print("\n📌 Test 1: Password hashing (bcrypt) + verification")
             plain = "SecurePass123!"
@@ -391,64 +380,65 @@ if __name__ == "__main__":
             assert verify_password(plain, hashed) is True, "Should verify correct password"
             assert verify_password("WrongPass", hashed) is False, "Should reject wrong password"
             print(f"   ✅ Password hashed: {hashed[:20]}... | verify=True")
-            
+
             # Test bcrypt length limit
             try:
                 hash_password("A" * 100)
                 print("   ❌ Should reject long password")
             except ValueError as e:
                 if "exceeds maximum length" in str(e):
-                    print(f"   ✅ Long password rejected")
-            
+                    print("   ✅ Long password rejected")
+
             # -- Test 2: Helper functions (pure logic) --------------------
             print("\n📌 Test 2: Helper functions (pure logic, no DB)")
             slug_suffix = _generate_safe_slug_suffix()
             assert len(slug_suffix) == 8, "Should be 8 hex chars"
             print(f"   ✅ Slug suffix generator: {slug_suffix}")
-            
+
             # -- Test 3: Input validation (pre-DB checks) -----------------
             print("\n📌 Test 3: Input validation (pre-DB checks)")
             store = UserStore()
-            
+
             # Test invalid email (fails at validate_email() before any DB call)
             try:
                 await store.create_user(email="invalid-email", password="Pass123!")
                 print("   ❌ Should reject invalid email")
             except ValueError as e:
                 if "email" in str(e).lower():
-                    print(f"   ✅ Invalid email rejected pre-DB")
-            
+                    print("   ✅ Invalid email rejected pre-DB")
+
             # Test weak password (fails at validate_password_strength())
             try:
                 await store.create_user(email="test@example.com", password="short")
                 print("   ❌ Should reject weak password")
             except ValueError as e:
                 if "password" in str(e).lower():
-                    print(f"   ✅ Weak password rejected pre-DB")
-            
+                    print("   ✅ Weak password rejected pre-DB")
+
             # -- Test 4: Method signatures & async nature -----------------
             print("\n📌 Test 4: Method signatures (async/await ready)")
             import inspect
-            
+
             # Verify key methods are async
             assert inspect.iscoroutinefunction(store.create_user), "create_user should be async"
             assert inspect.iscoroutinefunction(store.authenticate), "authenticate should be async"
             assert inspect.iscoroutinefunction(store.get_user_by_id), "get_user_by_id should be async"
-            print(f"   ✅ All CRUD methods are async coroutines")
-            
+            print("   ✅ All CRUD methods are async coroutines")
+
             # Verify return type annotations
             create_user_sig = inspect.signature(store.create_user)
             assert "User" in str(create_user_sig.return_annotation) or "User" in repr(create_user_sig.return_annotation)
-            print(f"   ✅ create_user has proper return type annotation")
-            
+            print("   ✅ create_user has proper return type annotation")
+
             # -- Test 5: Import & initialization --------------------------
             print("\n📌 Test 5: Module imports & initialization")
             from app.auth.store import UserStore
+
             store = UserStore()
-            assert hasattr(store, '_session_factory'), "Should have session factory"
-            assert hasattr(store, 'create_user'), "Should have create_user method"
-            print(f"   ✅ UserStore initialized with session factory")
-            
+            assert hasattr(store, "_session_factory"), "Should have session factory"
+            assert hasattr(store, "create_user"), "Should have create_user method"
+            print("   ✅ UserStore initialized with session factory")
+
             # -- Test 6: Error handling patterns --------------------------
             print("\n📌 Test 6: Error handling (ValueError for validation)")
             # All validation errors should be ValueError (not HTTPException)
@@ -456,8 +446,8 @@ if __name__ == "__main__":
             try:
                 await store.create_user(email="bad@email", password="weak")
             except ValueError:
-                print(f"   ✅ Validation errors raise ValueError (API layer converts to HTTP)")
-            
+                print("   ✅ Validation errors raise ValueError (API layer converts to HTTP)")
+
             print("\n" + "=" * 70)
             print("✅ ALL TESTS PASSED! UserStore module verified.")
             print("\n💡 What we verified:")
@@ -470,13 +460,14 @@ if __name__ == "__main__":
             print("   • Run: pytest tests/auth/test_store.py -v")
             print("\n🔐 Security: All sensitive ops happen server-side")
             return True
-            
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
-    
+
     # Run async tests
     success = asyncio.run(run_tests())
     sys.exit(0 if success else 1)

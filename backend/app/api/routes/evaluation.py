@@ -1,4 +1,4 @@
-﻿# backend/app/api/routes/evaluation.py
+# backend/app/api/routes/evaluation.py
 # DVMELTSS-FIX: E/M/S + ASCALE-A/E + BATMAN-M
 # ✅ FIXED: Proper workspace scoping + input validation + safe async handling + timeout
 
@@ -13,11 +13,10 @@ from typing import Annotated, Optional, Callable, Any, Final
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, status
 from pydantic import BaseModel, Field
 
-from app.config import get_settings, lazy_settings as settings  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.ids import generate_correlation_id
 from app.auth.dependencies import get_current_user, require_admin, AuthenticatedUser
 from app.models import ErrorResponse
-from app.evaluation.ragas_evaluator import RAGAsEvaluator, RAGAsSample, RAGAsReport
+from app.evaluation.ragas_evaluator import RAGAsEvaluator, RAGAsSample
 from app.evaluation.ragas_dataset import DatasetManager, EvalDataset
 from app.evaluation.ragas_pipeline import RAGAsPipeline
 from app.evaluation.alert_engine import AlertEngine
@@ -35,6 +34,7 @@ _EVAL_TIMEOUT: Final = 120.0
 # ========================================================================
 class EvalSampleRequest(BaseModel):
     """Request to evaluate a single RAG response."""
+
     question: str = Field(..., min_length=3, max_length=2000)
     answer: str = Field(..., min_length=1, max_length=5000)
     contexts: list[str] = Field(..., min_length=1, max_items=10)
@@ -119,7 +119,7 @@ async def _build_rag_fn(
     """Build RAG function for evaluation pipeline with proper workspace scoping."""
     # ✅ FIXED: Lazy import to avoid circular deps + proper workspace scoping
     from app.agent.agent_chain import AgentRAGChain
-    
+
     async def rag_fn(question: str) -> tuple[str, list[str]]:
         try:
             # ✅ FIXED: Use workspace_id from closure, not global state
@@ -148,7 +148,7 @@ async def _build_rag_fn(
         except Exception as e:
             logger.warning(f"[{correlation_id}] RAG fn failed: {e}")
             return "", []
-    
+
     return rag_fn
 
 
@@ -171,14 +171,19 @@ async def evaluate_sample(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> EvalSampleResponse:
     corr_id = generate_correlation_id("eval_sample")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_evaluation_inputs(
-        request.question, request.answer, request.contexts, None, user.workspace_id, corr_id
+        request.question,
+        request.answer,
+        request.contexts,
+        None,
+        user.workspace_id,
+        corr_id,
     )
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     evaluator = RAGAsEvaluator()
     sample = RAGAsSample(
         question=request.question,
@@ -186,21 +191,21 @@ async def evaluate_sample(
         contexts=request.contexts,
         ground_truth=request.ground_truth,
     )
-    
+
     start_ts = time.perf_counter()
-    
+
     try:
         # ✅ FIXED: Add timeout to evaluation
         result = await asyncio.wait_for(
             evaluator.evaluate_sample(sample, correlation_id=corr_id),
             timeout=_EVAL_TIMEOUT,
         )
-        
+
         if result.error:
             raise HTTPException(status_code=500, detail=result.error)
-        
+
         latency = time.perf_counter() - start_ts
-        
+
         return EvalSampleResponse(
             faithfulness=result.faithfulness,
             answer_relevancy=result.answer_relevancy,
@@ -212,7 +217,7 @@ async def evaluate_sample(
             latency_seconds=round(latency, 3),
             correlation_id=corr_id,
         )
-        
+
     except asyncio.TimeoutError:
         logger.error(f"[{corr_id}] Sample evaluation timed out after {_EVAL_TIMEOUT}s")
         raise HTTPException(status_code=408, detail=f"Evaluation timed out after {_EVAL_TIMEOUT}s")
@@ -242,22 +247,28 @@ async def run_evaluation_pipeline(
     background_tasks: BackgroundTasks,
 ) -> PipelineRunResponse:
     corr_id = generate_correlation_id("eval_run")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_evaluation_inputs(
-        None, None, None, request.domain, request.workspace_id or user.workspace_id, corr_id
+        None,
+        None,
+        None,
+        request.domain,
+        request.workspace_id or user.workspace_id,
+        corr_id,
     )
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     workspace_id = request.workspace_id or user.workspace_id
-    
+
     logger.info(f"[{corr_id}] Starting eval pipeline: domain={request.domain} workspace={workspace_id}")
-    
+
     from app.evaluation.ragas_pipeline import PipelineConfig
+
     pipeline = RAGAsPipeline(config=PipelineConfig(domain=request.domain, correlation_id=corr_id))
     rag_fn = await _build_rag_fn(workspace_id, corr_id)
-    
+
     try:
         # ✅ FIXED: Add timeout to pipeline run
         run = await asyncio.wait_for(
@@ -267,9 +278,9 @@ async def run_evaluation_pipeline(
             ),
             timeout=_EVAL_TIMEOUT * 2,  # Longer timeout for full pipeline
         )
-        
+
         summary = run.summary()
-        
+
         # ✅ FIXED: Safe background task with exception handling
         def _safe_send_alerts():
             try:
@@ -283,7 +294,7 @@ async def run_evaluation_pipeline(
                     )
             except Exception as e:
                 logger.warning(f"[{corr_id}] Alert sending failed: {e}")
-        
+
         def _safe_record_metrics():
             try:
                 record_evaluation_run(
@@ -297,11 +308,11 @@ async def run_evaluation_pipeline(
                 )
             except Exception as e:
                 logger.warning(f"[{corr_id}] Metrics recording failed: {e}")
-        
+
         if run.alerts:
             background_tasks.add_task(_safe_send_alerts)
         background_tasks.add_task(_safe_record_metrics)
-        
+
         ragas = summary.get("ragas_summary") or {}
         return PipelineRunResponse(
             run_id=run.correlation_id,
@@ -319,7 +330,7 @@ async def run_evaluation_pipeline(
             duration_seconds=run.total_latency_seconds,
             correlation_id=corr_id,
         )
-        
+
     except asyncio.TimeoutError:
         logger.error(f"[{corr_id}] Pipeline run timed out after {_EVAL_TIMEOUT * 2}s")
         raise HTTPException(status_code=408, detail=f"Pipeline timed out after {_EVAL_TIMEOUT * 2}s")
@@ -344,14 +355,14 @@ async def list_datasets(
 ):
     """Returns all stored evaluation datasets with metadata (workspace-scoped)."""
     corr_id = generate_correlation_id("list_datasets")
-    
+
     try:
         manager = DatasetManager()
         try:
             datasets = manager.list_datasets(domain=domain, workspace_id=user.workspace_id)
         except TypeError:
             datasets = manager.list_datasets(domain=domain) if domain is not None else manager.list_datasets()
-        
+
         return {
             "workspace_id": user.workspace_id,
             "correlation_id": corr_id,
@@ -374,18 +385,18 @@ async def create_dataset(
 ) -> dict:
     """Upload a Q&A dataset for evaluation (workspace-scoped)."""
     corr_id = generate_correlation_id("create_dataset")
-    
+
     workspace_id = request.workspace_id or user.workspace_id
-    
+
     # ✅ Validate samples format
     for i, sample in enumerate(request.samples[:10]):  # Check first 10 for validation
         if not isinstance(sample, dict):
             raise HTTPException(status_code=400, detail=f"Sample {i} must be a dict")
         if "question" not in sample or "answer" not in sample:
             raise HTTPException(status_code=400, detail=f"Sample {i} missing required fields")
-    
+
     manager = DatasetManager()
-    
+
     try:
         existing = manager.get_dataset(
             domain=request.domain,
@@ -395,13 +406,13 @@ async def create_dataset(
     except Exception as e:
         logger.error(f"[{corr_id}] Dataset check failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to check dataset existence")
-    
+
     if existing:
         raise HTTPException(
             status_code=409,
             detail=f"Dataset {request.domain}/{request.version} already exists in workspace {workspace_id}",
         )
-    
+
     try:
         dataset = EvalDataset(
             name=request.name,
@@ -412,11 +423,11 @@ async def create_dataset(
             workspace_id=workspace_id,
             created_by=user.user_id,
         )
-        
+
         path = manager.save(dataset)
-        
+
         logger.info(f"[{corr_id}] Dataset saved: {path} workspace={workspace_id}")
-        
+
         return {
             "status": "saved",
             "domain": request.domain,
@@ -442,7 +453,7 @@ async def get_alert_history(
 ):
     """Returns recent RAGAs alert history (workspace-scoped)."""
     corr_id = generate_correlation_id("alert_history")
-    
+
     try:
         engine = AlertEngine()
         try:
@@ -453,7 +464,7 @@ async def get_alert_history(
             )
         except TypeError:
             history = engine.get_alert_history(last_n=last_n)
-        
+
         return {
             "workspace_id": user.workspace_id,
             "correlation_id": corr_id,
@@ -468,11 +479,21 @@ async def get_alert_history(
 def get_evaluation_metadata() -> dict[str, Any]:
     """✅ NEW: Return evaluation API metadata for monitoring."""
     return {
-        "endpoints": ["/evaluation/sample", "/evaluation/run", "/evaluation/datasets", "/evaluation/alerts"],
+        "endpoints": [
+            "/evaluation/sample",
+            "/evaluation/run",
+            "/evaluation/datasets",
+            "/evaluation/alerts",
+        ],
         "timeout_seconds": _EVAL_TIMEOUT,
         "max_concurrency": 5,
         "max_samples_per_dataset": 1000,
-        "ragas_metrics": ["faithfulness", "answer_relevancy", "context_precision", "context_recall"],
+        "ragas_metrics": [
+            "faithfulness",
+            "answer_relevancy",
+            "context_precision",
+            "context_recall",
+        ],
         "workspace_scoped": True,
         "mlflow_integration": True,
         "alert_engine_enabled": True,
@@ -480,10 +501,9 @@ def get_evaluation_metadata() -> dict[str, Any]:
 
 
 __all__ = ["router", "get_evaluation_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

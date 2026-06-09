@@ -4,6 +4,7 @@ API key management — create, validate, revoke, rotate workspace API keys.
 Key format: dmk_{workspace_prefix}_{random_32chars}
 Full key shown ONCE — only SHA-256 hash stored.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -42,9 +43,11 @@ def _make_key(workspace_name: str) -> tuple[str, str, str]:
 
 # ── Schema bootstrap ─────────────────────────────────────────────────────────
 
+
 async def ensure_apikey_schema() -> None:
     async with async_engine.begin() as conn:
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS api_keys (
                 id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 workspace_id  UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -59,18 +62,16 @@ async def ensure_apikey_schema() -> None:
                 scopes        TEXT[] DEFAULT ARRAY['read','write'],
                 created_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             )
-        """))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_api_keys_workspace_id "
-            "ON api_keys(workspace_id)"
-        ))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_api_keys_active "
-            "ON api_keys(is_active, workspace_id)"
-        ))
+        """)
+        )
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_api_keys_workspace_id " "ON api_keys(workspace_id)"))
+        await conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_api_keys_active " "ON api_keys(is_active, workspace_id)")
+        )
 
 
 # ── Create key ────────────────────────────────────────────────────────────────
+
 
 async def create_api_key(
     workspace_id: str,
@@ -84,42 +85,58 @@ async def create_api_key(
     """
     # Get workspace name for slug in key
     async with async_engine.connect() as conn:
-        ws_row = (await conn.execute(text(
-            "SELECT name FROM workspaces WHERE id = :wsid"
-        ), {"wsid": workspace_id})).mappings().fetchone()
+        ws_row = (
+            (
+                await conn.execute(
+                    text("SELECT name FROM workspaces WHERE id = :wsid"),
+                    {"wsid": workspace_id},
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
     ws_name = ws_row["name"] if ws_row else "ws"
 
     full_key, key_hash, display_prefix = _make_key(ws_name)
-    expires_at = (
-        datetime.now(timezone.utc) + timedelta(days=expires_in_days)
-        if expires_in_days else None
-    )
+    expires_at = datetime.now(timezone.utc) + timedelta(days=expires_in_days) if expires_in_days else None
 
     async with async_engine.begin() as conn:
-        row = (await conn.execute(text("""
+        row = (
+            (
+                await conn.execute(
+                    text("""
             INSERT INTO api_keys
                 (workspace_id, name, key_hash, key_prefix, created_by, scopes, expires_at)
             VALUES
                 (:ws_id, :name, :hash, :prefix, :created_by, :scopes, :expires_at)
             RETURNING id::text AS key_id, name, key_prefix, scopes,
                       expires_at, created_at, is_active
-        """), {
-            "ws_id": workspace_id, "name": name,
-            "hash": key_hash, "prefix": display_prefix,
-            "created_by": created_by,
-            "scopes": scopes,
-            "expires_at": expires_at,
-        })).mappings().fetchone()
+        """),
+                    {
+                        "ws_id": workspace_id,
+                        "name": name,
+                        "hash": key_hash,
+                        "prefix": display_prefix,
+                        "created_by": created_by,
+                        "scopes": scopes,
+                        "expires_at": expires_at,
+                    },
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
 
     return {
         **dict(row),
-        "api_key": full_key,       # SHOWN ONCE
+        "api_key": full_key,  # SHOWN ONCE
         "workspace_id": workspace_id,
         "warning": "Save this key immediately — it will not be shown again.",
     }
 
 
 # ── Validate key (middleware use) ─────────────────────────────────────────────
+
 
 async def validate_api_key(raw_key: str) -> dict[str, Any] | None:
     """
@@ -133,7 +150,10 @@ async def validate_api_key(raw_key: str) -> dict[str, Any] | None:
     key_hash = _hash_key(raw_key)
 
     async with async_engine.begin() as conn:
-        row = (await conn.execute(text("""
+        row = (
+            (
+                await conn.execute(
+                    text("""
             SELECT ak.id::text AS key_id,
                    ak.workspace_id::text,
                    ak.scopes, ak.is_active, ak.expires_at,
@@ -141,7 +161,13 @@ async def validate_api_key(raw_key: str) -> dict[str, Any] | None:
             FROM api_keys ak
             JOIN workspaces w ON w.id = ak.workspace_id
             WHERE ak.key_hash = :hash
-        """), {"hash": key_hash})).mappings().fetchone()
+        """),
+                    {"hash": key_hash},
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
 
         if not row:
             return None
@@ -151,11 +177,14 @@ async def validate_api_key(raw_key: str) -> dict[str, Any] | None:
             return None
 
         # Update usage stats
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             UPDATE api_keys
             SET last_used_at = NOW(), usage_count = usage_count + 1
             WHERE id = :kid
-        """), {"kid": row["key_id"]})
+        """),
+            {"kid": row["key_id"]},
+        )
 
     return {
         "key_id": row["key_id"],
@@ -166,9 +195,13 @@ async def validate_api_key(raw_key: str) -> dict[str, Any] | None:
 
 # ── List keys ─────────────────────────────────────────────────────────────────
 
+
 async def list_api_keys(workspace_id: str) -> list[dict[str, Any]]:
     async with async_engine.connect() as conn:
-        rows = (await conn.execute(text("""
+        rows = (
+            (
+                await conn.execute(
+                    text("""
             SELECT ak.id::text AS key_id, ak.name, ak.key_prefix, ak.scopes,
                    ak.last_used_at, ak.usage_count, ak.is_active,
                    ak.expires_at, ak.created_at,
@@ -177,23 +210,34 @@ async def list_api_keys(workspace_id: str) -> list[dict[str, Any]]:
             LEFT JOIN users u ON u.id = ak.created_by
             WHERE ak.workspace_id = :wsid
             ORDER BY ak.created_at DESC
-        """), {"wsid": workspace_id})).mappings().fetchall()
+        """),
+                    {"wsid": workspace_id},
+                )
+            )
+            .mappings()
+            .fetchall()
+        )
         return [dict(r) for r in rows]
 
 
 # ── Revoke key ────────────────────────────────────────────────────────────────
 
+
 async def revoke_api_key(key_id: str, workspace_id: str) -> None:
     async with async_engine.begin() as conn:
-        result = await conn.execute(text("""
+        result = await conn.execute(
+            text("""
             UPDATE api_keys SET is_active = FALSE
             WHERE id = :kid AND workspace_id = :wsid
-        """), {"kid": key_id, "wsid": workspace_id})
+        """),
+            {"kid": key_id, "wsid": workspace_id},
+        )
         if result.rowcount == 0:
             raise ValueError("API key not found or access denied")
 
 
 # ── Rotate key ────────────────────────────────────────────────────────────────
+
 
 async def rotate_api_key(
     key_id: str,
@@ -202,10 +246,19 @@ async def rotate_api_key(
 ) -> dict[str, Any]:
     """Revoke old key, create new key with same name + scopes."""
     async with async_engine.connect() as conn:
-        old = (await conn.execute(text("""
+        old = (
+            (
+                await conn.execute(
+                    text("""
             SELECT name, scopes, expires_at FROM api_keys
             WHERE id = :kid AND workspace_id = :wsid AND is_active = TRUE
-        """), {"kid": key_id, "wsid": workspace_id})).mappings().fetchone()
+        """),
+                    {"kid": key_id, "wsid": workspace_id},
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
 
     if not old:
         raise ValueError("Active API key not found or access denied")
@@ -228,9 +281,13 @@ async def rotate_api_key(
 
 # ── Usage history ─────────────────────────────────────────────────────────────
 
+
 async def get_key_usage(key_id: str, days: int = 30) -> list[dict[str, Any]]:
     async with async_engine.connect() as conn:
-        rows = (await conn.execute(text("""
+        rows = (
+            (
+                await conn.execute(
+                    text("""
             SELECT DATE(created_at) AS day,
                    COUNT(*) AS request_count
             FROM usage_logs
@@ -239,7 +296,13 @@ async def get_key_usage(key_id: str, days: int = 30) -> list[dict[str, Any]]:
               AND created_at >= NOW() - INTERVAL '30 days'
             GROUP BY DATE(created_at)
             ORDER BY day
-        """), {"kid": key_id})).mappings().fetchall()
+        """),
+                    {"kid": key_id},
+                )
+            )
+            .mappings()
+            .fetchall()
+        )
         return [dict(r) for r in rows]
 
 

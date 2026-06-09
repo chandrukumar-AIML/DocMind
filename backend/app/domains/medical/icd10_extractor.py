@@ -1,11 +1,10 @@
-﻿# backend/app/domains/medical/icd10_extractor.py
+# backend/app/domains/medical/icd10_extractor.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 
 from __future__ import annotations
 
-import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Final, Optional
 
 from langchain_core.documents import Document
@@ -55,6 +54,7 @@ Clinical text:
 @dataclass
 class ICD10Code:
     """An extracted ICD-10 diagnosis or procedure code."""
+
     description: str
     icd10_code: str
     code_type: str  # "diagnosis" | "procedure"
@@ -72,11 +72,13 @@ class ICD10Extractor:
     def __init__(self, model: str = "gpt-4o"):
         # FIXED: Use centralized LLM pool
         self.llm = get_domain_llm(streaming=False, model_override=model)
-        self._llm_retry = retry_async(config=RetryConfig(
-            max_attempts=2,
-            backoff_base=0.5,
-            exceptions=(Exception,),
-        ))
+        self._llm_retry = retry_async(
+            config=RetryConfig(
+                max_attempts=2,
+                backoff_base=0.5,
+                exceptions=(Exception,),
+            )
+        )
 
     async def extract(
         self,
@@ -95,19 +97,24 @@ class ICD10Extractor:
 
             # Filter: only process clinical-looking text
             medical_keywords = [
-                "diagnosis", "patient", "prescribed", "treatment",
-                "mg", "symptoms", "history", "assessment", "plan",
+                "diagnosis",
+                "patient",
+                "prescribed",
+                "treatment",
+                "mg",
+                "symptoms",
+                "history",
+                "assessment",
+                "plan",
             ]
             if not any(kw in text.lower() for kw in medical_keywords):
                 continue
 
             prompt = build_domain_prompt(ICD10_PROMPT, text=text[:2500])
             try:
-                response = await self._llm_retry(
-                    lambda: self.llm.ainvoke([{"role": "user", "content": prompt}])
-                )
+                response = await self._llm_retry(lambda: self.llm.ainvoke([{"role": "user", "content": prompt}]))
                 data = safe_parse_llm_json(response.content, default={})
-                
+
                 is_valid, error = validate_medical_output(data)
                 if not is_valid:
                     logger.warning(f"[{corr_id}] Invalid ICD-10 output: {error}")
@@ -119,17 +126,19 @@ class ICD10Extractor:
                         if not code or code in seen_codes:
                             continue
                         seen_codes.add(code)
-                        all_codes.append(ICD10Code(
-                            description=str(item.get("description", "")),
-                            icd10_code=code,
-                            code_type=str(item.get("code_type", "diagnosis")),
-                            confidence=float(item.get("confidence", 0.8)),
-                            evidence_text=str(item.get("evidence_text", ""))[:200],
-                            is_primary=bool(item.get("is_primary", False)),
-                            source_file=source_file,
-                            page_number=page_num,
-                            correlation_id=corr_id,  # FIXED: Propagate correlation_id
-                        ))
+                        all_codes.append(
+                            ICD10Code(
+                                description=str(item.get("description", "")),
+                                icd10_code=code,
+                                code_type=str(item.get("code_type", "diagnosis")),
+                                confidence=float(item.get("confidence", 0.8)),
+                                evidence_text=str(item.get("evidence_text", ""))[:200],
+                                is_primary=bool(item.get("is_primary", False)),
+                                source_file=source_file,
+                                page_number=page_num,
+                                correlation_id=corr_id,  # FIXED: Propagate correlation_id
+                            )
+                        )
             except Exception as e:
                 logger.warning(f"[{corr_id}] ICD-10 extraction failed: {e}")
 
@@ -139,10 +148,9 @@ class ICD10Extractor:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["ICD10Extractor", "ICD10Code"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

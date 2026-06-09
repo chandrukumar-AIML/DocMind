@@ -1,4 +1,4 @@
-﻿# backend/app/monitoring/auto_improver.py
+# backend/app/monitoring/auto_improver.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, S - Security
 # BATMAN-FIX: A - True async, T - Batch processing, M - Memory safety
 # ACID-INDEX: E - Error handling (audit trail)
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ImprovementAction:
     """A single auto-improvement action."""
+
     action_type: str  # re_embed / retune_retrieval / rechunk / alert_only
     trigger: str  # what triggered this action
     workspace_id: str
@@ -129,20 +130,22 @@ class AutoImprover:
     ) -> str:
         """
         Determine the least-invasive action needed.
-        
+
         Decision tree uses centralized quality thresholds.
         """
         # ✅ Validate inputs
-        is_valid, error = _validate_improvement_inputs(quality_alerts, drifted_columns, current_stats, "determine_action")
+        is_valid, error = _validate_improvement_inputs(
+            quality_alerts, drifted_columns, current_stats, "determine_action"
+        )
         if not is_valid:
             logger.error(f"Invalid improvement inputs: {error}")
             return "alert_only"
-        
+
         # FIXED: Use centralized thresholds
         faithfulness_threshold = self.quality_thresholds.get("faithfulness", 0.70)
         precision_threshold = self.quality_thresholds.get("context_precision_mean", 0.55)
         latency_threshold = self.quality_thresholds.get("latency_ms_p95", 8000)
-        
+
         # ✅ FIXED: Safe None checks for stats
         faithfulness = current_stats.get("faithfulness_mean") if current_stats else None
         latency_p95 = current_stats.get("latency_ms_p95", 0) if current_stats else 0
@@ -177,11 +180,11 @@ class AutoImprover:
     ) -> ImprovementAction:
         """
         Async: Execute an improvement action.
-        
+
         ✅ FIXED: Use async-safe operations + correlation_id propagation.
         """
         corr_id = correlation_id or generate_monitoring_correlation_id("improve")
-        
+
         action = ImprovementAction(
             action_type=action_type,
             trigger="; ".join(quality_alerts[:3]),
@@ -192,9 +195,7 @@ class AutoImprover:
 
         # Record metrics before
         collector = MetricsCollector()
-        action.metrics_before = await collector.compute_window_stats_async(
-            hours=24.0, workspace_id=self.workspace_id
-        )
+        action.metrics_before = await collector.compute_window_stats_async(hours=24.0, workspace_id=self.workspace_id)
 
         logger.info(
             f"[{corr_id}] AutoImprover executing: action={action_type} | "
@@ -217,9 +218,7 @@ class AutoImprover:
 
             # Record metrics after (brief pause before measuring)
             await asyncio.sleep(5)
-            action.metrics_after = await collector.compute_window_stats_async(
-                hours=1.0, workspace_id=self.workspace_id
-            )
+            action.metrics_after = await collector.compute_window_stats_async(hours=1.0, workspace_id=self.workspace_id)
 
             # Update cooldown (thread-safe)
             with self._lock:
@@ -239,8 +238,10 @@ class AutoImprover:
         Sync wrapper.
         ✅ FIXED: Use run_async_in_task helper to avoid deadlock.
         """
+
         async def _do_execute():
             return await self.execute_async(*args, **kwargs)
+
         return run_async_in_task(_do_execute)
 
     async def _retune_retrieval_async(self, action: ImprovementAction, corr_id: str):
@@ -253,7 +254,7 @@ class AutoImprover:
 
         # ✅ FIXED: Properly instantiate VectorStoreManager
         store = VectorStoreManager()
-        
+
         # Analyze document type distribution
         docs = store.list_documents()
         type_counts: dict[str, int] = {}
@@ -275,14 +276,9 @@ class AutoImprover:
         action.parameters = {
             "dominant_doc_type": dominant_type,
             "bm25_synced_docs": synced,
-            "profile_applied": RETRIEVAL_PROFILES.get(dominant_type, {
-                "bm25_weight": 0.5, "vector_weight": 0.5
-            }),
+            "profile_applied": RETRIEVAL_PROFILES.get(dominant_type, {"bm25_weight": 0.5, "vector_weight": 0.5}),
         }
-        logger.info(
-            f"[{corr_id}] Retrieval retuned: dominant_type={dominant_type} | "
-            f"bm25_docs={synced}"
-        )
+        logger.info(f"[{corr_id}] Retrieval retuned: dominant_type={dominant_type} | " f"bm25_docs={synced}")
 
     async def _re_embed_async(self, action: ImprovementAction, corr_id: str):
         """
@@ -295,9 +291,7 @@ class AutoImprover:
         store = VectorStoreManager()
         docs = store.list_documents()
 
-        logger.info(
-            f"[{corr_id}] Re-embedding {len(docs or [])} documents for workspace {self.workspace_id}"
-        )
+        logger.info(f"[{corr_id}] Re-embedding {len(docs or [])} documents for workspace {self.workspace_id}")
 
         # Rebuild FAISS from ChromaDB (re-uses existing embeddings)
         if store.faiss:
@@ -305,6 +299,7 @@ class AutoImprover:
 
         # Rebuild BM25
         from app.retrieval import HybridRetriever
+
         retriever = HybridRetriever(store_manager=store, workspace_id=self.workspace_id)
         synced = retriever.sync_from_vector_store()
 
@@ -348,14 +343,14 @@ class AutoImprover:
             "flagged_documents": rechunk_recommended[:10],
         }
         logger.warning(
-            f"[{corr_id}] Rechunk recommended for {len(rechunk_recommended)} documents. "
-            "Manual action required."
+            f"[{corr_id}] Rechunk recommended for {len(rechunk_recommended)} documents. " "Manual action required."
         )
 
     async def _log_action_to_mlflow_async(self, action: ImprovementAction):
         """Async: Log improvement action to MLflow for audit trail."""
         try:
             import mlflow
+
             mlflow.set_experiment("rag-auto-improvement")
             with mlflow.start_run(run_name=f"improve_{action.action_type}") as run:
                 mlflow.log_param("action_type", action.action_type)
@@ -399,10 +394,9 @@ __all__ = [
     "ImprovementAction",
     "get_auto_improver_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

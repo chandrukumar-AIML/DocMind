@@ -1,4 +1,4 @@
-﻿# backend/app/tasks/ingest_tasks.py
+# backend/app/tasks/ingest_tasks.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, M - Modular
 # BATMAN-FIX: A - True async, T - Timeout guards, M - Memory safety
 # ASCALE-FIX: E - Error propagation, L - Logging
@@ -6,12 +6,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
-import tempfile
 import time
-import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Any, Final
 
@@ -22,9 +18,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from app.tasks.celery_app import celery_app
 from app.tasks.progress import ProgressPublisher, TaskStatus
 from app.core.celery_utils import (
-    get_running_loop_safe,
     run_async_in_task,
-    propagate_correlation_id,
     is_transient_error,
 )
 
@@ -45,6 +39,7 @@ class IngestTask(Task):
     Base class for ingest tasks.
     Handles common failure recording and dead-letter routing.
     """
+
     abstract = True
     max_retries = 2
     default_retry_delay = 30
@@ -61,10 +56,8 @@ class IngestTask(Task):
             correlation_id=corr_id,
         )
         # Dead-letter logging with correlation context
-        from app.core.dead_letter import log_failed_page
         logger.error(
-            f"[{corr_id}] Ingest task permanently failed: task_id={task_id} | "
-            f"filename={filename} | error={exc}"
+            f"[{corr_id}] Ingest task permanently failed: task_id={task_id} | " f"filename={filename} | error={exc}"
         )
 
     def on_retry(self, exc, task_id, args, kwargs, einfo):
@@ -121,7 +114,7 @@ def ingest_document(
 ) -> dict:
     """
     Full document ingestion pipeline as a Celery task.
-    
+
     Stages with progress reporting:
     1. Validate (0-5%)
     2. OCR (5-50%)
@@ -179,6 +172,7 @@ def ingest_document(
         )
 
         from app.ingestion.universal_ingestion import UniversalIngestionPipeline
+
         pipeline = UniversalIngestionPipeline()
 
         # Progress callback for page-level OCR updates
@@ -206,9 +200,7 @@ def ingest_document(
         )
 
         if not ingest_result.is_successful:
-            raise ValueError(
-                f"Ingestion failed: {ingest_result.error or 'No content extracted'}"
-            )
+            raise ValueError(f"Ingestion failed: {ingest_result.error or 'No content extracted'}")
 
         child_chunks = ingest_result.documents
         page_count = ingest_result.page_count
@@ -237,6 +229,7 @@ def ingest_document(
         )
 
         from app.vectorstore.store_manager import VectorStoreManager
+
         store = VectorStoreManager()
 
         # Batch embedding with progress
@@ -245,7 +238,7 @@ def ingest_document(
         all_ids = []
 
         for i in range(0, total_chunks, batch_size):
-            batch = child_chunks[i: i + batch_size]
+            batch = child_chunks[i : i + batch_size]
             publisher.publish(
                 task_id=task_id,
                 status=TaskStatus.EMBEDDING,
@@ -258,6 +251,7 @@ def ingest_document(
             )
             # ✅ FIXED: Run sync store calls in thread executor to avoid blocking
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 chroma_future = executor.submit(store.chroma.add_chunks, batch)
                 faiss_future = executor.submit(store.faiss.add_chunks, batch)
@@ -287,10 +281,12 @@ def ingest_document(
         )
 
         from app.config import get_settings
+
         settings = get_settings()
         if getattr(settings, "graph_extraction_enabled", False):
             try:
                 from app.graph import GraphExtractor, get_neo4j_store
+
                 neo4j = get_neo4j_store()
                 extractor = GraphExtractor()
 
@@ -364,6 +360,7 @@ def ingest_document(
         )
         try:
             from app.versioning import VersionRegistry
+
             registry = VersionRegistry()
 
             # ✅ FIXED: Use run_async_in_task helper instead of asyncio.run()
@@ -377,7 +374,7 @@ def ingest_document(
                     uploaded_by=user_id,
                     ingest_metadata={"format": ingest_result.format},
                 )
-            
+
             new_version = run_async_in_task(_register, timeout=_VERSIONING_TIMEOUT)
             logger.info(f"[{corr_id}] Version {new_version.version_number} registered: {filename}")
         except Exception as e:
@@ -395,9 +392,11 @@ def ingest_document(
         )
         try:
             from app.retrieval import get_bm25_index
+
             bm25 = get_bm25_index(workspace_id)
             # ✅ FIXED: Run sync BM25 call in thread executor
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 executor.submit(bm25.add_documents, child_chunks).result()
         except Exception as e:
@@ -481,10 +480,9 @@ def get_ingest_task_metadata() -> dict[str, Any]:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["ingest_document", "IngestTask", "get_ingest_task_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

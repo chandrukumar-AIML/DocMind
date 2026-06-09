@@ -1,4 +1,4 @@
-﻿# backend/app/core/graph_utils.py
+# backend/app/core/graph_utils.py
 # DVMELTSS-FIX: M - Modular, S - Security, A - Async
 # ASCALE-FIX: S - Separation, C - Coupling
 # OWASP-FIX: 9 - Cypher injection prevention
@@ -14,30 +14,50 @@ Centralizes:
 Usage:
     from app.core.graph_utils import sanitize_cypher_input, validate_entity_type
 """
+
 from __future__ import annotations
 
 import re
-from typing import Final, Optional
+from typing import Final
 
-from app.config import get_settings
 
 # ✅ FIXED: Added missing import for generate_correlation_id
 from app.core.ids import generate_correlation_id
 
 # DVMELTSS-S: Valid graph schema elements
-_VALID_ENTITY_TYPES: Final = frozenset({
-    "Person", "Organization", "Contract", "Clause",
-    "Date", "Location", "Concept", "Amount", "Document", "__Entity__"
-})
-_VALID_REL_TYPES: Final = frozenset({
-    "SIGNED_BY", "INVOLVES", "CONTAINS", "REFERENCES",
-    "DATED", "LOCATED_IN", "RELATED_TO", "PART_OF",
-    "MENTIONS", "AUTHORED_BY", "EXTRACTED_FROM"
-})
+_VALID_ENTITY_TYPES: Final = frozenset(
+    {
+        "Person",
+        "Organization",
+        "Contract",
+        "Clause",
+        "Date",
+        "Location",
+        "Concept",
+        "Amount",
+        "Document",
+        "__Entity__",
+    }
+)
+_VALID_REL_TYPES: Final = frozenset(
+    {
+        "SIGNED_BY",
+        "INVOLVES",
+        "CONTAINS",
+        "REFERENCES",
+        "DATED",
+        "LOCATED_IN",
+        "RELATED_TO",
+        "PART_OF",
+        "MENTIONS",
+        "AUTHORED_BY",
+        "EXTRACTED_FROM",
+    }
+)
 # OWASP-9: Dangerous Cypher keywords to block
-_FORBIDDEN_CYPHER_KEYWORDS: Final = frozenset({
-    "DELETE", "DETACH", "DROP", "CREATE", "MERGE", "SET", "REMOVE", "CALL", "EXECUTE"
-})
+_FORBIDDEN_CYPHER_KEYWORDS: Final = frozenset(
+    {"DELETE", "DETACH", "DROP", "CREATE", "MERGE", "SET", "REMOVE", "CALL", "EXECUTE"}
+)
 
 
 def validate_entity_type(entity_type: str) -> str:
@@ -51,7 +71,7 @@ def validate_entity_type(entity_type: str) -> str:
 def validate_relationship_type(rel_type: str) -> str:
     """Validate and sanitize relationship type."""
     # Remove non-alphanumeric chars, uppercase
-    safe = re.sub(r'[^A-Z_]', '', rel_type.upper())
+    safe = re.sub(r"[^A-Z_]", "", rel_type.upper())
     if safe not in _VALID_REL_TYPES:
         return "RELATED_TO"  # Safe fallback
     return safe
@@ -97,10 +117,9 @@ __all__ = [
     "generate_graph_correlation_id",
     "escape_graph_prompt",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

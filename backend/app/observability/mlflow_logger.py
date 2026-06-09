@@ -1,4 +1,4 @@
-﻿# backend/app/observability/mlflow_logger.py
+# backend/app/observability/mlflow_logger.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Security
 # ASCALE-FIX: S - Separation, C - Coupling
 # BATMAN-FIX: A - Async artifact logging, T - Thread-safe circuit breaker
@@ -23,6 +23,7 @@ from urllib.parse import urlparse
 import mlflow
 
 from app.config import get_settings
+
 # DVMELTSS-M: Import centralized utilities
 from app.core.pii_utils import scrub_pii_for_evaluation
 
@@ -30,7 +31,12 @@ logger = logging.getLogger(__name__)
 
 # Composite metric keys for RAG evaluation
 # FIXED: Added context_recall — was missing from composite score calculation
-COMPOSITE_METRICS: Final = ["faithfulness", "answer_relevance", "context_precision", "context_recall"]
+COMPOSITE_METRICS: Final = [
+    "faithfulness",
+    "answer_relevance",
+    "context_precision",
+    "context_recall",
+]
 
 # ✅ NEW: Socket timeout constant
 _SOCKET_TIMEOUT: Final = 2.0
@@ -39,16 +45,16 @@ _SOCKET_TIMEOUT: Final = 2.0
 def configure_mlflow(correlation_id: Optional[str] = None) -> bool:
     """
     Configure MLflow tracking with graceful fallback.
-    
+
     Behaviors:
     - If remote URI unreachable, fall back to local file store
     - Never raises — all failures logged as warnings
     - Creates local directories as needed
     - FIXED: Accepts correlation_id for distributed tracing
-    
+
     Args:
         correlation_id: Optional request ID for tracing context
-        
+
     Returns:
         True if configured successfully, False if using fallback or failed
     """
@@ -61,7 +67,7 @@ def configure_mlflow(correlation_id: Optional[str] = None) -> bool:
         parsed = urlparse(uri)
         host = parsed.hostname or "localhost"
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        
+
         try:
             # ✅ FIXED: Use timeout + handle connection errors gracefully
             sock = socket.create_connection((host, port), timeout=_SOCKET_TIMEOUT)
@@ -83,11 +89,8 @@ def configure_mlflow(correlation_id: Optional[str] = None) -> bool:
 
         mlflow.set_tracking_uri(uri)
         mlflow.set_experiment(settings.mlflow_experiment_name)
-        
-        logger.info(
-            f"[{corr_id}] MLflow configured: uri={uri}, "
-            f"experiment={settings.mlflow_experiment_name}"
-        )
+
+        logger.info(f"[{corr_id}] MLflow configured: uri={uri}, " f"experiment={settings.mlflow_experiment_name}")
         return True
     except Exception as e:
         logger.warning(f"[{corr_id}] MLflow configuration failed: {e}. Continuing without tracking.")
@@ -97,6 +100,7 @@ def configure_mlflow(correlation_id: Optional[str] = None) -> bool:
 @dataclass
 class _NullRun:
     """Sentinel returned when MLflow run fails to start."""
+
     info: Any = None
     is_null: bool = True
 
@@ -107,7 +111,7 @@ NULL_RUN = _NullRun()
 class MLflowLogger:
     """
     Domain-aware MLflow logging wrapper for DocuMind AI.
-    
+
     Features:
     - Circuit breaker pattern to disable after repeated failures
     - Auto-detect nested runs for hierarchical experiment tracking
@@ -127,7 +131,7 @@ class MLflowLogger:
         settings = get_settings()
         self.experiment_name = experiment_name or settings.mlflow_experiment_name
         self._active_run = None
-        
+
         try:
             mlflow.set_experiment(self.experiment_name)
         except Exception as e:
@@ -143,19 +147,19 @@ class MLflowLogger:
     ):
         """
         Context manager for MLflow run with auto-nesting detection.
-        
+
         Args:
             run_name: Human-readable name for the run
             tags: Optional dict of tags for filtering in UI
             nested: If None, auto-detect based on active run; else force behavior
             correlation_id: Request ID for distributed tracing
-            
+
         Yields:
             MLflow run object or NULL_RUN sentinel on failure
         """
         corr_id = correlation_id or "mlflow_run"
         settings = get_settings()
-        
+
         # Auto-detect nesting: if a run is already active, nest by default
         active_run = mlflow.active_run()
         use_nested = nested if nested is not None else (active_run is not None)
@@ -165,14 +169,11 @@ class MLflowLogger:
             "app": "documind-ai",
             "version": settings.app_version,
             "environment": "production" if not settings.api_reload else "development",
-            **( {"correlation_id": corr_id} if corr_id else {} ),
+            **({"correlation_id": corr_id} if corr_id else {}),
         }
         if tags:
             # FIXED: Use centralized PII scrubbing + truncate long values
-            default_tags.update({
-                k: scrub_pii_for_evaluation(str(v)[:500], domain="general") 
-                for k, v in tags.items()
-            })
+            default_tags.update({k: scrub_pii_for_evaluation(str(v)[:500], domain="general") for k, v in tags.items()})
 
         run = None
         try:
@@ -185,18 +186,13 @@ class MLflowLogger:
             # FIXED: Get uri from settings (was undefined)
             ui_base = settings.mlflow_tracking_uri.rstrip("/")
             if ui_base.startswith("http"):
-                ui_url = (
-                    f"{ui_base}/#/experiments/{run.info.experiment_id}"
-                    f"/runs/{run.info.run_id}"
-                )
+                ui_url = f"{ui_base}/#/experiments/{run.info.experiment_id}" f"/runs/{run.info.run_id}"
             else:
                 # For file-based URIs, use resolved path
                 file_uri = Path(settings.mlflow_tracking_uri).resolve()
                 ui_url = f"file://{file_uri}/#/experiments/{run.info.experiment_id}/runs/{run.info.run_id}"
-                
-            logger.info(
-                f"[{corr_id}] MLflow run: '{run_name}' | id={run.info.run_id} | ui={ui_url}"
-            )
+
+            logger.info(f"[{corr_id}] MLflow run: '{run_name}' | id={run.info.run_id} | ui={ui_url}")
             yield run
         except Exception as e:
             logger.warning(f"[{corr_id}] MLflow run '{run_name}' failed: {e}")
@@ -249,13 +245,13 @@ class MLflowLogger:
     def _safe_log_metrics(self, metrics: Dict[str, Any], step: Optional[int] = None):
         """
         Log metrics with circuit breaker protection.
-        
+
         Disables MLflow after _FAILURE_THRESHOLD consecutive failures.
         Thread-safe via class-level lock.
         """
         if not self.__class__._mlflow_available:
             return
-        
+
         # ✅ FIXED: Single, clean circuit breaker implementation
         with self.__class__._class_lock:
             try:
@@ -266,9 +262,7 @@ class MLflowLogger:
                 self.__class__._failure_count += 1
                 if self.__class__._failure_count >= self.__class__._FAILURE_THRESHOLD:
                     self.__class__._mlflow_available = False
-                    logger.warning(
-                        f"MLflow disabled after {self.__class__._FAILURE_THRESHOLD} consecutive failures."
-                    )
+                    logger.warning(f"MLflow disabled after {self.__class__._FAILURE_THRESHOLD} consecutive failures.")
                 else:
                     logger.debug("MLflow log_metrics failed: %s", e)
 
@@ -283,15 +277,17 @@ class MLflowLogger:
         denoise: bool = True,
     ):
         """Log OCR configuration parameters."""
-        self._safe_log_params({
-            "ocr_engine": ocr_engine,
-            "ocr_languages": ",".join(languages or ["en"]),
-            "ocr_use_gpu": str(use_gpu),
-            "ocr_confidence_threshold": str(confidence_threshold),
-            "ocr_enable_layout": str(enable_layout),
-            "ocr_preprocessing_deskew": str(deskew),
-            "ocr_preprocessing_denoise": str(denoise),
-        })
+        self._safe_log_params(
+            {
+                "ocr_engine": ocr_engine,
+                "ocr_languages": ",".join(languages or ["en"]),
+                "ocr_use_gpu": str(use_gpu),
+                "ocr_confidence_threshold": str(confidence_threshold),
+                "ocr_enable_layout": str(enable_layout),
+                "ocr_preprocessing_deskew": str(deskew),
+                "ocr_preprocessing_denoise": str(denoise),
+            }
+        )
 
     def log_chunking_params(
         self,
@@ -304,18 +300,22 @@ class MLflowLogger:
         total_documents: int,
     ):
         """Log chunking strategy parameters and derived metrics."""
-        self._safe_log_params({
-            "chunking_strategy": strategy,
-            "chunking_child_size": str(child_chunk_size),
-            "chunking_parent_size": str(parent_chunk_size),
-            "chunking_child_overlap": str(child_overlap),
-            "chunking_parent_overlap": str(parent_overlap),
-        })
-        self._safe_log_metrics({
-            "chunking_total_chunks": total_chunks,
-            "chunking_total_documents": total_documents,
-            "chunking_avg_chunks_per_doc": round(total_chunks / max(total_documents, 1), 2),
-        })
+        self._safe_log_params(
+            {
+                "chunking_strategy": strategy,
+                "chunking_child_size": str(child_chunk_size),
+                "chunking_parent_size": str(parent_chunk_size),
+                "chunking_child_overlap": str(child_overlap),
+                "chunking_parent_overlap": str(parent_overlap),
+            }
+        )
+        self._safe_log_metrics(
+            {
+                "chunking_total_chunks": total_chunks,
+                "chunking_total_documents": total_documents,
+                "chunking_avg_chunks_per_doc": round(total_chunks / max(total_documents, 1), 2),
+            }
+        )
 
     def log_retrieval_metrics(
         self,
@@ -330,7 +330,7 @@ class MLflowLogger:
     ):
         """
         Log retrieval evaluation metrics.
-        
+
         Note: Metric names are consistent regardless of k value for easy aggregation.
         """
         # ✅ Clamp metrics to valid ranges
@@ -338,7 +338,7 @@ class MLflowLogger:
         recall_at_k = max(0.0, min(1.0, recall_at_k))
         mrr = max(0.0, min(1.0, mrr))
         hit_rate = max(0.0, min(1.0, hit_rate))
-        
+
         metrics = {
             "retrieval_precision_at_k": round(precision_at_k, 6),
             "retrieval_recall_at_k": round(recall_at_k, 6),
@@ -362,16 +362,18 @@ class MLflowLogger:
         top_k_rerank: int,
     ):
         """Log retrieval configuration parameters."""
-        self._safe_log_params({
-            "retrieval_embedding_model": embedding_model,
-            "retrieval_vector_store": vector_store,
-            "retrieval_search_strategy": search_strategy,
-            "retrieval_use_hyde": str(use_hyde),
-            "retrieval_use_reranking": str(use_reranking),
-            "retrieval_reranker_model": reranker_model,
-            "retrieval_top_k_retrieve": str(max(1, top_k_retrieve)),
-            "retrieval_top_k_rerank": str(max(1, top_k_rerank)),
-        })
+        self._safe_log_params(
+            {
+                "retrieval_embedding_model": embedding_model,
+                "retrieval_vector_store": vector_store,
+                "retrieval_search_strategy": search_strategy,
+                "retrieval_use_hyde": str(use_hyde),
+                "retrieval_use_reranking": str(use_reranking),
+                "retrieval_reranker_model": reranker_model,
+                "retrieval_top_k_retrieve": str(max(1, top_k_retrieve)),
+                "retrieval_top_k_rerank": str(max(1, top_k_rerank)),
+            }
+        )
 
     def log_rag_metrics(
         self,
@@ -391,7 +393,7 @@ class MLflowLogger:
         faithfulness = max(0.0, min(1.0, faithfulness))
         answer_relevance = max(0.0, min(1.0, answer_relevance))
         context_precision = max(0.0, min(1.0, context_precision))
-        
+
         metric_values = {
             "faithfulness": faithfulness,
             "answer_relevance": answer_relevance,
@@ -419,12 +421,14 @@ class MLflowLogger:
         prompt_version: str = "v1",
     ):
         """Log RAG generation parameters."""
-        self._safe_log_params({
-            "rag_llm_model": llm_model,
-            "rag_temperature": str(max(0.0, min(2.0, temperature))),
-            "rag_max_tokens": str(max(1, max_tokens)),
-            "rag_prompt_version": prompt_version,
-        })
+        self._safe_log_params(
+            {
+                "rag_llm_model": llm_model,
+                "rag_temperature": str(max(0.0, min(2.0, temperature))),
+                "rag_max_tokens": str(max(1, max_tokens)),
+                "rag_prompt_version": prompt_version,
+            }
+        )
 
     def log_ingestion_event(
         self,
@@ -441,7 +445,7 @@ class MLflowLogger:
     ):
         """
         Log a document ingestion event as a nested MLflow run.
-        
+
         Creates a child run under the current active run (if any) for hierarchical tracking.
         """
         corr_id = correlation_id or "ingest_event"
@@ -455,10 +459,12 @@ class MLflowLogger:
             nested=use_nested,
             correlation_id=corr_id,
         ):
-            self._safe_log_params({
-                "ingest_source_file": os.path.basename(source_file),
-                "ingest_document_type": document_type,
-            })
+            self._safe_log_params(
+                {
+                    "ingest_source_file": os.path.basename(source_file),
+                    "ingest_document_type": document_type,
+                }
+            )
             # ✅ Clamp numeric inputs
             ocr_confidence = max(0.0, min(1.0, ocr_confidence))
             page_count = max(0, page_count)
@@ -467,24 +473,26 @@ class MLflowLogger:
             vision_fallbacks = max(0, vision_fallbacks)
             total_latency_s = max(0.0, total_latency_s)
             file_size_mb = max(0.0, file_size_mb)
-            
-            self._safe_log_metrics({
-                "ingest_page_count": page_count,
-                "ingest_child_chunks": child_chunks,
-                "ingest_parent_chunks": parent_chunks,
-                "ingest_ocr_confidence": round(ocr_confidence, 4),
-                "ingest_vision_fallbacks": vision_fallbacks,
-                "ingest_latency_seconds": round(total_latency_s, 3),
-                "ingest_file_size_mb": round(file_size_mb, 3),
-                "ingest_chunks_per_page": round(child_chunks / max(page_count, 1), 2),
-                "ingest_seconds_per_page": round(total_latency_s / max(page_count, 1), 3),
-            })
+
+            self._safe_log_metrics(
+                {
+                    "ingest_page_count": page_count,
+                    "ingest_child_chunks": child_chunks,
+                    "ingest_parent_chunks": parent_chunks,
+                    "ingest_ocr_confidence": round(ocr_confidence, 4),
+                    "ingest_vision_fallbacks": vision_fallbacks,
+                    "ingest_latency_seconds": round(total_latency_s, 3),
+                    "ingest_file_size_mb": round(file_size_mb, 3),
+                    "ingest_chunks_per_page": round(child_chunks / max(page_count, 1), 2),
+                    "ingest_seconds_per_page": round(total_latency_s / max(page_count, 1), 3),
+                }
+            )
 
     @contextmanager
     def timer(self, metric_name: str, step: Optional[int] = None):
         """
         Context manager for timing code blocks and logging to MLflow.
-        
+
         Usage:
             with logger.timer("retrieval_latency_ms"):
                 results = retrieve(query)
@@ -506,7 +514,7 @@ class MLflowLogger:
     ):
         """
         Log evaluation results as a CSV artifact to MLflow.
-        
+
         Args:
             results: List of dicts (each dict = one row)
             filename: Name for the CSV file
@@ -517,16 +525,14 @@ class MLflowLogger:
         if not results:
             logger.debug("No evaluation results to log")
             return
-            
+
         try:
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".csv", delete=False, newline="", encoding="utf-8"
-            ) as f:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=results[0].keys())
                 writer.writeheader()
                 writer.writerows(results)
                 tmp_path = f.name
-                
+
             mlflow.log_artifact(tmp_path, artifact_path=artifact_path)
             os.unlink(tmp_path)
             logger.debug(f"Logged eval CSV: {filename}")
@@ -542,23 +548,19 @@ class MLflowLogger:
     ):
         """Async version of log_eval_results_csv for non-blocking artifact logging."""
         # FIXED: get_event_loop() deprecated in Python 3.10+; use asyncio.to_thread() instead
-        await asyncio.to_thread(
-            self.log_eval_results_csv, results, filename, artifact_path, correlation_id
-        )
+        await asyncio.to_thread(self.log_eval_results_csv, results, filename, artifact_path, correlation_id)
 
     def _safe_log_params(self, params: Dict[str, str]):
         """Log parameters with truncation to avoid MLflow length limits."""
+
         # ✅ FIXED: Smarter truncation with ellipsis indicator
         def _smart_truncate(value: str, max_len: int = 500) -> str:
             if len(value) <= max_len:
                 return value
-            return value[:max_len-3] + "..."
-        
+            return value[: max_len - 3] + "..."
+
         # FIXED: Use centralized PII scrubbing + smart truncate
-        truncated = {
-            k: _smart_truncate(scrub_pii_for_evaluation(str(v), domain="general"))
-            for k, v in params.items()
-        }
+        truncated = {k: _smart_truncate(scrub_pii_for_evaluation(str(v), domain="general")) for k, v in params.items()}
         try:
             mlflow.log_params(truncated)
         except Exception as e:
@@ -571,9 +573,12 @@ class MLflowLogger:
             def _smart_truncate(value: str, max_len: int = 500) -> str:
                 if len(value) <= max_len:
                     return value
-                return value[:max_len-3] + "..."
-            
-            mlflow.log_param(key, _smart_truncate(scrub_pii_for_evaluation(str(value), domain="general")))
+                return value[: max_len - 3] + "..."
+
+            mlflow.log_param(
+                key,
+                _smart_truncate(scrub_pii_for_evaluation(str(value), domain="general")),
+            )
         except Exception as e:
             logger.debug("MLflow log_param failed: %s", e)
 
@@ -581,10 +586,10 @@ class MLflowLogger:
     def _compute_composite(values: Dict[str, float]) -> float:
         """
         Compute composite RAG score as mean of key metrics.
-        
+
         Args:
             values: Dict with metric names and values
-            
+
         Returns:
             Mean of available composite metrics, or 0.0 if none available
         """
@@ -621,10 +626,9 @@ __all__ = [
     "NULL_RUN",
     "get_mlflow_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

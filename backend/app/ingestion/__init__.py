@@ -16,20 +16,28 @@ Handles routing, validation, and extraction for:
 Public API:
     from app.ingest import UniversalIngestionPipeline, IngestionResult, FormatDetector
 """
+
 from __future__ import annotations
 from typing import Any
 
 # DVMELTSS-M: Explicit public API surface
 __all__ = [
     # Core Pipeline
-    "UniversalIngestionPipeline", "IngestionResult",
+    "UniversalIngestionPipeline",
+    "IngestionResult",
     # Format Detection
-    "FormatDetector", "FileFormat", "DetectedFormat",
+    "FormatDetector",
+    "FileFormat",
+    "DetectedFormat",
     # Extractors
-    "AudioTranscriber", "TranscriptionResult",
-    "DocxExtractor", "DocxContent",
-    "XlsxExtractor", "XlsxContent",
-    "HandwritingOCR", "HandwritingResult",
+    "AudioTranscriber",
+    "TranscriptionResult",
+    "DocxExtractor",
+    "DocxContent",
+    "XlsxExtractor",
+    "XlsxContent",
+    "HandwritingOCR",
+    "HandwritingResult",
     # Metadata helpers
     "get_ingest_metadata",
 ]
@@ -43,7 +51,10 @@ __supported_formats__ = "PDF, PNG, JPG, TIFF, DOCX, XLSX, MP3, MP4, WAV, M4A, OG
 # -- Lazy import mapping for __getattr__ ---------------------------------
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     # Core Pipeline
-    "UniversalIngestionPipeline": (".universal_ingestion", "UniversalIngestionPipeline"),
+    "UniversalIngestionPipeline": (
+        ".universal_ingestion",
+        "UniversalIngestionPipeline",
+    ),
     "IngestionResult": (".universal_ingestion", "IngestionResult"),
     # Format Detection
     "FormatDetector": (".format_detector", "FormatDetector"),
@@ -67,7 +78,7 @@ def __getattr__(name: str) -> Any:
     """
     DVMELTSS-T: Dynamically resolve imports only when accessed.
     ✅ FIXED: Direct return + explicit error handling.
-    
+
     Prevents circular imports between ingest ↔ ocr ↔ extraction ↔ agent modules.
     Enables pytest to collect tests without initializing heavy parsers.
     """
@@ -75,17 +86,17 @@ def __getattr__(name: str) -> Any:
         module_path, attr_name = _LAZY_IMPORTS[name]
         try:
             import importlib
-            module = importlib.import_module(module_path, package=__name__.rpartition('.')[0])
+
+            module = importlib.import_module(module_path, package=__name__.rpartition(".")[0])
             return getattr(module, attr_name)
         except ImportError as e:
-            raise AttributeError(
-                f"Failed to lazy-import '{name}' from '{module_path}': {e}"
-            ) from e
-    
+            raise AttributeError(f"Failed to lazy-import '{name}' from '{module_path}': {e}") from e
+
     if name == "get_ingest_metadata":
         from .universal_ingestion import get_ingestion_metadata
+
         return get_ingestion_metadata
-    
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -101,20 +112,25 @@ def _reset_caches_for_tests() -> None:
     """Reset internal caches & singletons for clean pytest runs."""
     import importlib
     import sys
-    
+
     # Invalidate import caches
     for mod_name in [
-        ".universal_ingestion", ".format_detector", ".audio_transcriber",
-        ".docx_extractor", ".xlsx_extractor", ".handwriting_ocr"
+        ".universal_ingestion",
+        ".format_detector",
+        ".audio_transcriber",
+        ".docx_extractor",
+        ".xlsx_extractor",
+        ".handwriting_ocr",
     ]:
         try:
             importlib.invalidate_caches()
         except Exception:
             pass
-    
+
     # ✅ FIXED: Reset module-level singletons if loaded
     try:
         from . import universal_ingestion
+
         if hasattr(universal_ingestion, "_pipeline_instance"):
             universal_ingestion._pipeline_instance = None
     except ImportError:
@@ -124,13 +140,15 @@ def _reset_caches_for_tests() -> None:
 # DVMELTSS-L: Module initialization logging for observability
 __init_logged: bool = False
 
+
 def _log_module_init() -> None:
     """Log module load — idempotent to avoid spam in multi-worker setups."""
     global __init_logged
     if __init_logged:
         return
-    
+
     import logging
+
     logger = logging.getLogger(__name__)
     logger.debug(  # ✅ Use debug level to avoid prod log spam
         f"Ingest module loaded | version={__version__} | {__description__}"
@@ -150,7 +168,7 @@ def get_ingest_metadata() -> dict[str, Any]:
     from .xlsx_extractor import get_xlsx_metadata as _get_xlsx_meta
     from .docx_extractor import get_docx_metadata as _get_docx_meta
     from .audio_transcriber import get_audio_metadata as _get_audio_meta
-    
+
     return {
         "version": __version__,
         "description": __description__,

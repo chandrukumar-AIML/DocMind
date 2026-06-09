@@ -1,4 +1,4 @@
-﻿# backend/app/ingest/docx_extractor.py
+# backend/app/ingest/docx_extractor.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # BATMAN-FIX: A - True async, M - Memory safety
 # OWASP-FIX: 7 - PII redaction, 9 - File handling
@@ -33,6 +33,7 @@ _DOCX_TIMEOUT: Final = 120
 @dataclass  # FIXED: Removed frozen=True for mutability if needed
 class DocxContent:
     """Extracted content from a .docx file."""
+
     source_file: str
     full_text: str
     paragraphs: list[str]
@@ -46,10 +47,7 @@ class DocxContent:
     def to_dict(self) -> dict:
         """Serialize for API responses / logging (with metadata safety)."""
         # ✅ FIXED: Safe serialization with None handling
-        safe_meta = {
-            k: redact_pii(v) if isinstance(v, str) else v
-            for k, v in (self.metadata or {}).items()
-        }
+        safe_meta = {k: redact_pii(v) if isinstance(v, str) else v for k, v in (self.metadata or {}).items()}
         return {
             "source_file": self.source_file,
             "full_text_length": len(self.full_text),
@@ -110,7 +108,7 @@ class DocxExtractor:
     ) -> DocxContent:
         """Async version: Extract all content from a .docx file."""
         corr_id = correlation_id or generate_ingest_correlation_id("docx")
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_docx_inputs(file_path, None, correlation_id, corr_id)
         if not is_valid:
@@ -126,7 +124,7 @@ class DocxExtractor:
             )
 
         file_path_obj = Path(file_path) if isinstance(file_path, str) else file_path
-        
+
         if not file_path_obj.exists():
             return DocxContent(
                 source_file=str(file_path_obj),
@@ -137,7 +135,7 @@ class DocxExtractor:
                 error=f"File not found: {file_path_obj}",
                 correlation_id=corr_id,
             )
-        
+
         size_mb = file_path_obj.stat().st_size / 1024 / 1024
         if size_mb > _MAX_DOC_SIZE_MB:
             logger.warning(f"[{corr_id}] File too large: {size_mb:.1f}MB > {_MAX_DOC_SIZE_MB}MB")
@@ -158,7 +156,7 @@ class DocxExtractor:
         doc = None
         try:
             loop = asyncio.get_running_loop()
-            
+
             # ✅ FIXED: Use wait_for with timeout for docx operations
             doc = await asyncio.wait_for(
                 loop.run_in_executor(None, lambda: docx.Document(str(file_path_obj))),
@@ -189,7 +187,7 @@ class DocxExtractor:
         paragraphs = []
         headings = []
         all_text = []
-        
+
         try:
             for i, para in enumerate(doc.paragraphs):
                 if i >= _MAX_PARAGRAPHS:
@@ -210,7 +208,7 @@ class DocxExtractor:
                 else:
                     paragraphs.append(text)
                     all_text.append(text)
-            
+
             tables = []
             for tbl_idx, tbl in enumerate(doc.tables):
                 table_data = []
@@ -230,15 +228,15 @@ class DocxExtractor:
                     tables.append(table_data)
                 elif cell_count > _MAX_TABLE_CELLS:
                     logger.warning(f"[{corr_id}] Table {tbl_idx} exceeded cell limit")
-            
+
             meta = self._sanitize_metadata(doc.core_properties)
             full_text = "\n\n".join(all_text)
-            
+
             logger.info(
                 f"[{corr_id}] DocxExtractor: {file_path_obj.name} | "
                 f"{len(paragraphs)} paras | {len(tables)} tables | {len(headings)} headings"
             )
-            
+
             return DocxContent(
                 source_file=str(file_path_obj),
                 full_text=full_text,
@@ -275,19 +273,19 @@ class DocxExtractor:
     ) -> list[Document]:
         """Async wrapper for document conversion."""
         corr_id = correlation_id or content.correlation_id or generate_ingest_correlation_id("docx_chunks")
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_docx_inputs(None, content, correlation_id, corr_id)
         if not is_valid or not content.full_text:
             logger.warning(f"Invalid content or empty text: {error}")
             return []
-        
+
         chunks = []
         current = []
         word_count = 0
-        
+
         # ✅ FIXED: Safe iteration over paragraphs
-        for para in (content.paragraphs or []):
+        for para in content.paragraphs or []:
             if not isinstance(para, str) or not para.strip():
                 continue
             words = len(para.split())
@@ -299,26 +297,27 @@ class DocxExtractor:
                 word_count = 0
             current.append(para)
             word_count += words
-        
+
         if current:
             chunk_text = "\n\n".join(current)
             if chunk_text.strip():
                 chunks.append(chunk_text)
-        
+
         # ✅ FIXED: Safe iteration over tables
         for i, table in enumerate(content.tables or []):
             if not isinstance(table, list):
                 continue
             table_text = "\n".join(
-                " | ".join(row) for row in table
+                " | ".join(row)
+                for row in table
                 if isinstance(row, list) and any(c.strip() for c in row if isinstance(c, str))
             )
             if table_text.strip():
                 chunks.append(f"[Table {i+1}]\n{table_text}")
-        
+
         now = datetime.now(timezone.utc).isoformat()
         docs = []
-        
+
         for i, chunk in enumerate(chunks):
             if not chunk or not chunk.strip():
                 continue
@@ -354,8 +353,10 @@ class DocxExtractor:
         Sync wrapper — prefers async version in new code.
         ✅ FIXED: Use run_async_in_task helper to avoid deadlock.
         """
+
         async def _do_extract():
             return await self.extract_async(file_path, correlation_id)
+
         return run_async_in_task(_do_extract)
 
     def to_langchain_documents(
@@ -368,6 +369,7 @@ class DocxExtractor:
         Sync wrapper — prefers async version in new code.
         ✅ FIXED: Use run_async_in_task helper to avoid deadlock.
         """
+
         async def _do_convert():
             old_size = self.chunk_size
             self.chunk_size = chunk_size
@@ -375,6 +377,7 @@ class DocxExtractor:
                 return await self.to_langchain_documents_async(content, correlation_id)
             finally:
                 self.chunk_size = old_size
+
         return run_async_in_task(_do_convert)
 
 
@@ -399,10 +402,9 @@ __all__ = [
     "DocxContent",
     "get_docx_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

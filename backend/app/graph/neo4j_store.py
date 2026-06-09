@@ -1,4 +1,4 @@
-﻿# backend/app/graph/neo4j_store.py
+# backend/app/graph/neo4j_store.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, S - Security
 # BATMAN-FIX: A - True async, M - Connection pooling, T - Query optimization
 # ACID-INDEX: C - Constraints (Indexes), E - Error handling
@@ -54,6 +54,7 @@ class Neo4jQueryResult:
     Immutable result wrapper for Neo4j queries.
     DVMELTSS-M: Frozen dataclass prevents runtime mutation.
     """
+
     records: List[Dict[str, Any]]
     summary: str
     success: bool
@@ -62,7 +63,7 @@ class Neo4jQueryResult:
 
     def __post_init__(self):
         if self.success and self.error:
-            object.__setattr__(self, 'error', None)
+            object.__setattr__(self, "error", None)
 
     def to_dict(self) -> dict:
         return {
@@ -78,7 +79,7 @@ class Neo4jQueryResult:
 class Neo4jStore:
     """
     Async Neo4j graph database interface for DocuMind AI.
-    
+
     Features (DVMELTSS-V, BATMAN-A, ACID-C):
     - Async execution via AsyncGraphDatabase (non-blocking)
     - Connection pooling & health checks
@@ -106,7 +107,7 @@ class Neo4jStore:
         """Establish async connection pool."""
         if self._driver:
             return self._driver
-        
+
         try:
             self._driver = AsyncGraphDatabase.driver(
                 self.uri,
@@ -116,7 +117,7 @@ class Neo4jStore:
             )
             await self._driver.verify_connectivity()
             logger.info(f"Neo4j connected: {self.uri}")
-            
+
             # Initialize schema indexes
             await self._create_indexes()
             return self._driver
@@ -151,16 +152,19 @@ class Neo4jStore:
         """Validate that query is a safe Cypher string."""
         if not isinstance(query, str) or not query.strip():
             return False, "query must be a non-empty string"
-        
+
         # Reject obviously dangerous patterns
         dangerous = [
-            r'\bDROP\b', r'\bDELETE\s+DATABASE\b', r'\bDETACH\s+DELETE\b.*\b__Entity__\b',
-            r'\bCALL\s+dbms\b', r'\bCALL\s+apoc\b.*\bwrite\b',
+            r"\bDROP\b",
+            r"\bDELETE\s+DATABASE\b",
+            r"\bDETACH\s+DELETE\b.*\b__Entity__\b",
+            r"\bCALL\s+dbms\b",
+            r"\bCALL\s+apoc\b.*\bwrite\b",
         ]
         for pattern in dangerous:
             if re.search(pattern, query, re.IGNORECASE):
                 return False, f"Query contains dangerous pattern: {pattern}"
-        
+
         return True, ""
 
     async def _execute_with_retry(self, query: str, params: Dict[str, Any], corr_id: str) -> List[Dict[str, Any]]:
@@ -185,7 +189,7 @@ class Neo4jStore:
                 if attempt > _MAX_RETRIES:
                     logger.error(f"[{corr_id}] Neo4j query failed after retries: {e}")
                     return []
-                wait = _RETRY_BASE_DELAY * (2 ** attempt)
+                wait = _RETRY_BASE_DELAY * (2**attempt)
                 logger.warning(f"[{corr_id}] Neo4j transient error, retry {attempt}/{_MAX_RETRIES} in {wait}s: {e}")
                 await asyncio.sleep(wait)
             except AuthError as e:
@@ -210,7 +214,7 @@ class Neo4jStore:
     ) -> Neo4jQueryResult:
         """Main async execution entry point."""
         corr_id = correlation_id or generate_graph_correlation_id("neo4j_query")
-        
+
         # ✅ Validate Cypher query
         is_valid, error = self._validate_cypher_query(query, corr_id)
         if not is_valid:
@@ -222,10 +226,10 @@ class Neo4jStore:
                 error=error,
                 correlation_id=corr_id,
             )
-        
+
         # Ensure driver is connected
         await self._connect()
-        
+
         # DVMELTSS-V: Validate workspace_id presence
         if "workspace_id" not in parameters and "workspace_id" not in query:
             logger.warning(f"[{corr_id}] Query missing workspace_id parameter")
@@ -239,7 +243,7 @@ class Neo4jStore:
 
         params = {"workspace_id": workspace_id, **(parameters or {})}
         records = await self._execute_with_retry(query, params, corr_id)
-        
+
         return Neo4jQueryResult(
             records=records,
             summary=f"Returned {len(records)} records",
@@ -267,12 +271,12 @@ class Neo4jStore:
             {
                 "source_file": source_file,
                 "document_type": document_type,
-                "page_count": page_count
+                "page_count": page_count,
             },
             workspace_id,
             correlation_id=corr_id,
         )
-        
+
         if result.records:
             return result.records[0].get("node_id", "")
         return ""
@@ -293,10 +297,10 @@ class Neo4jStore:
 
         # ✅ FIXED: Use parameterized label handling to prevent Cypher injection
         # Neo4j doesn't support parameterized labels, so we validate and whitelist
-        safe_type = re.sub(r'[^a-zA-Z0-9_]', '', entity_type)  # Remove special chars
+        safe_type = re.sub(r"[^a-zA-Z0-9_]", "", entity_type)  # Remove special chars
         if not safe_type:
             safe_type = "Entity"
-        
+
         query = f"""
         MERGE (e:__Entity__ {{id: $entity_id, workspace_id: $workspace_id}})
         SET e:{safe_type}, e.name = $name, e.entity_type = $entity_type, e.updated_at = datetime()
@@ -305,15 +309,11 @@ class Neo4jStore:
         """
         result = await self.execute_query_async(
             query,
-            {
-                "entity_id": entity_id,
-                "name": name,
-                "properties": properties or {}
-            },
+            {"entity_id": entity_id, "name": name, "properties": properties or {}},
             workspace_id,
             correlation_id=corr_id,
         )
-        
+
         if result.records:
             return result.records[0].get("node_id", "")
         return ""
@@ -341,11 +341,7 @@ class Neo4jStore:
         """
         await self.execute_query_async(
             query,
-            {
-                "from_id": from_id,
-                "to_id": to_id,
-                "properties": properties or {}
-            },
+            {"from_id": from_id, "to_id": to_id, "properties": properties or {}},
             workspace_id,
             correlation_id=corr_id,
         )
@@ -371,9 +367,7 @@ class Neo4jStore:
         workspace_id: str = "default",
         correlation_id: Optional[str] = None,
     ) -> Optional[List[Dict[str, Any]]]:
-        result = self._run_async_task(
-            self.execute_query_async(query, parameters or {}, workspace_id, correlation_id)
-        )
+        result = self._run_async_task(self.execute_query_async(query, parameters or {}, workspace_id, correlation_id))
         return result.records if result else None
 
     def upsert_document(
@@ -398,7 +392,14 @@ class Neo4jStore:
         correlation_id: Optional[str] = None,
     ) -> Optional[str]:
         return self._run_async_task(
-            self.upsert_entity_async(entity_id, entity_type, name, properties or {}, workspace_id, correlation_id)
+            self.upsert_entity_async(
+                entity_id,
+                entity_type,
+                name,
+                properties or {},
+                workspace_id,
+                correlation_id,
+            )
         )
 
     def upsert_relationship(
@@ -417,15 +418,18 @@ class Neo4jStore:
     def get_schema_summary(self, workspace_id: str = "default") -> dict[str, dict[str, int]]:
         """Return graph schema counts; degrade to empty counts if Neo4j is unavailable."""
         try:
-            records = self.execute_query(
-                """
+            records = (
+                self.execute_query(
+                    """
                 MATCH (n {workspace_id: $workspace_id})
                 WITH labels(n) AS labels, count(*) AS count
                 RETURN labels, count
                 """,
-                {"workspace_id": workspace_id},
-                workspace_id=workspace_id,
-            ) or []
+                    {"workspace_id": workspace_id},
+                    workspace_id=workspace_id,
+                )
+                or []
+            )
         except Exception as exc:
             logger.warning("Neo4j schema summary unavailable: %s", exc)
             records = []
@@ -453,13 +457,13 @@ def get_neo4j_store() -> Neo4jStore:
     settings = get_settings()
     # Create version key from settings to invalidate cache if config changes
     version_key = f"{settings.neo4j_uri}:{settings.neo4j_database}"
-    
+
     if version_key not in _neo4j_instances:
         _neo4j_instances[version_key] = Neo4jStore(
             uri=settings.neo4j_uri,
             username=settings.neo4j_username,
             password=settings.neo4j_password,
-            database=settings.neo4j_database
+            database=settings.neo4j_database,
         )
     return _neo4j_instances[version_key]
 
@@ -482,10 +486,9 @@ def get_neo4j_metadata() -> dict[str, Any]:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["Neo4jStore", "get_neo4j_store", "Neo4jQueryResult", "get_neo4j_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

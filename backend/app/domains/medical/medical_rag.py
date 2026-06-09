@@ -1,4 +1,4 @@
-﻿# backend/app/domains/medical/medical_rag.py
+# backend/app/domains/medical/medical_rag.py
 # DVMELTSS-FIX: M - Modular, S - Security, L - Logging
 # HIPAA: Include disclaimer in all medical responses
 
@@ -36,10 +36,11 @@ class MedicalRAGChain(AdvancedRAGChain):
     def _build_system_prompt(self, context: str, correlation_id: Optional[str] = None) -> str:
         safe_context = context[:4000] + ("..." if len(context) > 4000 else "")
         return MEDICAL_SYSTEM_PROMPT.format(context=safe_context)
-# Local smoke test entry point. Run: python -m 
+
+
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

@@ -1,5 +1,6 @@
 # backend/app/api/routes/audit.py
 """Audit log API — filterable, exportable, role-gated."""
+
 from __future__ import annotations
 
 import io
@@ -10,7 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from app.auth.dependencies import AuthenticatedUser, require_workspace_admin, require_superadmin
+from app.auth.dependencies import AuthenticatedUser, require_workspace_admin
 from app.core.audit_logger import query_audit_log, export_audit_csv
 
 logger = logging.getLogger(__name__)

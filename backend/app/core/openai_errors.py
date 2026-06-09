@@ -1,4 +1,4 @@
-﻿# backend/app/core/openai_errors.py
+# backend/app/core/openai_errors.py
 # DVMELTSS-FIX: M - Modular, E - Error handling, S - Security
 # ASCALE-FIX: S - Separation, C - Coupling
 """
@@ -14,9 +14,16 @@ Usage:
     from app.core.openai_errors import get_openai_error_type, is_insufficient_quota_error
     error_type = get_openai_error_type(exc)
 """
+
 from __future__ import annotations
 
-from openai import APIError, RateLimitError, AuthenticationError, APIConnectionError, APITimeoutError
+from openai import (
+    APIError,
+    RateLimitError,
+    AuthenticationError,
+    APIConnectionError,
+    APITimeoutError,
+)
 
 # ── Global quota flag ─────────────────────────────────────────────────────────
 # Set to True once any component detects quota/auth exceeded. All components
@@ -43,15 +50,15 @@ def is_openai_available() -> bool:
 def is_insufficient_quota_error(exc: Exception) -> bool:
     """
     Detect OpenAI quota/billing errors from exception message or type.
-    
+
     Checks:
     - Known error message patterns (case-insensitive)
     - HTTP 429 status code with quota-related content
     - Specific OpenAI exception types
-    
+
     Args:
         exc: Exception instance (OpenAI or generic)
-        
+
     Returns:
         True if exception indicates quota/billing issue
     """
@@ -59,15 +66,18 @@ def is_insufficient_quota_error(exc: Exception) -> bool:
     if isinstance(exc, RateLimitError):
         # RateLimitError can be quota or rate limit — check message
         message = str(exc).lower()
-        if any(pattern in message for pattern in [
-            "insufficient_quota",
-            "exceeded your current quota",
-            "you exceeded your current quota",
-            "plan and billing details",
-            "upgrade your plan",
-        ]):
+        if any(
+            pattern in message
+            for pattern in [
+                "insufficient_quota",
+                "exceeded your current quota",
+                "you exceeded your current quota",
+                "plan and billing details",
+                "upgrade your plan",
+            ]
+        ):
             return True
-    
+
     # Check message patterns for any exception type
     message = str(exc).lower()
     quota_patterns = [
@@ -82,7 +92,7 @@ def is_insufficient_quota_error(exc: Exception) -> bool:
     ]
     if any(pattern in message for pattern in quota_patterns):
         return True
-    
+
     # Check HTTP status code if available
     if hasattr(exc, "status_code") and exc.status_code == 429:
         # 429 could be rate limit OR quota — check response body if available
@@ -93,23 +103,23 @@ def is_insufficient_quota_error(exc: Exception) -> bool:
                     return True
             except Exception:
                 pass  # Safely ignore response parsing errors
-    
+
     return False
 
 
 def is_authentication_error(exc: Exception) -> bool:
     """
     Detect OpenAI authentication errors.
-    
+
     Args:
         exc: Exception instance
-        
+
     Returns:
         True if exception indicates auth failure
     """
     if isinstance(exc, AuthenticationError):
         return True
-    
+
     message = str(exc).lower()
     auth_patterns = [
         "incorrect api key",
@@ -124,16 +134,16 @@ def is_authentication_error(exc: Exception) -> bool:
 def is_rate_limit_error(exc: Exception) -> bool:
     """
     Detect OpenAI rate limit errors (distinct from quota errors).
-    
+
     Args:
         exc: Exception instance
-        
+
     Returns:
         True if exception indicates rate limit (not quota)
     """
     if isinstance(exc, RateLimitError) and not is_insufficient_quota_error(exc):
         return True
-    
+
     message = str(exc).lower()
     # Rate limit patterns (not quota)
     rate_patterns = [
@@ -148,7 +158,7 @@ def is_rate_limit_error(exc: Exception) -> bool:
 def get_openai_error_type(exc: Exception) -> str:
     """
     Classify OpenAI error into actionable categories.
-    
+
     Returns:
         One of: "quota", "auth", "rate_limit", "connection", "timeout", "other"
     """
@@ -169,21 +179,22 @@ def get_openai_error_type(exc: Exception) -> str:
 
 # -- Alias for Backward Compatibility --------------------------------------
 
+
 def classify_openai_error(error: Exception) -> dict:
     """
     Classify OpenAI API errors into actionable categories.
-    
+
     This is an alias for get_openai_error_type that returns a dict
     for backward compatibility with existing code.
-    
+
     Args:
         error: Exception instance (OpenAI or generic)
-        
+
     Returns:
         dict with keys: category, retryable, message, code
     """
     error_type = get_openai_error_type(error)
-    
+
     # Map error type to retryable status and message
     error_map = {
         "quota": {
@@ -222,9 +233,9 @@ def classify_openai_error(error: Exception) -> dict:
             "code": "unknown_error",
         },
     }
-    
+
     config = error_map.get(error_type, error_map["other"])
-    
+
     return {
         "category": error_type,
         "retryable": config["retryable"],
@@ -241,10 +252,9 @@ __all__ = [
     "get_openai_error_type",
     "classify_openai_error",  # ✅ NEW: Added for backward compatibility
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

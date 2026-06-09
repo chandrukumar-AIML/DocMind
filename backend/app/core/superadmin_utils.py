@@ -3,6 +3,7 @@
 Superadmin utilities — cross-workspace analytics, workspace CRUD,
 impersonation tokens, system health, billing aggregation.
 """
+
 from __future__ import annotations
 
 import csv
@@ -24,10 +25,12 @@ _IMPERSONATION_TTL_HOURS = 1
 
 # ── Schema bootstrap ─────────────────────────────────────────────────────────
 
+
 async def ensure_superadmin_schema() -> None:
     """Create impersonation_tokens table if absent."""
     async with async_engine.begin() as conn:
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS impersonation_tokens (
                 id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 token_hash      VARCHAR(255) UNIQUE NOT NULL,
@@ -39,19 +42,23 @@ async def ensure_superadmin_schema() -> None:
                 revoked         BOOLEAN DEFAULT FALSE,
                 created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             )
-        """))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_impersonation_expires "
-            "ON impersonation_tokens(expires_at)"
-        ))
+        """)
+        )
+        await conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_impersonation_expires " "ON impersonation_tokens(expires_at)")
+        )
 
 
 # ── Overview / stats ─────────────────────────────────────────────────────────
 
+
 async def get_system_stats() -> dict[str, Any]:
     """Cross-workspace aggregate stats for the overview cards."""
     async with async_engine.connect() as conn:
-        row = (await conn.execute(text("""
+        row = (
+            (
+                await conn.execute(
+                    text("""
             SELECT
                 (SELECT COUNT(*) FROM workspaces)                           AS total_workspaces,
                 (SELECT COUNT(*) FROM workspaces WHERE is_active = TRUE)    AS active_workspaces,
@@ -63,24 +70,39 @@ async def get_system_stats() -> dict[str, Any]:
                     WHERE created_at > NOW() - INTERVAL '24 hours')         AS audit_events_24h,
                 (SELECT COUNT(*) FROM invites WHERE status = 'pending')     AS pending_invites,
                 (SELECT COUNT(*) FROM api_keys WHERE is_active = TRUE)      AS active_api_keys
-        """))).mappings().fetchone()
+        """)
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
         return dict(row) if row else {}
 
 
 async def get_top_workspaces(limit: int = 5) -> list[dict[str, Any]]:
     """Top N workspaces by query volume today."""
     async with async_engine.connect() as conn:
-        rows = (await conn.execute(text("""
+        rows = (
+            (
+                await conn.execute(
+                    text("""
             SELECT id::text AS workspace_id, name, client_name,
                    query_count_today, doc_count, plan, is_active
             FROM workspaces
             ORDER BY query_count_today DESC
             LIMIT :limit
-        """), {"limit": limit})).mappings().fetchall()
+        """),
+                    {"limit": limit},
+                )
+            )
+            .mappings()
+            .fetchall()
+        )
         return [dict(r) for r in rows]
 
 
 # ── Workspace listing / detail ────────────────────────────────────────────────
+
 
 async def list_all_workspaces(
     search: str | None = None,
@@ -93,9 +115,7 @@ async def list_all_workspaces(
     params: dict[str, Any] = {"limit": limit, "offset": offset}
 
     if search:
-        filters.append(
-            "(name ILIKE :search OR client_name ILIKE :search OR client_email ILIKE :search)"
-        )
+        filters.append("(name ILIKE :search OR client_name ILIKE :search OR client_email ILIKE :search)")
         params["search"] = f"%{search}%"
     if plan:
         filters.append("plan = :plan")
@@ -107,7 +127,10 @@ async def list_all_workspaces(
     where = " AND ".join(filters)
 
     async with async_engine.connect() as conn:
-        rows = (await conn.execute(text(f"""
+        rows = (
+            (
+                await conn.execute(
+                    text(f"""
             SELECT
                 id::text            AS workspace_id,
                 name,
@@ -130,15 +153,26 @@ async def list_all_workspaces(
             WHERE {where}
             ORDER BY created_at DESC
             LIMIT :limit OFFSET :offset
-        """), params)).mappings().fetchall()
+        """),
+                    params,
+                )
+            )
+            .mappings()
+            .fetchall()
+        )
 
         result = []
         for r in rows:
             d = dict(r)
-            cnt = (await conn.execute(text("""
+            cnt = (
+                await conn.execute(
+                    text("""
                 SELECT COUNT(*) FROM workspace_members
                 WHERE workspace_id = :wsid AND is_active = TRUE
-            """), {"wsid": r["workspace_id"]})).scalar() or 0
+            """),
+                    {"wsid": r["workspace_id"]},
+                )
+            ).scalar() or 0
             d["active_users"] = cnt
             result.append(d)
         return result
@@ -146,7 +180,10 @@ async def list_all_workspaces(
 
 async def get_workspace_detail(workspace_id: str) -> dict[str, Any] | None:
     async with async_engine.connect() as conn:
-        row = (await conn.execute(text("""
+        row = (
+            (
+                await conn.execute(
+                    text("""
             SELECT w.*,
                    (SELECT COUNT(*) FROM workspace_members m
                     WHERE m.workspace_id = w.id AND m.is_active) AS active_users,
@@ -154,11 +191,18 @@ async def get_workspace_detail(workspace_id: str) -> dict[str, Any] | None:
                     WHERE k.workspace_id = w.id AND k.is_active) AS active_keys
             FROM workspaces w
             WHERE w.id = :wsid
-        """), {"wsid": workspace_id})).mappings().fetchone()
+        """),
+                    {"wsid": workspace_id},
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
         return dict(row) if row else None
 
 
 # ── Workspace create / update ─────────────────────────────────────────────────
+
 
 async def create_workspace_for_client(
     client_name: str,
@@ -179,7 +223,10 @@ async def create_workspace_for_client(
     slug = f"{slug_base[:40]}-{_uuid.uuid4().hex[:6]}"
 
     async with async_engine.begin() as conn:
-        row = (await conn.execute(text("""
+        row = (
+            (
+                await conn.execute(
+                    text("""
             INSERT INTO workspaces
                 (name, slug, client_name, client_email, plan, domain_type,
                  max_docs, max_queries_per_day, max_storage_gb, is_active)
@@ -187,14 +234,23 @@ async def create_workspace_for_client(
                 (:name, :slug, :client_name, :client_email, :plan, :domain_type,
                  :max_docs, :max_queries_per_day, :max_storage_gb, TRUE)
             RETURNING id::text, name, slug, client_email, plan
-        """), {
-            "name": client_name, "slug": slug,
-            "client_name": client_name, "client_email": client_email,
-            "plan": plan, "domain_type": domain_type,
-            "max_docs": max_docs,
-            "max_queries_per_day": max_queries_per_day,
-            "max_storage_gb": max_storage_gb,
-        })).mappings().fetchone()
+        """),
+                    {
+                        "name": client_name,
+                        "slug": slug,
+                        "client_name": client_name,
+                        "client_email": client_email,
+                        "plan": plan,
+                        "domain_type": domain_type,
+                        "max_docs": max_docs,
+                        "max_queries_per_day": max_queries_per_day,
+                        "max_storage_gb": max_storage_gb,
+                    },
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
         return dict(row)
 
 
@@ -223,39 +279,56 @@ async def update_workspace_limits(
         return {}
 
     async with async_engine.begin() as conn:
-        row = (await conn.execute(text(f"""
+        row = (
+            (
+                await conn.execute(
+                    text(f"""
             UPDATE workspaces SET {', '.join(sets)}
             WHERE id = :wsid
             RETURNING id::text, max_docs, max_queries_per_day, max_storage_gb, plan
-        """), params)).mappings().fetchone()
+        """),
+                    params,
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
         return dict(row) if row else {}
 
 
 # ── Suspend / activate ────────────────────────────────────────────────────────
 
+
 async def suspend_workspace(workspace_id: str, reason: str) -> None:
     async with async_engine.begin() as conn:
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             UPDATE workspaces
             SET is_active = FALSE,
                 suspended_at = NOW(),
                 suspended_reason = :reason
             WHERE id = :wsid
-        """), {"wsid": workspace_id, "reason": reason})
+        """),
+            {"wsid": workspace_id, "reason": reason},
+        )
 
 
 async def activate_workspace(workspace_id: str) -> None:
     async with async_engine.begin() as conn:
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             UPDATE workspaces
             SET is_active = TRUE,
                 suspended_at = NULL,
                 suspended_reason = NULL
             WHERE id = :wsid
-        """), {"wsid": workspace_id})
+        """),
+            {"wsid": workspace_id},
+        )
 
 
 # ── Impersonation ─────────────────────────────────────────────────────────────
+
 
 async def create_impersonation_token(
     issued_by_user_id: str,
@@ -265,7 +338,10 @@ async def create_impersonation_token(
     from app.auth.jwt_handler import create_access_token
 
     async with async_engine.connect() as conn:
-        row = (await conn.execute(text("""
+        row = (
+            (
+                await conn.execute(
+                    text("""
             SELECT u.id::text AS user_id, u.email, m.role
             FROM workspace_members m
             JOIN users u ON u.id = m.user_id
@@ -274,7 +350,13 @@ async def create_impersonation_token(
               AND m.is_active = TRUE
             ORDER BY m.joined_at ASC
             LIMIT 1
-        """), {"wsid": target_workspace_id})).mappings().fetchone()
+        """),
+                    {"wsid": target_workspace_id},
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
 
     if not row:
         raise ValueError(f"No workspace_admin found for workspace {target_workspace_id}")
@@ -284,17 +366,20 @@ async def create_impersonation_token(
     expires_at = datetime.now(timezone.utc) + timedelta(hours=_IMPERSONATION_TTL_HOURS)
 
     async with async_engine.begin() as conn:
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             INSERT INTO impersonation_tokens
                 (token_hash, issued_by, target_user_id, workspace_id, expires_at)
             VALUES (:hash, :issued_by, :target, :wsid, :expires_at)
-        """), {
-            "hash": token_hash,
-            "issued_by": issued_by_user_id,
-            "target": row["user_id"],
-            "wsid": target_workspace_id,
-            "expires_at": expires_at,
-        })
+        """),
+            {
+                "hash": token_hash,
+                "issued_by": issued_by_user_id,
+                "target": row["user_id"],
+                "wsid": target_workspace_id,
+                "expires_at": expires_at,
+            },
+        )
 
     jwt_token = create_access_token(
         user_id=row["user_id"],
@@ -315,9 +400,13 @@ async def create_impersonation_token(
 
 # ── Workspace billing ─────────────────────────────────────────────────────────
 
+
 async def get_workspace_billing(workspace_id: str) -> dict[str, Any]:
     async with async_engine.connect() as conn:
-        row = (await conn.execute(text("""
+        row = (
+            (
+                await conn.execute(
+                    text("""
             SELECT
                 w.id::text AS workspace_id,
                 w.client_name, w.plan,
@@ -334,11 +423,18 @@ async def get_workspace_billing(workspace_id: str) -> dict[str, Any]:
             WHERE w.id = :wsid
             GROUP BY w.id, w.client_name, w.plan, w.doc_count,
                      w.storage_used_mb, w.max_docs, w.max_storage_gb
-        """), {"wsid": workspace_id})).mappings().fetchone()
+        """),
+                    {"wsid": workspace_id},
+                )
+            )
+            .mappings()
+            .fetchone()
+        )
         return dict(row) if row else {}
 
 
 # ── Audit log retrieval ───────────────────────────────────────────────────────
+
 
 async def get_workspace_audit_log(
     workspace_id: str,
@@ -361,7 +457,10 @@ async def get_workspace_audit_log(
 
     where = " AND ".join(filters)
     async with async_engine.connect() as conn:
-        rows = (await conn.execute(text(f"""
+        rows = (
+            (
+                await conn.execute(
+                    text(f"""
             SELECT al.id::text, al.action, al.resource_type, al.resource_id,
                    al.ip_address, al.response_status, al.severity, al.created_at,
                    u.email AS user_email
@@ -370,11 +469,18 @@ async def get_workspace_audit_log(
             WHERE {where}
             ORDER BY al.created_at DESC
             LIMIT :limit
-        """), params)).mappings().fetchall()
+        """),
+                    params,
+                )
+            )
+            .mappings()
+            .fetchall()
+        )
         return [dict(r) for r in rows]
 
 
 # ── Billing CSV export ────────────────────────────────────────────────────────
+
 
 async def export_billing_csv(month: str | None = None) -> str:
     """Return CSV string of per-workspace monthly usage."""
@@ -385,7 +491,10 @@ async def export_billing_csv(month: str | None = None) -> str:
     year_str, month_str = month.split("-")
 
     async with async_engine.connect() as conn:
-        rows = (await conn.execute(text("""
+        rows = (
+            (
+                await conn.execute(
+                    text("""
             SELECT
                 w.id::text       AS workspace_id,
                 w.client_name,
@@ -406,14 +515,29 @@ async def export_billing_csv(month: str | None = None) -> str:
                AND EXTRACT(MONTH FROM ul.created_at) = :month
             GROUP BY w.id, w.client_name, w.plan, w.storage_used_mb
             ORDER BY queries_run DESC
-        """), {"year": int(year_str), "month": int(month_str)})).mappings().fetchall()
+        """),
+                    {"year": int(year_str), "month": int(month_str)},
+                )
+            )
+            .mappings()
+            .fetchall()
+        )
 
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=[
-        "workspace_id", "client_name", "plan", "docs_processed",
-        "queries_run", "ocr_pages", "llm_tokens_used",
-        "storage_added_mb", "current_storage_mb",
-    ])
+    writer = csv.DictWriter(
+        buf,
+        fieldnames=[
+            "workspace_id",
+            "client_name",
+            "plan",
+            "docs_processed",
+            "queries_run",
+            "ocr_pages",
+            "llm_tokens_used",
+            "storage_added_mb",
+            "current_storage_mb",
+        ],
+    )
     writer.writeheader()
     for r in rows:
         writer.writerow({k: r[k] for k in writer.fieldnames})
@@ -421,6 +545,7 @@ async def export_billing_csv(month: str | None = None) -> str:
 
 
 # ── System health ─────────────────────────────────────────────────────────────
+
 
 async def get_system_health() -> dict[str, Any]:
     services: dict[str, str] = {}
@@ -434,6 +559,7 @@ async def get_system_health() -> dict[str, Any]:
 
     try:
         from app.cache import get_cache
+
         cache = await get_cache()
         if cache and hasattr(cache, "ping"):
             await cache.ping()
@@ -443,6 +569,7 @@ async def get_system_health() -> dict[str, Any]:
 
     try:
         from app.core.celery_app import celery_app
+
         i = celery_app.control.inspect(timeout=2)
         active = i.active()
         services["celery"] = "ok" if active is not None else "no_workers"
@@ -460,11 +587,16 @@ async def get_system_health() -> dict[str, Any]:
 async def get_celery_stats() -> dict[str, Any]:
     try:
         from app.core.celery_app import celery_app
+
         i = celery_app.control.inspect(timeout=3)
         active = i.active() or {}
         workers = list(active.keys())
         active_tasks = sum(len(t) for t in active.values())
-        return {"worker_count": len(workers), "active_tasks": active_tasks, "workers": workers}
+        return {
+            "worker_count": len(workers),
+            "active_tasks": active_tasks,
+            "workers": workers,
+        }
     except Exception as e:
         return {"worker_count": 0, "active_tasks": 0, "error": str(e)}
 
@@ -472,6 +604,7 @@ async def get_celery_stats() -> dict[str, Any]:
 async def flush_redis_cache() -> dict[str, Any]:
     try:
         from app.cache import get_cache
+
         cache = await get_cache()
         if cache and hasattr(cache, "flush"):
             await cache.flush()

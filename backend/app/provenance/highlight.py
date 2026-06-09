@@ -1,4 +1,4 @@
-﻿# backend/app/provenance/highlight.py
+# backend/app/provenance/highlight.py
 # DVMELTSS-FIX: V - Validate, M - Modular, S - Security
 # ASCALE-FIX: S - Separation
 # ✅ FIXED: Boundary checks + consistent length handling + input validation
@@ -46,7 +46,7 @@ def compute_highlight_color(confidence_score: float) -> str:
     """
     # ✅ FIXED: Clamp confidence to [0.0, 1.0] for safety
     confidence = max(0.0, min(1.0, confidence_score))
-    
+
     if confidence >= _CONFIDENCE_HIGH:
         return HighlightColor.GREEN.value
     elif confidence >= _CONFIDENCE_MEDIUM:
@@ -107,7 +107,7 @@ def find_text_offset(
     normalized_len = min(_NORMALIZED_CHUNK_LEN, len(needle))
     normalized_page = re.sub(r"\s+", " ", search_in)
     normalized_chunk = re.sub(r"\s+", " ", needle[:normalized_len]).strip()
-    
+
     if len(normalized_chunk) >= _MIN_MATCH_LEN:
         idx_norm = normalized_page.find(normalized_chunk)
         if idx_norm != -1:
@@ -129,16 +129,16 @@ def _map_normalized_to_original(
     """
     Map an index from normalized text back to original text.
     Handles whitespace collapsing: "hello  world" -> "hello world"
-    
+
     ✅ FIXED: Boundary checks + max iteration guard.
     """
     if not original or not normalized:
         return None
-    
+
     # ✅ FIXED: Boundary check for normalized_idx
     if normalized_idx < 0 or normalized_idx > len(normalized):
         return None
-    
+
     # Count non-whitespace chars up to normalized_idx
     target_char_count = sum(1 for c in normalized[:normalized_idx] if not c.isspace())
 
@@ -187,15 +187,17 @@ def compute_citation_offsets(
         # ✅ FIXED: Safe confidence score access with fallback
         confidence = cit.get("confidence_score") or cit.get("rerank_score", 0.0)
         confidence = float(confidence) if confidence is not None else 0.0
-        
-        enriched.append({
-            **cit,
-            "char_offset_start": start,
-            "char_offset_end": end,
-            "highlight_color": compute_highlight_color(confidence),
-            "has_offset": start is not None,
-            "correlation_id": correlation_id,
-        })
+
+        enriched.append(
+            {
+                **cit,
+                "char_offset_start": start,
+                "char_offset_end": end,
+                "highlight_color": compute_highlight_color(confidence),
+                "has_offset": start is not None,
+                "correlation_id": correlation_id,
+            }
+        )
 
     return enriched
 
@@ -226,10 +228,9 @@ __all__ = [
     "get_highlight_metadata",
     "HighlightColor",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

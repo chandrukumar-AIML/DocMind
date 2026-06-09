@@ -1,4 +1,4 @@
-﻿# backend/app/graph/cypher_retriever.py
+# backend/app/graph/cypher_retriever.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # BATMAN-FIX: A - True async, T - Timeouts, M - Safe string handling
 # OWASP-FIX: 1 - Prompt injection prevention, 9 - Cypher injection prevention
@@ -93,7 +93,7 @@ _LLM_RETRY_CONFIG: Final = RetryConfig(
 class CypherRetriever:
     """
     Converts natural language queries to Cypher and retrieves graph context.
-    
+
     Features (DVMELTSS-V, BATMAN-A, OWASP-9):
     - Async execution with Neo4j async driver
     - Centralized LLM pool via app.core.llm_pool
@@ -132,7 +132,7 @@ LIMIT 20
         # FIXED: Use centralized LLM pool
         self.llm = get_llm(streaming=False, model_override=model, temperature_override=0.0)
         self.model = model
-        
+
         logger.info(f"CypherRetriever initialized: model={model}, async=True")
 
     # ✅ NEW: Input validation helper
@@ -162,7 +162,7 @@ LIMIT 20
             return ""
 
         lines = [f"Knowledge Graph Context (for query: '{query}'):"]
-        for rec in records[:20]:   # cap at 20 records
+        for rec in records[:20]:  # cap at 20 records
             parts = []
             for key, val in rec.items():
                 if val is not None and str(val).strip():
@@ -183,17 +183,15 @@ LIMIT 20
         else:
             # Fallback: run sync call in thread
             import sys
+
             if sys.version_info >= (3, 9):
-                response = await asyncio.to_thread(
-                    lambda: self.llm.invoke([{"role": "user", "content": prompt}])
-                )
+                response = await asyncio.to_thread(lambda: self.llm.invoke([{"role": "user", "content": prompt}]))
             else:
                 loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in Python 3.10+
                 response = await loop.run_in_executor(
-                    None,
-                    lambda: self.llm.invoke([{"role": "user", "content": prompt}])
+                    None, lambda: self.llm.invoke([{"role": "user", "content": prompt}])
                 )
-        return response.content if hasattr(response, 'content') else str(response)
+        return response.content if hasattr(response, "content") else str(response)
 
     async def retrieve_async(
         self,
@@ -210,13 +208,13 @@ LIMIT 20
         ✅ FIXED: Input validation + safe sync wrapper.
         """
         corr_id = correlation_id or generate_graph_correlation_id("cypher")
-        
+
         # ✅ Validate inputs
         is_valid, error = self._validate_inputs(query, workspace_id, template_params, corr_id)
         if not is_valid:
             logger.error(f"[{corr_id}] Invalid inputs: {error}")
             return "", []
-        
+
         # FIXED: Use centralized sanitization
         safe_query = sanitize_cypher_input(query)
 
@@ -247,9 +245,7 @@ LIMIT 20
             logger.error(f"[{corr_id}] Graph retrieval failed: {e}")
             return "", []
 
-    async def _text_to_cypher_retrieve_async(
-        self, query: str, workspace_id: str, correlation_id: str
-    ) -> list[dict]:
+    async def _text_to_cypher_retrieve_async(self, query: str, workspace_id: str, correlation_id: str) -> list[dict]:
         """Async: Generate Cypher from natural language using centralized LLM."""
         # FIXED: Use centralized prompt escaping
         safe_prompt = escape_graph_prompt(f"{self.CYPHER_GENERATION_PROMPT}\n\nGenerate Cypher for: {query}")
@@ -257,8 +253,8 @@ LIMIT 20
         try:
             content = await self._call_llm_async(safe_prompt, correlation_id)
             # ✅ FIXED: Robust markdown/code block stripping with regex
-            cypher = re.sub(r'```(?:cypher)?\s*', '', content)
-            cypher = re.sub(r'```', '', cypher).strip()
+            cypher = re.sub(r"```(?:cypher)?\s*", "", content)
+            cypher = re.sub(r"```", "", cypher).strip()
 
             # Safety check: reject dangerous operations
             if not self._validate_cypher(cypher):
@@ -266,7 +262,7 @@ LIMIT 20
                 return await self._keyword_entity_search_async(query, workspace_id, correlation_id)
 
             logger.info(f"[{correlation_id}] Generated Cypher: {cypher[:200]}")
-            
+
             # ✅ FIXED: Add timeout to Neo4j query
             result = await asyncio.wait_for(
                 self.store.execute_query_async(
@@ -285,37 +281,33 @@ LIMIT 20
             logger.error(f"[{correlation_id}] Text-to-Cypher failed: {e}")
             return await self._keyword_entity_search_async(query, workspace_id, correlation_id)
 
-    async def _keyword_entity_search_async(
-        self, query: str, workspace_id: str, correlation_id: str
-    ) -> list[dict]:
+    async def _keyword_entity_search_async(self, query: str, workspace_id: str, correlation_id: str) -> list[dict]:
         """Async fallback: extract keywords from query and search entities."""
         # ✅ FIXED: Better keyword extraction with NLP fallback
         try:
             import nltk
             from nltk import word_tokenize, pos_tag
+
             # Download required resources if not present
             try:
-                nltk.data.find('tokenizers/punkt')
+                nltk.data.find("tokenizers/punkt")
             except LookupError:
-                nltk.download('punkt', quiet=True)
+                nltk.download("punkt", quiet=True)
             try:
-                nltk.data.find('taggers/averaged_perceptron_tagger')
+                nltk.data.find("taggers/averaged_perceptron_tagger")
             except LookupError:
-                nltk.download('averaged_perceptron_tagger', quiet=True)
-            
+                nltk.download("averaged_perceptron_tagger", quiet=True)
+
             tokens = word_tokenize(query)
             tagged = pos_tag(tokens)
             # Extract nouns (NN, NNS, NNP, NNPS) longer than 3 chars
-            keywords = [
-                word for word, pos in tagged
-                if pos.startswith('NN') and len(word) > 3
-            ]
+            keywords = [word for word, pos in tagged if pos.startswith("NN") and len(word) > 3]
             search_term = keywords[0] if keywords else query[:20]
         except ImportError:
             # Fallback: simple word extraction
             words = [w for w in query.split() if len(w) > 3 and w.isalpha()]
             search_term = words[0] if words else query[:20]
-        
+
         # FIXED: Use centralized sanitization
         search_term = sanitize_cypher_input(search_term)
 
@@ -353,14 +345,21 @@ LIMIT 20
             loop = asyncio.get_running_loop()
             # If yes, we can't use asyncio.run() — warn and return empty
             logger.warning(
-                f"⚠️ CypherRetriever.retrieve() called from async context — "
-                f"use retrieve_async() instead. Returning empty result."
+                "⚠️ CypherRetriever.retrieve() called from async context — "
+                "use retrieve_async() instead. Returning empty result."
             )
             return "", []
         except RuntimeError:
             # No running loop — safe to use asyncio.run()
             return asyncio.run(
-                self.retrieve_async(query, workspace_id, use_text_to_cypher, template_name, template_params, correlation_id)
+                self.retrieve_async(
+                    query,
+                    workspace_id,
+                    use_text_to_cypher,
+                    template_name,
+                    template_params,
+                    correlation_id,
+                )
             )
 
 
@@ -379,10 +378,9 @@ def get_cypher_metadata() -> dict[str, Any]:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["CypherRetriever", "get_cypher_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

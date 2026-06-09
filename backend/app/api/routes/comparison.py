@@ -1,5 +1,6 @@
 # backend/app/api/routes/comparison.py
 """Batch cross-document comparison API routes."""
+
 from __future__ import annotations
 
 import asyncio
@@ -11,8 +12,12 @@ from pydantic import BaseModel, Field
 
 from app.auth.dependencies import get_current_user, AuthenticatedUser
 from app.core.comparison_engine import (
-    ComparisonMode, create_comparison_job, get_comparison_job,
-    run_comparison, _MAX_DOCS, _MIN_DOCS,
+    ComparisonMode,
+    create_comparison_job,
+    get_comparison_job,
+    run_comparison,
+    _MAX_DOCS,
+    _MIN_DOCS,
 )
 from app.core.ids import generate_correlation_id
 
@@ -53,15 +58,9 @@ async def start_comparison(
     corr_id = generate_correlation_id("cmp-start")
 
     if len(req.source_files) < _MIN_DOCS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"At least {_MIN_DOCS} documents required"
-        )
+        raise HTTPException(status_code=422, detail=f"At least {_MIN_DOCS} documents required")
     if len(req.source_files) > _MAX_DOCS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Maximum {_MAX_DOCS} documents allowed"
-        )
+        raise HTTPException(status_code=422, detail=f"Maximum {_MAX_DOCS} documents allowed")
 
     try:
         job_id = await create_comparison_job(
@@ -112,13 +111,16 @@ async def list_comparison_jobs(
     corr_id = generate_correlation_id("cmp-list")
     try:
         async with async_engine.begin() as conn:
-            rows = await conn.execute(text("""
+            rows = await conn.execute(
+                text("""
                 SELECT id, mode, doc_ids, status, created_at, completed_at
                 FROM comparison_jobs
                 WHERE workspace_id = :ws
                 ORDER BY created_at DESC
                 LIMIT :lim
-            """), {"ws": user.workspace_id, "lim": min(limit, 100)})
+            """),
+                {"ws": user.workspace_id, "lim": min(limit, 100)},
+            )
             jobs = rows.fetchall()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list jobs: {e}")

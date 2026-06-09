@@ -15,11 +15,9 @@ from __future__ import annotations
 import asyncio
 import gc
 import logging
-import subprocess 
-import time
 from functools import lru_cache
 from pathlib import Path
-from typing import Final, Iterator, Optional, Union, TYPE_CHECKING, Callable, Awaitable, Any
+from typing import Final, Iterator, Optional, Union, TYPE_CHECKING, Callable, Awaitable
 
 import numpy as np
 from PIL import Image
@@ -48,7 +46,6 @@ from app.core.ocr_utils import generate_ocr_correlation_id
 from app.config import get_settings
 from app.core.dead_letter import log_failed_page
 from app.core.exceptions import VisionOCRError
-from app.core.retry import retry_async, RetryConfig
 
 from .preprocessor import DocumentPreprocessor
 from .paddle_ocr import PaddleOCREngine, DocumentOCRResult, PageOCRResult
@@ -69,7 +66,7 @@ _OCR_TIMEOUT: Final[float] = 120.0  # ✅ NEW: Per-page OCR timeout
 
 class OCRPipeline:
     """Main OCR orchestrator for DocuMind AI.
-    
+
     Features:
     - Multi-format support: PDF, PNG, JPG, TIFF, BMP
     - PaddleOCR primary engine with layout analysis
@@ -79,6 +76,7 @@ class OCRPipeline:
     - Correlation ID propagation for end-to-end tracing
     - Async-safe wrappers for FastAPI integration
     """
+
     SUPPORTED_EXTENSIONS = _SUPPORTED_EXTENSIONS
 
     def __init__(
@@ -92,14 +90,14 @@ class OCRPipeline:
         self.use_gpu = use_gpu or settings.ocr_use_gpu
         # ✅ FIXED: Convert to tuple for hashable cache key
         self.ocr_languages = tuple(ocr_languages) if ocr_languages else tuple(settings.ocr_language_list)
-        
+
         self.preprocessor = DocumentPreprocessor()
         self.paddle_engine = PaddleOCREngine(
             languages=list(self.ocr_languages),  # Convert back to list for engine
             use_gpu=self.use_gpu,
             enable_layout=True,
         )
-        
+
         # Vision engine is optional - only initialize if API key is available
         self.vision_engine: Optional[VisionOCREngine] = None
         if settings.openai_api_key:
@@ -110,10 +108,10 @@ class OCRPipeline:
                 )
             except ValueError as e:
                 logger.warning(f"Vision OCR disabled: {e}")
-        
+
         # ✅ NEW: Cache for VisionAnalyzer singleton (per pipeline instance)
         self._vision_analyzer_cache: Optional["VisionAnalyzer"] = None
-        
+
         logger.info(
             f"OCRPipeline ready: threshold={self.confidence_threshold}, "
             f"gpu={self.use_gpu}, vision={'enabled' if self.vision_engine else 'disabled'}, "
@@ -125,25 +123,26 @@ class OCRPipeline:
         try:
             # Create minimal dummy image to trigger model load
             dummy_img = np.zeros((32, 32, 3), dtype=np.uint8)
-            
+
             if hasattr(self, "paddle_engine") and self.paddle_engine is not None:
                 _ = self.paddle_engine.ocr(dummy_img, cls=False)
                 logger.debug("✅ OCR models loaded successfully via warmup")
-                
+
                 # ✅ NEW: GPU memory cleanup hint
                 if self.use_gpu:
                     try:
                         import torch
+
                         if torch.cuda.is_available():
                             torch.cuda.empty_cache()
                             logger.debug("✅ GPU cache cleared after warmup")
                     except ImportError:
                         pass
                 return True
-            
+
             logger.warning("⚠️ OCR engine attribute not found for warmup")
             return False
-            
+
         except Exception as e:
             logger.debug(f"⚠️ OCR warmup failed (non-critical, expected on first run): {e}")
             return False
@@ -162,11 +161,11 @@ class OCRPipeline:
         Runs blocking OCR work in thread pool to avoid event loop freeze.
         """
         corr_id = correlation_id or generate_ocr_correlation_id("ocr_pipeline")
-        
+
         # Validate inputs first (fast, no I/O)
         file_path = Path(file_path)
         self._validate_file_input(file_path)
-        
+
         loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in 3.10+
 
         # Run blocking process_file in thread pool with timeout
@@ -179,7 +178,7 @@ class OCRPipeline:
                         progress_callback=progress_callback,
                         enable_ocr_fallback=enable_ocr_fallback,
                         correlation_id=corr_id,
-                    )
+                    ),
                 ),
                 timeout=timeout_seconds,
             )
@@ -201,17 +200,17 @@ class OCRPipeline:
         """Process a document file and return OCR results."""
         corr_id = correlation_id or generate_ocr_correlation_id("ocr_pipeline")
         file_path = Path(file_path)
-        
+
         # ✅ FIXED: Centralized validation
         self._validate_file_input(file_path)
 
         logger.info(f"[{corr_id}] Processing file: {file_path.name}")
         total_pages = self._count_pages(file_path)
-        
+
         # ✅ NEW: Guard against huge PDFs
         if total_pages > _MAX_PAGES:
             raise ValueError(f"Document too large: {total_pages} pages (max {_MAX_PAGES})")
-        
+
         processed_pages: list[PageOCRResult] = []
         vision_fallback_count = 0
 
@@ -222,7 +221,7 @@ class OCRPipeline:
                     cb = progress_callback(page_num, total_pages)
                     if asyncio.iscoroutine(cb):
                         asyncio.run(cb)  # Safe because we're in sync context; for pure async, use process_file_async
-                
+
                 # Preprocess
                 prep_result = self.preprocessor.preprocess(page_image, correlation_id=corr_id)
                 preprocessed_img = prep_result.image
@@ -234,7 +233,11 @@ class OCRPipeline:
                 )
 
                 # Fallback to Vision if confidence low
-                if enable_ocr_fallback and self.vision_engine and paddle_result.mean_confidence < self.confidence_threshold:
+                if (
+                    enable_ocr_fallback
+                    and self.vision_engine
+                    and paddle_result.mean_confidence < self.confidence_threshold
+                ):
                     logger.warning(
                         f"[{corr_id}] Page {page_num}: confidence {paddle_result.mean_confidence:.3f} < {self.confidence_threshold}. Fallback to GPT-4o."
                     )
@@ -251,20 +254,17 @@ class OCRPipeline:
                         final_result = paddle_result
                 else:
                     final_result = paddle_result
-                
+
                 processed_pages.append(final_result)
                 del preprocessed_img  # Release preprocessed image memory
-                
+
             except Exception as e:
                 logger.error(f"[{corr_id}] Page {page_num} processing failed: {e}")
                 log_failed_page(file_path, page_num, str(e))
                 # Continue with other pages instead of failing entire doc
                 continue
 
-        doc_result = DocumentOCRResult(
-            pages=processed_pages,
-            correlation_id=corr_id
-        )
+        doc_result = DocumentOCRResult(pages=processed_pages, correlation_id=corr_id)
         logger.info(
             f"[{corr_id}] Completed: {file_path.name} | {total_pages} pages | "
             f"vision_fallbacks={vision_fallback_count} | mean_confidence={doc_result.mean_confidence:.3f}"
@@ -299,9 +299,9 @@ class OCRPipeline:
     ) -> "EnrichedDocument":
         """Async wrapper for enriched processing."""
         from .vision_analyzer import EnrichedDocument
-        
+
         corr_id = correlation_id or generate_ocr_correlation_id("ocr_enriched")
-        
+
         loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in 3.10+
         try:
             result = await asyncio.wait_for(
@@ -313,7 +313,7 @@ class OCRPipeline:
                         enable_vision_enrichment=enable_vision_enrichment,
                         enable_ocr_fallback=enable_ocr_fallback,
                         correlation_id=corr_id,
-                    )
+                    ),
                 ),
                 timeout=timeout_seconds,
             )
@@ -322,7 +322,11 @@ class OCRPipeline:
             logger.error(f"[{corr_id}] Enriched OCR timed out after {timeout_seconds}s")
             # Return basic OCR result as fallback
             basic = await self.process_file_async(
-                file_path, progress_callback, enable_ocr_fallback, corr_id, timeout_seconds/2
+                file_path,
+                progress_callback,
+                enable_ocr_fallback,
+                corr_id,
+                timeout_seconds / 2,
             )
             return EnrichedDocument(ocr_result=basic, correlation_id=corr_id)
 
@@ -336,20 +340,20 @@ class OCRPipeline:
     ) -> "EnrichedDocument":
         """Process file with optional Vision-based semantic enrichment."""
         from .vision_analyzer import VisionAnalyzer, EnrichedDocument
-        
+
         corr_id = correlation_id or generate_ocr_correlation_id("ocr_enriched")
         settings = get_settings()
         file_path = Path(file_path)
-        
+
         self._validate_file_input(file_path)
-        
+
         preprocessed_pages: list[np.ndarray] = []
         processed_pages: list[PageOCRResult] = []
         total_pages = self._count_pages(file_path)
-        
+
         if total_pages > _MAX_PAGES:
             raise ValueError(f"Document too large: {total_pages} pages (max {_MAX_PAGES})")
-        
+
         vision_fallback_count = 0
 
         for page_num, page_image in enumerate(self._load_pages(file_path)):
@@ -358,7 +362,7 @@ class OCRPipeline:
                     cb = progress_callback(page_num, total_pages)
                     if asyncio.iscoroutine(cb):
                         asyncio.run(cb)
-                
+
                 prep_result = self.preprocessor.preprocess(page_image, correlation_id=corr_id)
                 preprocessed_img = prep_result.image
                 preprocessed_pages.append(preprocessed_img)
@@ -367,8 +371,12 @@ class OCRPipeline:
                 paddle_result = self.paddle_engine.process_page(
                     preprocessed_img, page_num=page_num, correlation_id=corr_id
                 )
-                
-                if enable_ocr_fallback and self.vision_engine and paddle_result.mean_confidence < self.confidence_threshold:
+
+                if (
+                    enable_ocr_fallback
+                    and self.vision_engine
+                    and paddle_result.mean_confidence < self.confidence_threshold
+                ):
                     try:
                         vision_result = self.vision_engine.process_page(
                             preprocessed_img, page_num=page_num, correlation_id=corr_id
@@ -387,7 +395,7 @@ class OCRPipeline:
                 continue
 
         doc_result = DocumentOCRResult(pages=processed_pages, correlation_id=corr_id)
-        
+
         if not enable_vision_enrichment or not self.vision_engine:
             logger.info(f"[{corr_id}] Vision enrichment disabled or unavailable.")
             return EnrichedDocument(ocr_result=doc_result, correlation_id=corr_id)
@@ -398,25 +406,26 @@ class OCRPipeline:
                 api_key=settings.openai_api_key,
                 model=settings.openai_chat_model,
             )
-        
+
         logger.info(f"[{corr_id}] Running GPT-4o Vision semantic enrichment...")
         enriched = self._vision_analyzer_cache.enrich_document(
             ocr_result=doc_result,
             page_images=preprocessed_pages,
             correlation_id=corr_id,
         )
-        
+
         # Memory cleanup
         del preprocessed_pages
         gc.collect()
         if self.use_gpu:
             try:
                 import torch
+
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             except ImportError:
                 pass
-        
+
         return enriched
 
     @staticmethod
@@ -439,7 +448,7 @@ class OCRPipeline:
     def _load_pages(self, file_path: Path) -> Iterator[np.ndarray]:
         """Yield pages as OpenCV BGR numpy arrays with timeout protection."""
         suffix = file_path.suffix.lower()
-        
+
         if suffix == ".pdf":
             # Prefer pypdfium2 (no poppler needed), fallback to pdf2image
             if pdfium is not None:
@@ -448,7 +457,7 @@ class OCRPipeline:
                     n_pages = min(len(doc), _MAX_PAGES)
                     for i in range(n_pages):
                         page = doc[i]
-                        bitmap = page.render(scale=300/72)
+                        bitmap = page.render(scale=300 / 72)
                         pil_img = bitmap.to_pil()
                         yield self._pil_to_cv2(pil_img)
                         pil_img.close()
@@ -496,10 +505,7 @@ class OCRPipeline:
     @staticmethod
     def _inject_table_html(primary: PageOCRResult, secondary: PageOCRResult) -> PageOCRResult:
         """Inject table HTML from secondary result into primary if missing."""
-        secondary_tables = {
-            i: b for i, b in enumerate(secondary.blocks)
-            if b.block_type == "table" and b.table_html
-        }
+        secondary_tables = {i: b for i, b in enumerate(secondary.blocks) if b.block_type == "table" and b.table_html}
         for block in primary.blocks:
             if block.block_type == "table" and not block.table_html and secondary_tables:
                 block.table_html = next(iter(secondary_tables.values())).table_html
@@ -511,7 +517,7 @@ class OCRPipeline:
     def _merge_results_blockwise(paddle: PageOCRResult, vision: PageOCRResult) -> PageOCRResult:
         """
         Merge Paddle and Vision results with confidence-weighted block fusion.
-        
+
         Strategy:
         1. Match blocks by bounding box overlap (IoU > 0.5)
         2. For matched blocks: keep higher-confidence text, merge metadata
@@ -519,43 +525,43 @@ class OCRPipeline:
         4. Sort by line_num for consistent ordering
         """
         from difflib import SequenceMatcher
-        
+
         def _iou(box1: dict, box2: dict) -> float:
             """Calculate Intersection over Union for two bounding boxes."""
             x1 = max(box1.get("x0", 0), box2.get("x0", 0))
             y1 = max(box1.get("y0", 0), box2.get("y0", 0))
             x2 = min(box1.get("x1", 0), box2.get("x1", 0))
             y2 = min(box1.get("y1", 0), box2.get("y1", 0))
-            
+
             if x2 <= x1 or y2 <= y1:
                 return 0.0
-            
+
             intersection = (x2 - x1) * (y2 - y1)
             area1 = (box1.get("x1", 0) - box1.get("x0", 0)) * (box1.get("y1", 0) - box1.get("y0", 0))
             area2 = (box2.get("x1", 0) - box2.get("x0", 0)) * (box2.get("y1", 0) - box2.get("y0", 0))
             union = area1 + area2 - intersection
-            
+
             return intersection / union if union > 0 else 0.0
-        
+
         def _text_similarity(a: str, b: str) -> float:
             """Return text similarity ratio [0, 1]."""
             return SequenceMatcher(None, a.lower(), b.lower()).ratio()
-        
+
         # Index vision blocks by position for fast lookup
         vision_blocks_by_pos = []
         for vb in vision.blocks:
             bbox = getattr(vb, "bbox", {}) or {}
             vision_blocks_by_pos.append((vb, bbox))
-        
+
         merged_blocks = []
         used_vision_indices = set()
-        
+
         # Process Paddle blocks first (primary)
         for pb in paddle.blocks:
             pb_bbox = getattr(pb, "bbox", {}) or {}
             best_match = None
             best_iou = 0.0
-            
+
             # Find best matching vision block by IoU
             for idx, (vb, vb_bbox) in enumerate(vision_blocks_by_pos):
                 if idx in used_vision_indices:
@@ -564,12 +570,12 @@ class OCRPipeline:
                 if iou > best_iou and iou > 0.5:  # Threshold for "same block"
                     best_iou = iou
                     best_match = (idx, vb)
-            
+
             if best_match:
                 # Merge matched blocks: prefer higher confidence text
                 idx, vb = best_match
                 used_vision_indices.add(idx)
-                
+
                 # Choose text with higher confidence
                 if pb.confidence >= vb.confidence:
                     merged_text = pb.text
@@ -577,10 +583,13 @@ class OCRPipeline:
                 else:
                     merged_text = vb.text
                     merged_conf = vb.confidence
-                
+
                 # Merge metadata: prefer non-null values from either
-                merged_meta = {**getattr(pb, "metadata", {}), **{k: v for k, v in getattr(vb, "metadata", {}).items() if v is not None}}
-                
+                merged_meta = {
+                    **getattr(pb, "metadata", {}),
+                    **{k: v for k, v in getattr(vb, "metadata", {}).items() if v is not None},
+                }
+
                 # ✅ FINAL FIX: Create merged block safely — handle classes with/without metadata param
                 try:
                     merged_block = type(pb)(
@@ -604,33 +613,30 @@ class OCRPipeline:
                     )
                     if merged_meta:
                         object.__setattr__(merged_block, "metadata", merged_meta)
-                
+
                 merged_blocks.append(merged_block)
             else:
                 # No match — keep Paddle block as-is
                 merged_blocks.append(pb)
-        
+
         # Add unmatched vision blocks (dedupe by text similarity)
         for idx, (vb, vb_bbox) in enumerate(vision_blocks_by_pos):
             if idx in used_vision_indices:
                 continue
             # Check if text is too similar to any existing merged block
-            is_duplicate = any(
-                _text_similarity(vb.text, mb.text) > 0.95
-                for mb in merged_blocks
-            )
+            is_duplicate = any(_text_similarity(vb.text, mb.text) > 0.95 for mb in merged_blocks)
             if not is_duplicate:
                 merged_blocks.append(vb)
-        
+
         # Sort by line_num for consistent ordering
         merged_blocks.sort(key=lambda b: getattr(b, "line_num", 0))
-        
+
         # Compute aggregate confidence
         if merged_blocks:
             mean_conf = sum(b.confidence for b in merged_blocks) / len(merged_blocks)
         else:
             mean_conf = 0.0
-        
+
         # Return new PageOCRResult with merged data
         return PageOCRResult(
             page_num=paddle.page_num,
@@ -655,12 +661,12 @@ def get_ocr_pipeline(
 ) -> OCRPipeline:
     """
     Singleton OCR pipeline — PaddleOCR models load once.
-    
+
     ✅ FIXED: Params converted to hashable types for safe caching.
     """
     # Convert mutable list to immutable tuple for cache key safety
     langs_tuple = tuple(ocr_languages) if isinstance(ocr_languages, list) else ocr_languages
-    
+
     return OCRPipeline(
         confidence_threshold=confidence_threshold,
         use_gpu=use_gpu,
@@ -687,7 +693,7 @@ if __name__ == "__main__":
     import sys
     import tempfile
     from pathlib import Path
-    
+
     # 🔧 ROBUST PATH SETUP
     current_file = Path(__file__).resolve()
     for parent in current_file.parents:
@@ -696,19 +702,20 @@ if __name__ == "__main__":
             break
     else:
         backend_root = current_file.parents[2]
-    
+
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
-    
+
     # ====================================================================
     # -- SIGNATURE-AGNOSTIC MOCKS (Accept any kwargs via **kwargs) -------
     # ====================================================================
-    
+
     class MockBlock:
         """
         Fully signature-agnostic block mock for merge testing.
         Accepts ANY keyword argument via **kwargs and stores as attributes.
         """
+
         def __init__(self, **kwargs):
             # Set required attrs with defaults, then override with kwargs
             self.text = kwargs.pop("text", "")
@@ -723,12 +730,13 @@ if __name__ == "__main__":
             # Ensure metadata exists
             if not hasattr(self, "metadata"):
                 object.__setattr__(self, "metadata", {})
-        
+
         def __repr__(self):
             return f"MockBlock(text={self.text[:30]}..., conf={self.confidence})"
-    
+
     class MockPageResult:
         """Minimal PageOCRResult mock — accepts any kwargs."""
+
         def __init__(self, **kwargs):
             self.page_num = kwargs.pop("page_num", 0)
             self.blocks = kwargs.pop("blocks", [])
@@ -737,33 +745,37 @@ if __name__ == "__main__":
             # Store any extra kwargs
             for k, v in kwargs.items():
                 object.__setattr__(self, k, v)
-    
+
     async def run_tests():
         print("🔍 Testing OCRPipeline module (app/ocr/pipeline.py)")
         print("=" * 70)
-        
+
         try:
             # -- Test 1: Module imports & singleton -----------------------
             print("\n📌 Test 1: Module imports & singleton caching")
-            from app.ocr.pipeline import get_ocr_pipeline, reset_ocr_pipeline_cache, OCRPipeline
-            
+            from app.ocr.pipeline import (
+                get_ocr_pipeline,
+                reset_ocr_pipeline_cache,
+                OCRPipeline,
+            )
+
             reset_ocr_pipeline_cache()
             pipe1 = get_ocr_pipeline(confidence_threshold=0.7)
             pipe2 = get_ocr_pipeline(confidence_threshold=0.7)
             assert pipe1 is pipe2
             print(f"   ✅ Singleton caching: same instance = {pipe1 is pipe2}")
-            
+
             reset_ocr_pipeline_cache()
             pipe3 = get_ocr_pipeline(confidence_threshold=0.9)
             assert pipe1 is not pipe3
             print(f"   ✅ Cache invalidation: new instance for new params = {pipe1 is not pipe3}")
-            
+
             # -- Test 2: Pipeline initialization --------------------------
             print("\n📌 Test 2: OCRPipeline initialization")
             pipeline = OCRPipeline(confidence_threshold=0.75, use_gpu=False)
             assert pipeline.confidence_threshold == 0.75
             print(f"   ✅ Initialized: threshold={pipeline.confidence_threshold}, langs={pipeline.ocr_languages}")
-            
+
             # -- Test 3: File validation ----------------------------------
             print("\n📌 Test 3: Input validation")
             try:
@@ -771,7 +783,7 @@ if __name__ == "__main__":
                 print("   ❌ Should raise FileNotFoundError")
             except FileNotFoundError:
                 print("   ✅ Non-existent file correctly rejected")
-            
+
             with tempfile.NamedTemporaryFile(suffix=".xyz", delete=False) as tmp:
                 tmp_path = Path(tmp.name)
             try:
@@ -779,18 +791,18 @@ if __name__ == "__main__":
                 print("   ❌ Should raise ValueError for unsupported extension")
             except ValueError as e:
                 if "Unsupported file type" in str(e):
-                    print(f"   ✅ Unsupported extension rejected: '.xyz'")
+                    print("   ✅ Unsupported extension rejected: '.xyz'")
             finally:
                 tmp_path.unlink(missing_ok=True)
-            
+
             # -- Test 4: Warmup -------------------------------------------
             print("\n📌 Test 4: Pipeline warmup")
             warmup_success = pipeline.warmup()
             print(f"   ✅ Warmup: {'PASS' if warmup_success else 'SKIP (models load on first use)'}")
-            
+
             # -- Test 5: Merge logic (SIGNATURE-AGNOSTIC MOCKS) -----------
             print("\n📌 Test 5: _merge_results_blockwise (confidence-weighted fusion)")
-            
+
             # Use signature-agnostic mocks — accepts ANY kwargs
             paddle_block = MockBlock(
                 text="Invoice Total: $1,234.56",
@@ -799,16 +811,16 @@ if __name__ == "__main__":
                 block_type="text",
                 line_num=10,
                 table_html=None,
-                metadata={"source": "paddle"}  # ✅ Now accepted via **kwargs
+                metadata={"source": "paddle"},  # ✅ Now accepted via **kwargs
             )
-            
+
             paddle_result = MockPageResult(
                 page_num=0,
                 blocks=[paddle_block],
                 mean_confidence=0.95,
-                correlation_id="test-merge"
+                correlation_id="test-merge",
             )
-            
+
             vision_block = MockBlock(
                 text="Invoice Total: $1,234.56",
                 confidence=0.88,
@@ -816,63 +828,62 @@ if __name__ == "__main__":
                 block_type="text",
                 line_num=10,
                 table_html="<table><tr><td>Total</td><td>$1,234.56</td></tr></table>",
-                metadata={"source": "vision", "enriched": True}  # ✅ Accepted
+                metadata={"source": "vision", "enriched": True},  # ✅ Accepted
             )
-            
+
             vision_result = MockPageResult(
                 page_num=0,
                 blocks=[vision_block],
                 mean_confidence=0.88,
-                correlation_id="test-merge"
+                correlation_id="test-merge",
             )
-            
+
             # Merge test — now works with ANY block class signature
             merged = pipeline._merge_results_blockwise(paddle_result, vision_result)
-            
+
             assert len(merged.blocks) >= 1, "Should have at least 1 merged block"
             assert merged.blocks[0].text == "Invoice Total: $1,234.56", "Text should be preserved"
             assert merged.blocks[0].confidence == 0.95, "Should prefer higher confidence"
             print(f"   ✅ Block fusion: text preserved, confidence={merged.blocks[0].confidence}")
-            
+
             # -- Test 6: Async wrapper ------------------------------------
             print("\n📌 Test 6: Async wrapper with timeout")
             try:
-                await pipeline.process_file_async(
-                    file_path="/nonexistent/test.png",
-                    timeout_seconds=1.0
-                )
+                await pipeline.process_file_async(file_path="/nonexistent/test.png", timeout_seconds=1.0)
                 print("   ❌ Should raise error")
             except (FileNotFoundError, Exception) as e:
                 print(f"   ✅ Async wrapper handles errors: {type(e).__name__}")
-            
+
             # -- Test 7: Page counting & extensions -----------------------
             print("\n📌 Test 7: Page counting & extension support")
             assert pipeline._count_pages(Path("test.jpg")) == 1
-            print(f"   ✅ Image files: counted as 1 page")
+            print("   ✅ Image files: counted as 1 page")
             for ext in [".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp"]:
                 assert ext in OCRPipeline.SUPPORTED_EXTENSIONS
             print(f"   ✅ Supported extensions: {sorted(OCRPipeline.SUPPORTED_EXTENSIONS)}")
-            
+
             # -- Test 8: PIL->CV2 conversion -------------------------------
             print("\n📌 Test 8: PIL to OpenCV conversion")
             try:
                 from PIL import Image
+
                 pil_img = Image.new("RGB", (100, 100), color="red")
                 cv2_img = pipeline._pil_to_cv2(pil_img)
                 assert cv2_img.shape == (100, 100, 3)
                 print(f"   ✅ PIL->CV2: shape={cv2_img.shape}, RGB->BGR verified")
             except ImportError as e:
                 print(f"   ⚠️ Dependency missing — skipping: {e}")
-            
+
             print("\n" + "=" * 70)
             print("✅ ALL TESTS PASSED! OCRPipeline module verified.")
             return True
-            
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
-    
+
     success = asyncio.run(run_tests())
     sys.exit(0 if success else 1)

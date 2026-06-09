@@ -1,5 +1,6 @@
 # backend/app/api/routes/onboarding.py
 """Client onboarding API — invite flow, token acceptance, wizard progress."""
+
 from __future__ import annotations
 
 import logging
@@ -8,10 +9,18 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from app.auth.dependencies import AuthenticatedUser, require_workspace_admin, get_current_user
+from app.auth.dependencies import (
+    AuthenticatedUser,
+    require_workspace_admin,
+    get_current_user,
+)
 from app.core.invite_manager import (
-    create_invite, validate_invite_token, accept_invite,
-    resend_invite, list_invites, send_invite_email,
+    create_invite,
+    validate_invite_token,
+    accept_invite,
+    resend_invite,
+    list_invites,
+    send_invite_email,
     get_onboarding_progress,
 )
 
@@ -20,6 +29,7 @@ router = APIRouter(prefix="/onboarding")
 
 
 # ── Send invite ───────────────────────────────────────────────────────────────
+
 
 class InviteRequest(BaseModel):
     email: EmailStr
@@ -60,6 +70,7 @@ async def send_invite(
 
 # ── Validate token ────────────────────────────────────────────────────────────
 
+
 @router.get("/invite/{token}/validate")
 async def validate_token(token: str):
     """Public — no auth required. Validates invite link before showing the form."""
@@ -77,6 +88,7 @@ async def validate_token(token: str):
 
 
 # ── Accept invite ─────────────────────────────────────────────────────────────
+
 
 class AcceptInviteRequest(BaseModel):
     password: str = Field(..., min_length=8, max_length=72)
@@ -98,6 +110,7 @@ async def accept_invite_route(token: str, body: AcceptInviteRequest):
 
 
 # ── Resend invite ─────────────────────────────────────────────────────────────
+
 
 @router.post("/resend/{invite_id}", status_code=201)
 async def resend_invite_route(
@@ -121,6 +134,7 @@ async def resend_invite_route(
 
 # ── List invites ──────────────────────────────────────────────────────────────
 
+
 @router.get("/invites")
 async def get_invites(
     workspace_id: Optional[str] = None,
@@ -132,6 +146,7 @@ async def get_invites(
 
 
 # ── Onboarding progress / wizard ──────────────────────────────────────────────
+
 
 @router.get("/workspace/{workspace_id}/progress")
 async def onboarding_progress(
@@ -183,11 +198,13 @@ async def wizard_step(
 
 # ── API key shortcuts (workspace_admin only) ──────────────────────────────────
 
+
 @router.get("/api-keys")
 async def list_workspace_api_keys(
     user: AuthenticatedUser = Depends(require_workspace_admin),
 ):
     from app.core.apikey_manager import list_api_keys
+
     keys = await list_api_keys(user.workspace_id)
     return {"api_keys": keys}
 
@@ -213,6 +230,7 @@ async def create_workspace_api_key(
     user: AuthenticatedUser = Depends(require_workspace_admin),
 ):
     from app.core.apikey_manager import create_api_key
+
     return await create_api_key(
         workspace_id=user.workspace_id,
         name=body.name,
@@ -228,6 +246,7 @@ async def revoke_workspace_api_key(
     user: AuthenticatedUser = Depends(require_workspace_admin),
 ):
     from app.core.apikey_manager import revoke_api_key
+
     await revoke_api_key(key_id, user.workspace_id)
     return {"key_id": key_id, "revoked": True}
 

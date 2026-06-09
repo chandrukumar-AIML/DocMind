@@ -1,4 +1,4 @@
-﻿# backend/app/core/monitoring_utils.py
+# backend/app/core/monitoring_utils.py
 # DVMELTSS-FIX: M - Modular, A - Async, S - Security
 # ASCALE-FIX: S - Separation, C - Coupling
 # BATMAN-FIX: A - True async for monitoring operations
@@ -14,16 +14,16 @@ Centralizes:
 Usage:
     from app.core.monitoring_utils import get_async_redis, compute_percentile
 """
+
 from __future__ import annotations
 
-import asyncio
 import logging
-from typing import Final, Optional, Union
+from typing import Final, Optional
 
 from redis.asyncio import from_url
 import numpy as np
 
-from app.config import get_settings 
+from app.config import get_settings
 
 from app.core.ids import generate_correlation_id
 
@@ -50,17 +50,17 @@ async def get_monitoring_redis(
 ):
     """
     Get async Redis client configured for monitoring operations.
-    
+
     Args:
         redis_url: Optional override for Redis URL
         db: Redis database number (default: 3 for monitoring)
-    
+
     Returns:
         Configured Redis async instance
     """
     settings = get_settings()
     url = redis_url or getattr(settings, "redis_url", f"redis://localhost:6379/{db}")
-    
+
     return await from_url(
         url,
         db=db,
@@ -76,75 +76,75 @@ async def get_monitoring_redis(
 def get_quality_thresholds(override: Optional[dict] = None) -> dict:
     """
     Get quality alert thresholds with optional override.
-    
+
     Args:
         override: Optional dict to override default thresholds
-    
+
     Returns:
         Dict of metric_name -> threshold_value
     """
     settings = get_settings()
     # Allow env-based overrides
     config_thresholds = getattr(settings, "monitoring_quality_thresholds", {})
-    
+
     base = _DEFAULT_QUALITY_THRESHOLDS.copy()
     base.update(config_thresholds)
     if override:
         base.update(override)
-    
+
     return base
 
 
 def compute_percentile(values: list[float], percentile: float) -> Optional[float]:
     """
     Compute percentile safely with NaN handling.
-    
+
     Args:
         values: List of numeric values
         percentile: Percentile to compute (0-100)
-    
+
     Returns:
         Percentile value or None if insufficient data
     """
     if not values or len(values) < 2:
         return None
-    
+
     clean_values = [v for v in values if v is not None and not np.isnan(v)]
     if len(clean_values) < 2:
         return None
-    
+
     return float(np.percentile(clean_values, percentile))
 
 
 def compute_mean(values: list[Optional[float]]) -> Optional[float]:
     """
     Compute mean safely with None/NaN filtering.
-    
+
     Args:
         values: List of optional numeric values
-    
+
     Returns:
         Mean value or None if insufficient valid data
     """
     if not values:
         return None
-    
+
     clean_values = [v for v in values if v is not None and not np.isnan(v)]
     if not clean_values:
         return None
-    
+
     return float(np.mean(clean_values))
 
 
 def validate_monitoring_window(hours: float, min_hours: float = 1.0, max_hours: float = 720.0) -> float:
     """
     Validate and clamp monitoring window hours.
-    
+
     Args:
         hours: Requested window in hours
         min_hours: Minimum allowed window
         max_hours: Maximum allowed window
-    
+
     Returns:
         Clamped window value
     """
@@ -171,10 +171,9 @@ __all__ = [
     "validate_monitoring_window",
     "generate_monitoring_correlation_id",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

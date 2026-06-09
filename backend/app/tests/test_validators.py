@@ -1,4 +1,5 @@
 """Unit tests for core input validators (security-relevant, pure functions)."""
+
 import pytest
 
 from app.core.validators import (
@@ -55,13 +56,16 @@ class TestPasswordStrength:
         assert ok is True
         assert msg == ""
 
-    @pytest.mark.parametrize("pwd,reason", [
-        ("Ab1!", "at least"),              # too short (4 chars)
-        ("alllowercase1!", "uppercase"),
-        ("ALLUPPERCASE1!", "lowercase"),
-        ("NoDigitsHere!", "digit"),
-        ("NoSpecial1234", "special"),
-    ])
+    @pytest.mark.parametrize(
+        "pwd,reason",
+        [
+            ("Ab1!", "at least"),  # too short (4 chars)
+            ("alllowercase1!", "uppercase"),
+            ("ALLUPPERCASE1!", "lowercase"),
+            ("NoDigitsHere!", "digit"),
+            ("NoSpecial1234", "special"),
+        ],
+    )
     def test_weak_passwords_report_reason(self, pwd, reason):
         ok, msg = validate_password_strength(pwd)
         assert ok is False
@@ -88,12 +92,15 @@ class TestTags:
     def test_normalize_dedupes_preserving_order(self):
         assert normalize_tags(["A", "b", "a", "B"]) == ["a", "b"]
 
-    @pytest.mark.parametrize("bad", [
-        ["good", "bad tag!"],     # invalid char
-        ["x" * 51],               # too long
-        "not-a-list",             # not a list
-        [123],                    # non-string element
-    ])
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            ["good", "bad tag!"],  # invalid char
+            ["x" * 51],  # too long
+            "not-a-list",  # not a list
+            [123],  # non-string element
+        ],
+    )
     def test_rejects_invalid(self, bad):
         with pytest.raises(ValueError):
             validate_tags(bad)

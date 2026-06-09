@@ -1,4 +1,4 @@
-﻿# backend/app/api/routes/graph.py
+# backend/app/api/routes/graph.py
 # DVMELTSS-FIX: M/E/S + ASCALE-A/E + OWASP-3
 # ✅ FIXED: Proper async handling + input validation + safe LLM pool usage + timeout
 
@@ -11,10 +11,20 @@ import uuid
 from functools import partial
 from typing import Annotated, Optional, Any, Final
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks, Body
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    status,
+    BackgroundTasks,
+    Body,
+)
 from pydantic import BaseModel, Field
 
-from app.config import get_settings, lazy_settings as settings  # [OK] FIXED: lazy proxy avoids import-time crash
+from app.config import (
+    lazy_settings as settings,
+)  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.ids import generate_correlation_id
 from app.auth.dependencies import get_current_user, AuthenticatedUser
 from app.models import ErrorResponse
@@ -100,7 +110,9 @@ def _validate_graph_inputs(
         return False, "mode must be one of: vector, graph, hybrid"
     if entity_name is not None and not isinstance(entity_name, str):
         return False, "entity_name must be a string or None"
-    if source_files is not None and (not isinstance(source_files, list) or not all(isinstance(f, str) for f in source_files)):
+    if source_files is not None and (
+        not isinstance(source_files, list) or not all(isinstance(f, str) for f in source_files)
+    ):
         return False, "source_files must be a list of strings or None"
     return True, ""
 
@@ -124,7 +136,7 @@ async def _generate_answer_with_graph_context(
             "Graph context was retrieved, but answer generation is temporarily unavailable. "
             "Please verify the configured LLM provider and retry."
         )
-        
+
     system_prompt = f"""You are DocuMind AI. Answer using ONLY the provided context.
 Cite sources as [SOURCE: filename, page X].
 
@@ -135,12 +147,12 @@ Vector context:
 {graph_result.answer_context[:2000] if hasattr(graph_result, 'answer_context') else ''}
 
 If context is insufficient, say so clearly."""
-    
+
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": question},
     ]
-    
+
     try:
         response = await asyncio.wait_for(
             llm.ainvoke(messages),
@@ -162,15 +174,15 @@ def _build_visualization(graph_records: list[dict]) -> GraphVisualizationData:
     """Convert raw Neo4j records into vis.js-compatible node/edge format."""
     nodes: dict[str, GraphNode] = {}
     edges: list[GraphEdge] = []
-    
-    for rec in (graph_records or []):
+
+    for rec in graph_records or []:
         if not isinstance(rec, dict):
             continue
-            
+
         entity_name = rec.get("entity") or rec.get("name") or rec.get("start_name")
         entity_type = rec.get("type") or rec.get("start_type") or "Concept"
         description = rec.get("description", "")
-        
+
         if entity_name and isinstance(entity_name, str) and entity_name not in nodes:
             node_id = str(uuid.uuid4())[:8]
             nodes[entity_name] = GraphNode(
@@ -179,7 +191,7 @@ def _build_visualization(graph_records: list[dict]) -> GraphVisualizationData:
                 entity_type=entity_type,
                 description=description[:200] if description else None,
             )
-        
+
         connections = rec.get("connections", [])
         if isinstance(connections, list):
             for conn in connections:
@@ -188,21 +200,23 @@ def _build_visualization(graph_records: list[dict]) -> GraphVisualizationData:
                 target = conn.get("target")
                 rel = conn.get("rel", "RELATED_TO")
                 t_type = conn.get("target_type", "Concept")
-                
+
                 if target and isinstance(target, str) and target not in nodes:
                     nodes[target] = GraphNode(
                         id=str(uuid.uuid4())[:8],
                         name=target,
                         entity_type=t_type,
                     )
-                
+
                 if entity_name and target and entity_name in nodes and target in nodes:
-                    edges.append(GraphEdge(
-                        from_id=nodes[entity_name].id,
-                        to_id=nodes[target].id,
-                        relationship_type=rel,
-                    ))
-    
+                    edges.append(
+                        GraphEdge(
+                            from_id=nodes[entity_name].id,
+                            to_id=nodes[target].id,
+                            relationship_type=rel,
+                        )
+                    )
+
     return GraphVisualizationData(nodes=list(nodes.values()), edges=edges)
 
 
@@ -210,17 +224,17 @@ def _build_neighborhood_visualization(records: list[dict]) -> GraphVisualization
     """Build visualization from neighborhood query results."""
     nodes: dict[str, GraphNode] = {}
     edges: list[GraphEdge] = []
-    
-    for rec in (records or []):
+
+    for rec in records or []:
         if not isinstance(rec, dict):
             continue
-            
+
         start_name = rec.get("start_name", "")
         start_type = rec.get("start_type", "Concept")
         neigh_name = rec.get("neighbor_name", "")
         neigh_type = rec.get("neighbor_type", "Concept")
         rel_types = rec.get("rel_types", ["RELATED_TO"])
-        
+
         for name, etype in [(start_name, start_type), (neigh_name, neigh_type)]:
             if name and isinstance(name, str) and name not in nodes:
                 nodes[name] = GraphNode(
@@ -228,15 +242,24 @@ def _build_neighborhood_visualization(records: list[dict]) -> GraphVisualization
                     name=name,
                     entity_type=etype,
                 )
-        
-        if start_name and neigh_name and isinstance(start_name, str) and isinstance(neigh_name, str) and start_name in nodes and neigh_name in nodes:
+
+        if (
+            start_name
+            and neigh_name
+            and isinstance(start_name, str)
+            and isinstance(neigh_name, str)
+            and start_name in nodes
+            and neigh_name in nodes
+        ):
             rel = rel_types[0] if rel_types else "RELATED_TO"
-            edges.append(GraphEdge(
-                from_id=nodes[start_name].id,
-                to_id=nodes[neigh_name].id,
-                relationship_type=rel,
-            ))
-    
+            edges.append(
+                GraphEdge(
+                    from_id=nodes[start_name].id,
+                    to_id=nodes[neigh_name].id,
+                    relationship_type=rel,
+                )
+            )
+
     return GraphVisualizationData(nodes=list(nodes.values()), edges=edges)
 
 
@@ -260,27 +283,28 @@ async def graph_query(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> GraphQueryResponse:
     if not settings.openai_api_key:
-        raise HTTPException(status_code=503, detail="LLM service unavailable: OPENAI_API_KEY not configured")
+        raise HTTPException(
+            status_code=503,
+            detail="LLM service unavailable: OPENAI_API_KEY not configured",
+        )
 
     corr_id = generate_correlation_id("graph_query")
 
     # ✅ Validate inputs
-    is_valid, error = _validate_graph_inputs(
-        request.question, request.workspace_id, request.mode, None, None, corr_id
-    )
+    is_valid, error = _validate_graph_inputs(request.question, request.workspace_id, request.mode, None, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     workspace_id = request.workspace_id or user.workspace_id
-    
+
     logger.info(f"[{corr_id}] Graph query: user={user.user_id[:8]}... workspace={workspace_id} mode={request.mode}")
-    
+
     start_ts = time.perf_counter()
-    
+
     try:
         vector_store = VectorStoreManager(workspace_id=workspace_id)
         retriever = GraphRAGRetriever(store_manager=vector_store)
-        
+
         # ✅ FIXED: Use async method if available, fallback to executor
         if hasattr(retriever, "retrieve_async"):
             graph_result: GraphRAGResult = await asyncio.wait_for(
@@ -308,7 +332,7 @@ async def graph_query(
                 ),
                 timeout=_GRAPH_RETRIEVAL_TIMEOUT,
             )
-        
+
         rag_chain = AdvancedRAGChain()
         answer = await _generate_answer_with_graph_context(
             question=request.question,
@@ -316,13 +340,13 @@ async def graph_query(
             rag_chain=rag_chain,
             correlation_id=corr_id,
         )
-        
+
         viz = None
         if request.include_visualization:
             viz = _build_visualization(getattr(graph_result, "graph_records", []))
-        
+
         latency = time.perf_counter() - start_ts
-        
+
         # ✅ FIXED: Safe citation extraction
         vector_docs = getattr(graph_result, "vector_docs", [])
         citations = []
@@ -330,13 +354,15 @@ async def graph_query(
             if doc is None:
                 continue
             metadata = getattr(doc, "metadata", {}) or {}
-            citations.append({
-                "source_file": metadata.get("source_file", ""),
-                "page_number": (metadata.get("page_number", 0) or 0) + 1,
-                "chunk_text": getattr(doc, "page_content", "")[:200],
-                "relevance_score": metadata.get("relevance_score", 0.0),
-            })
-        
+            citations.append(
+                {
+                    "source_file": metadata.get("source_file", ""),
+                    "page_number": (metadata.get("page_number", 0) or 0) + 1,
+                    "chunk_text": getattr(doc, "page_content", "")[:200],
+                    "relevance_score": metadata.get("relevance_score", 0.0),
+                }
+            )
+
         return GraphQueryResponse(
             answer=answer,
             retrieval_mode=getattr(graph_result, "retrieval_mode", request.mode),
@@ -348,7 +374,7 @@ async def graph_query(
             citations=citations,
             correlation_id=corr_id,
         )
-        
+
     except asyncio.TimeoutError:
         latency = time.perf_counter() - start_ts
         logger.warning(f"[{corr_id}] Graph query timed out after {_GRAPH_RETRIEVAL_TIMEOUT}s")
@@ -368,7 +394,10 @@ async def graph_query(
         )
     except Exception as e:
         latency = time.perf_counter() - start_ts
-        logger.warning(f"[{corr_id}] Graph query unavailable, returning degraded response: {e}", exc_info=True)
+        logger.warning(
+            f"[{corr_id}] Graph query unavailable, returning degraded response: {e}",
+            exc_info=True,
+        )
         return GraphQueryResponse(
             answer=(
                 "Graph query is temporarily unavailable. Optional graph, vector, or LLM services "
@@ -396,12 +425,15 @@ async def get_graph_schema(
 ) -> GraphSchemaResponse:
     """Returns node and relationship counts for the current workspace."""
     if not settings.openai_api_key:
-        raise HTTPException(status_code=503, detail="Graph service unavailable: OPENAI_API_KEY not configured")
+        raise HTTPException(
+            status_code=503,
+            detail="Graph service unavailable: OPENAI_API_KEY not configured",
+        )
 
     corr_id = generate_correlation_id("graph_schema")
 
     ws_id = workspace_id or user.workspace_id
-    
+
     try:
         schema = await asyncio.wait_for(
             asyncio.to_thread(lambda: get_neo4j_store().get_schema_summary(workspace_id=ws_id)),
@@ -433,14 +465,14 @@ async def get_entity_neighbors(
 ) -> dict:
     """Get N-hop neighborhood around a named entity for interactive graph exploration."""
     corr_id = generate_correlation_id("graph_neighbors")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_graph_inputs(None, workspace_id, None, entity_name, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     ws_id = workspace_id or (user.workspace_id if user else "default")
-    
+
     try:
         store = get_neo4j_store()
         records = await asyncio.wait_for(
@@ -454,7 +486,7 @@ async def get_entity_neighbors(
             timeout=_SCHEMA_TIMEOUT,
         )
         viz = _build_neighborhood_visualization(records or [])
-        
+
         return {
             "entity": entity_name,
             "hops": hops,
@@ -485,28 +517,28 @@ async def extract_graph(
 ) -> dict:
     """Queue entity/relationship extraction from documents (async job)."""
     corr_id = generate_correlation_id("graph_extract")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_graph_inputs(None, workspace_id, None, None, source_files, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     ws_id = workspace_id or (user.workspace_id if user else "default")
-    
+
     task_id = str(uuid.uuid4())
-    
+
     if background_tasks:
         # ✅ FIXED: Use sync function for background task
         def _do_extract():
             try:
                 extractor = GraphExtractor()
                 store = get_neo4j_store()
-                
+
                 for source_file in source_files[:10]:  # Cap at 10 files
                     vector_store = VectorStoreManager(workspace_id=ws_id)
                     # ✅ FIXED: Use async method with proper await
                     chunks = asyncio.run(vector_store.get_document_chunks_async(source_file))
-                    
+
                     results = extractor.extract_from_documents(chunks, source_file, ws_id)
                     for result in results:
                         for entity in getattr(result, "entities", []):
@@ -527,13 +559,13 @@ async def extract_graph(
                                     properties=getattr(rel, "properties", {}),
                                     workspace_id=ws_id,
                                 )
-                
+
                 logger.info(f"[{corr_id}] Graph extraction complete: task={task_id}")
             except Exception as e:
                 logger.error(f"[{corr_id}] Graph extraction failed: {e}", exc_info=True)
-        
+
         background_tasks.add_task(_do_extract)
-    
+
     return {
         "task_id": task_id,
         "status": "queued",
@@ -547,7 +579,12 @@ async def extract_graph(
 def get_graph_metadata() -> dict[str, Any]:
     """✅ NEW: Return graph API metadata for monitoring."""
     return {
-        "endpoints": ["/graph/query", "/graph/schema", "/graph/neighbors", "/graph/extract"],
+        "endpoints": [
+            "/graph/query",
+            "/graph/schema",
+            "/graph/neighbors",
+            "/graph/extract",
+        ],
         "timeouts": {
             "graph_retrieval_seconds": _GRAPH_RETRIEVAL_TIMEOUT,
             "answer_generation_seconds": _ANSWER_GENERATION_TIMEOUT,
@@ -562,10 +599,9 @@ def get_graph_metadata() -> dict[str, Any]:
 
 
 __all__ = ["router", "get_graph_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

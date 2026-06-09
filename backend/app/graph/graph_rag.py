@@ -1,4 +1,4 @@
-﻿# backend/app/graph/graph_rag.py
+# backend/app/graph/graph_rag.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, L - Logging
 # BATMAN-FIX: A - True async, T - Concurrent retrieval, M - Memory safety
 # OWASP-FIX: 1 - Prompt safety, 9 - Input sanitization
@@ -8,18 +8,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Final, Optional, Any
 
 from langchain_core.documents import Document
 
 # DVMELTSS-M: Import centralized utilities
-from app.core.graph_utils import sanitize_cypher_input, generate_graph_correlation_id
+from app.core.graph_utils import generate_graph_correlation_id
 from .cypher_retriever import CypherRetriever
-from .neo4j_store import get_neo4j_store
 from app.vectorstore.store_manager import VectorStoreManager
 
 logger = logging.getLogger(__name__)
@@ -29,12 +27,30 @@ logger = logging.getLogger(__name__)
 # ========================================================================
 
 # Keywords that suggest graph traversal is needed
-_GRAPH_TRIGGER_KEYWORDS: Final = frozenset({
-    "who", "relationship", "connected", "between", "involves",
-    "signed", "related", "link", "path", "through", "via",
-    "all contracts", "all documents", "which company", "what entities",
-    "party", "parties", "counterparty", "signatory", "affiliates"
-})
+_GRAPH_TRIGGER_KEYWORDS: Final = frozenset(
+    {
+        "who",
+        "relationship",
+        "connected",
+        "between",
+        "involves",
+        "signed",
+        "related",
+        "link",
+        "path",
+        "through",
+        "via",
+        "all contracts",
+        "all documents",
+        "which company",
+        "what entities",
+        "party",
+        "parties",
+        "counterparty",
+        "signatory",
+        "affiliates",
+    }
+)
 
 # DVMELTSS-V: Retrieval limits
 _MAX_VECTOR_RESULTS: Final = 10
@@ -51,6 +67,7 @@ class GraphRAGResult:
     Immutable combined result from graph + vector retrieval.
     DVMELTSS-M: Frozen dataclass prevents runtime mutation.
     """
+
     answer_context: str  # merged context for LLM
     vector_docs: list[Document]  # from ChromaDB
     graph_records: list[dict]  # from Neo4j
@@ -80,7 +97,7 @@ class GraphRAGResult:
 class GraphRAGRetriever:
     """
     Hybrid retriever combining Neo4j graph search + ChromaDB vector search.
-    
+
     Features (DVMELTSS-V, BATMAN-A):
     - Auto-detect retrieval mode from query keywords
     - Async concurrent retrieval for lower latency
@@ -122,7 +139,7 @@ class GraphRAGRetriever:
         """
         query_lower = query.lower()
         graph_score = sum(1 for kw in _GRAPH_TRIGGER_KEYWORDS if kw in query_lower)
-        
+
         if graph_score >= 2:
             return "hybrid"
         elif graph_score == 1:
@@ -145,9 +162,7 @@ class GraphRAGRetriever:
             # ✅ Use asyncio.to_thread for Python 3.9+ or fallback for 3.8
             if sys.version_info >= (3, 9):
                 results = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        lambda: self.store.search(query=query, k=k, filter_dict=filter_dict)
-                    ),
+                    asyncio.to_thread(lambda: self.store.search(query=query, k=k, filter_dict=filter_dict)),
                     timeout=_RETRIEVAL_TIMEOUT_SECONDS,
                 )
             else:
@@ -155,7 +170,7 @@ class GraphRAGRetriever:
                 results = await asyncio.wait_for(
                     loop.run_in_executor(
                         None,
-                        lambda: self.store.search(query=query, k=k, filter_dict=filter_dict)
+                        lambda: self.store.search(query=query, k=k, filter_dict=filter_dict),
                     ),
                     timeout=_RETRIEVAL_TIMEOUT_SECONDS,
                 )
@@ -187,7 +202,7 @@ class GraphRAGRetriever:
                             query=query,
                             workspace_id=workspace_id,
                             use_text_to_cypher=True,
-                            correlation_id=correlation_id
+                            correlation_id=correlation_id,
                         )
                     ),
                     timeout=_RETRIEVAL_TIMEOUT_SECONDS,
@@ -201,8 +216,8 @@ class GraphRAGRetriever:
                             query=query,
                             workspace_id=workspace_id,
                             use_text_to_cypher=True,
-                            correlation_id=correlation_id
-                        )
+                            correlation_id=correlation_id,
+                        ),
                     ),
                     timeout=_RETRIEVAL_TIMEOUT_SECONDS,
                 )
@@ -231,7 +246,7 @@ class GraphRAGRetriever:
 
         if graph_context and graph_context.strip() and mode in ("graph", "hybrid"):
             # Truncate graph context if too long
-            safe_graph = graph_context[:_MAX_CONTEXT_CHARS // 2]
+            safe_graph = graph_context[: _MAX_CONTEXT_CHARS // 2]
             parts.append(f"=== Knowledge Graph Context ===\n{safe_graph}")
 
         if vector_docs and mode in ("vector", "hybrid"):
@@ -243,11 +258,11 @@ class GraphRAGRetriever:
                 # Truncate each chunk
                 content = doc.page_content[:500] + ("..." if len(doc.page_content) > 500 else "")
                 vector_parts.append(f"[SOURCE: {source}, page {page}]\n{content}")
-            
+
             if vector_parts:
                 safe_vector = "\n\n---\n\n".join(vector_parts)
                 if len(safe_vector) > _MAX_CONTEXT_CHARS // 2:
-                    safe_vector = safe_vector[:_MAX_CONTEXT_CHARS // 2] + "\n\n[...truncated...]"
+                    safe_vector = safe_vector[: _MAX_CONTEXT_CHARS // 2] + "\n\n[...truncated...]"
                 parts.append(f"=== Vector Search Context ===\n{safe_vector}")
 
         if not parts:
@@ -273,7 +288,7 @@ class GraphRAGRetriever:
         ✅ FIXED: Input validation + safe empty handling.
         """
         corr_id = correlation_id or generate_graph_correlation_id("graphrag")
-        
+
         # ✅ Validate inputs
         is_valid, error = self._validate_inputs(query, workspace_id, filter_dict, corr_id)
         if not is_valid:
@@ -286,7 +301,7 @@ class GraphRAGRetriever:
                 retrieval_mode=mode,
                 correlation_id=corr_id,
             )
-        
+
         if mode == "auto":
             mode = self._detect_mode(query)
         logger.info(f"[{corr_id}] GraphRAG mode: {mode} | query: '{query[:60]}...'")
@@ -294,7 +309,7 @@ class GraphRAGRetriever:
         # Run retrievals concurrently
         vector_task = self._retrieve_vector_async(query, workspace_id, k_vector, filter_dict, corr_id)
         graph_task = self._retrieve_graph_async(query, workspace_id, corr_id)
-        
+
         vector_docs, v_latency = await vector_task
         graph_context, graph_records, g_latency = await graph_task
 
@@ -303,10 +318,7 @@ class GraphRAGRetriever:
 
         # Count entities/relationships in graph records
         entity_count = len(graph_records)
-        rel_count = sum(
-            len(r.get("connections", [])) for r in graph_records
-            if isinstance(r.get("connections"), list)
-        )
+        rel_count = sum(len(r.get("connections", [])) for r in graph_records if isinstance(r.get("connections"), list))
 
         return GraphRAGResult(
             answer_context=answer_context,
@@ -339,8 +351,8 @@ class GraphRAGRetriever:
             loop = asyncio.get_running_loop()
             # If yes, we can't use asyncio.run() — warn and return empty
             logger.warning(
-                f"⚠️ GraphRAGRetriever.retrieve() called from async context — "
-                f"use retrieve_async() instead. Returning empty result."
+                "⚠️ GraphRAGRetriever.retrieve() called from async context — "
+                "use retrieve_async() instead. Returning empty result."
             )
             return GraphRAGResult(
                 answer_context="",
@@ -352,9 +364,7 @@ class GraphRAGRetriever:
             )
         except RuntimeError:
             # No running loop — safe to use asyncio.run()
-            return asyncio.run(
-                self.retrieve_async(query, workspace_id, mode, k_vector, filter_dict, correlation_id)
-            )
+            return asyncio.run(self.retrieve_async(query, workspace_id, mode, k_vector, filter_dict, correlation_id))
 
 
 def get_graphrag_metadata() -> dict[str, Any]:
@@ -370,10 +380,9 @@ def get_graphrag_metadata() -> dict[str, Any]:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["GraphRAGRetriever", "GraphRAGResult", "get_graphrag_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

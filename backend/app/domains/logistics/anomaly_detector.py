@@ -1,11 +1,11 @@
-﻿# backend/app/domains/logistics/anomaly_detector.py
+# backend/app/domains/logistics/anomaly_detector.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Final, Optional
 
 from .invoice_extractor import ExtractedInvoice
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Anomaly:
     """A detected invoice anomaly."""
+
     anomaly_type: str  # duplicate | amount_deviation | missing_po | date_anomaly
     severity: str  # critical | high | medium | low
     description: str
@@ -78,16 +79,17 @@ class AnomalyDetector:
 
         # 4. Missing PO reference
         if not invoice.po_number and invoice.total_amount > 1000:
-            anomalies.append(Anomaly(
-                anomaly_type="missing_po",
-                severity="medium",
-                description=(
-                    f"Invoice {invoice.invoice_number} for "
-                    f"${invoice.total_amount:,.2f} has no PO reference"
-                ),
-                invoice_ref=invoice.invoice_number or invoice.source_file,
-                correlation_id=corr_id,  # FIXED: Propagate correlation_id
-            ))
+            anomalies.append(
+                Anomaly(
+                    anomaly_type="missing_po",
+                    severity="medium",
+                    description=(
+                        f"Invoice {invoice.invoice_number} for " f"${invoice.total_amount:,.2f} has no PO reference"
+                    ),
+                    invoice_ref=invoice.invoice_number or invoice.source_file,
+                    correlation_id=corr_id,  # FIXED: Propagate correlation_id
+                )
+            )
 
         # 5. Date anomalies
         anomalies.extend(self._check_dates(invoice, corr_id))
@@ -108,39 +110,48 @@ class AnomalyDetector:
         anomalies = []
         for hist in self._invoice_history:
             # Exact invoice number match
-            if (invoice.invoice_number and hist.invoice_number and
-                    invoice.invoice_number == hist.invoice_number and
-                    hist.source_file != invoice.source_file):
-                anomalies.append(Anomaly(
-                    anomaly_type="duplicate",
-                    severity="critical",
-                    description=(
-                        f"Duplicate invoice number {invoice.invoice_number} "
-                        f"found in {hist.source_file}"
-                    ),
-                    invoice_ref=invoice.invoice_number,
-                    details={"duplicate_file": hist.source_file},
-                    correlation_id=corr_id,
-                ))
+            if (
+                invoice.invoice_number
+                and hist.invoice_number
+                and invoice.invoice_number == hist.invoice_number
+                and hist.source_file != invoice.source_file
+            ):
+                anomalies.append(
+                    Anomaly(
+                        anomaly_type="duplicate",
+                        severity="critical",
+                        description=(
+                            f"Duplicate invoice number {invoice.invoice_number} " f"found in {hist.source_file}"
+                        ),
+                        invoice_ref=invoice.invoice_number,
+                        details={"duplicate_file": hist.source_file},
+                        correlation_id=corr_id,
+                    )
+                )
 
             # Same vendor + same amount + same date (suspicious duplicate)
-            elif (invoice.vendor_name and hist.vendor_name and
-                  invoice.vendor_name.lower() == hist.vendor_name.lower() and
-                  abs(invoice.total_amount - hist.total_amount) < 0.01 and
-                  invoice.invoice_date == hist.invoice_date and
-                  hist.source_file != invoice.source_file):
-                anomalies.append(Anomaly(
-                    anomaly_type="duplicate",
-                    severity="high",
-                    description=(
-                        f"Suspicious duplicate: same vendor ({invoice.vendor_name}), "
-                        f"amount (${invoice.total_amount:,.2f}), "
-                        f"date ({invoice.invoice_date})"
-                    ),
-                    invoice_ref=invoice.invoice_number or invoice.source_file,
-                    details={"potential_duplicate": hist.source_file},
-                    correlation_id=corr_id,
-                ))
+            elif (
+                invoice.vendor_name
+                and hist.vendor_name
+                and invoice.vendor_name.lower() == hist.vendor_name.lower()
+                and abs(invoice.total_amount - hist.total_amount) < 0.01
+                and invoice.invoice_date == hist.invoice_date
+                and hist.source_file != invoice.source_file
+            ):
+                anomalies.append(
+                    Anomaly(
+                        anomaly_type="duplicate",
+                        severity="high",
+                        description=(
+                            f"Suspicious duplicate: same vendor ({invoice.vendor_name}), "
+                            f"amount (${invoice.total_amount:,.2f}), "
+                            f"date ({invoice.invoice_date})"
+                        ),
+                        invoice_ref=invoice.invoice_number or invoice.source_file,
+                        details={"potential_duplicate": hist.source_file},
+                        correlation_id=corr_id,
+                    )
+                )
         return anomalies
 
     def _check_amount_deviation(
@@ -157,21 +168,23 @@ class AnomalyDetector:
         deviation = abs(invoice.total_amount - expected) / expected
         if deviation > self.AMOUNT_DEVIATION_THRESHOLD:
             severity = "critical" if deviation > 0.25 else "high"
-            return [Anomaly(
-                anomaly_type="amount_deviation",
-                severity=severity,
-                description=(
-                    f"Invoice amount ${invoice.total_amount:,.2f} deviates "
-                    f"{deviation:.0%} from {source} amount ${expected:,.2f}"
-                ),
-                invoice_ref=invoice.invoice_number or invoice.source_file,
-                details={
-                    "invoice_amount": invoice.total_amount,
-                    "expected_amount": expected,
-                    "deviation_pct": round(deviation * 100, 1),
-                },
-                correlation_id=corr_id,
-            )]
+            return [
+                Anomaly(
+                    anomaly_type="amount_deviation",
+                    severity=severity,
+                    description=(
+                        f"Invoice amount ${invoice.total_amount:,.2f} deviates "
+                        f"{deviation:.0%} from {source} amount ${expected:,.2f}"
+                    ),
+                    invoice_ref=invoice.invoice_number or invoice.source_file,
+                    details={
+                        "invoice_amount": invoice.total_amount,
+                        "expected_amount": expected,
+                        "deviation_pct": round(deviation * 100, 1),
+                    },
+                    correlation_id=corr_id,
+                )
+            ]
         return []
 
     def _check_dates(self, invoice: ExtractedInvoice, corr_id: str) -> list[Anomaly]:
@@ -185,22 +198,21 @@ class AnomalyDetector:
                 inv_date = datetime.fromisoformat(invoice.invoice_date.replace("Z", "+00:00"))
                 if inv_date.tzinfo is None:
                     inv_date = inv_date.replace(tzinfo=timezone.utc)
-                    
+
                 age_days = (today - inv_date).days
 
                 # Invoice older than 90 days
                 if age_days > 90:
-                    anomalies.append(Anomaly(
-                        anomaly_type="date_anomaly",
-                        severity="medium",
-                        description=(
-                            f"Invoice dated {invoice.invoice_date} is "
-                            f"{age_days} days old"
-                        ),
-                        invoice_ref=invoice.invoice_number or invoice.source_file,
-                        details={"age_days": age_days},
-                        correlation_id=corr_id,
-                    ))
+                    anomalies.append(
+                        Anomaly(
+                            anomaly_type="date_anomaly",
+                            severity="medium",
+                            description=(f"Invoice dated {invoice.invoice_date} is " f"{age_days} days old"),
+                            invoice_ref=invoice.invoice_number or invoice.source_file,
+                            details={"age_days": age_days},
+                            correlation_id=corr_id,
+                        )
+                    )
 
                 # Due date before invoice date
                 if invoice.due_date:
@@ -208,16 +220,17 @@ class AnomalyDetector:
                     if due.tzinfo is None:
                         due = due.replace(tzinfo=timezone.utc)
                     if due < inv_date:
-                        anomalies.append(Anomaly(
-                            anomaly_type="date_anomaly",
-                            severity="high",
-                            description=(
-                                f"Due date {invoice.due_date} is before "
-                                f"invoice date {invoice.invoice_date}"
-                            ),
-                            invoice_ref=invoice.invoice_number or invoice.source_file,
-                            correlation_id=corr_id,
-                        ))
+                        anomalies.append(
+                            Anomaly(
+                                anomaly_type="date_anomaly",
+                                severity="high",
+                                description=(
+                                    f"Due date {invoice.due_date} is before " f"invoice date {invoice.invoice_date}"
+                                ),
+                                invoice_ref=invoice.invoice_number or invoice.source_file,
+                                correlation_id=corr_id,
+                            )
+                        )
         except Exception as e:
             logger.debug(f"[{corr_id}] Date check failed: {e}")
         return anomalies
@@ -227,29 +240,28 @@ class AnomalyDetector:
         anomalies = []
         total = invoice.total_amount
 
-        if (total >= self.ROUND_NUMBER_THRESHOLD and
-                total % 100 == 0 and
-                len(invoice.line_items) <= 1):
-            anomalies.append(Anomaly(
-                anomaly_type="round_number",
-                severity="low",
-                description=(
-                    f"Invoice total ${total:,.0f} is a round number "
-                    f"with {len(invoice.line_items)} line item(s) — "
-                    "verify line items are itemized correctly"
-                ),
-                invoice_ref=invoice.invoice_number or invoice.source_file,
-                correlation_id=corr_id,
-            ))
+        if total >= self.ROUND_NUMBER_THRESHOLD and total % 100 == 0 and len(invoice.line_items) <= 1:
+            anomalies.append(
+                Anomaly(
+                    anomaly_type="round_number",
+                    severity="low",
+                    description=(
+                        f"Invoice total ${total:,.0f} is a round number "
+                        f"with {len(invoice.line_items)} line item(s) — "
+                        "verify line items are itemized correctly"
+                    ),
+                    invoice_ref=invoice.invoice_number or invoice.source_file,
+                    correlation_id=corr_id,
+                )
+            )
         return anomalies
 
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["AnomalyDetector", "Anomaly"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

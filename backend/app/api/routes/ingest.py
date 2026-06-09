@@ -1,4 +1,4 @@
-﻿# backend/app/api/routes/ingest.py
+# backend/app/api/routes/ingest.py
 # DVMELTSS-FIX: V/E/M/S + OWASP-3/9 + BATMAN-A
 # ✅ FIXED: Proper RateLimiter usage + input validation + safe file streaming + timeout handling
 # ✅ ADDED: Audio (MP3/MP4/WAV), DOCX, and XLSX ingestion routes via UniversalIngestionPipeline
@@ -6,28 +6,35 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import gc
 import json
 import logging
 import tempfile
 import time
-import uuid
 from pathlib import Path
 from typing import Annotated, Optional, List, Any, Final
 
 from fastapi import (
-    APIRouter, Depends, File, Form, HTTPException, Request,
-    UploadFile, status, BackgroundTasks, Path as FastAPIPath
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    BackgroundTasks,
+    Path as FastAPIPath,
 )
 from starlette.datastructures import UploadFile as StarletteUploadFile
 from pydantic import BaseModel, Field
 
-from app.config import get_settings, lazy_settings as settings  # [OK] FIXED: lazy proxy avoids import-time crash
+from app.config import (
+    lazy_settings as settings,
+)  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.ids import generate_correlation_id
 from app.auth.dependencies import get_current_user, require_editor, AuthenticatedUser
-from app.models import IngestRequest, IngestResponse, ErrorResponse, ProcessingStatus
-from app.ocr.pipeline import OCRPipeline, get_ocr_pipeline
+from app.models import IngestRequest, IngestResponse, ErrorResponse
+from app.ocr.pipeline import get_ocr_pipeline
 from app.chunking.parent_child import ParentChildChunker
 from app.vectorstore.store_manager import VectorStoreManager
 from app.ingestion.universal_ingestion import UniversalIngestionPipeline
@@ -61,14 +68,14 @@ ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", 
 
 # Audio/DOCX/XLSX extensions for new routes
 AUDIO_EXTENSIONS = {".mp3", ".mp4", ".wav", ".m4a", ".ogg", ".flac"}
-DOCX_EXTENSIONS  = {".docx", ".doc"}
-XLSX_EXTENSIONS  = {".xlsx", ".xls", ".csv"}
+DOCX_EXTENSIONS = {".docx", ".doc"}
+XLSX_EXTENSIONS = {".xlsx", ".xls", ".csv"}
 
 
 def _validate_file_magic(content: bytes, claimed_suffix: str) -> bool:
     """Validate file content matches claimed extension using magic bytes."""
     for magic, valid_suffixes in MAGIC_BYTES.items():
-        if content[:len(magic)] == magic:
+        if content[: len(magic)] == magic:
             return claimed_suffix in valid_suffixes
     return claimed_suffix in ALLOWED_EXTENSIONS
 
@@ -117,11 +124,11 @@ async def ingest_document(
     is_valid, error = _validate_ingest_inputs(file, options, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     # ✅ FIXED: Proper rate limiting using RateLimiter.check_async with workspace-scoped key
     rate_limiter = RateLimiter()
     rate_key = f"ingest:{user.workspace_id}:{user.user_id}"
-    
+
     try:
         rate_result = await asyncio.wait_for(
             rate_limiter.check_async(
@@ -141,22 +148,22 @@ async def ingest_document(
             )
     except Exception as e:
         logger.warning(f"[{corr_id}] Rate limit check failed: {e} — allowing request (fail-open)")
-    
+
     # ✅ Validate extension
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=415, detail=f"Unsupported file type: {suffix}")
-    
+
     # ✅ Stream read with size limit + proper handling
     max_bytes = settings.max_upload_size_mb * 1024 * 1024
     total_bytes = 0
     chunks_read: List[bytes] = []
-    
+
     try:
         # Reset file pointer in case it was read before
         if hasattr(file, "seek"):
             await file.seek(0)
-        
+
         while True:
             chunk = await asyncio.wait_for(
                 file.read(1024 * 1024),  # 1MB chunks
@@ -168,7 +175,10 @@ async def ingest_document(
                 chunk = chunk.encode("utf-8")
             total_bytes += len(chunk)
             if total_bytes > max_bytes:
-                raise HTTPException(status_code=413, detail=f"File exceeds {settings.max_upload_size_mb}MB limit")
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File exceeds {settings.max_upload_size_mb}MB limit",
+                )
             chunks_read.append(chunk)
     except asyncio.TimeoutError:
         logger.error(f"[{corr_id}] File read timed out after {_FILE_READ_TIMEOUT}s")
@@ -176,17 +186,17 @@ async def ingest_document(
     except Exception as e:
         logger.error(f"[{corr_id}] File read failed: {e}")
         raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
-    
+
     if not chunks_read:
         raise HTTPException(status_code=400, detail="Empty file upload")
-    
+
     content = b"".join(chunks_read)
-    
+
     # ✅ Magic byte validation (OWASP-9) — skip for plain text files
     if suffix != ".txt" and not _validate_file_magic(content, suffix):
         logger.warning(f"[{corr_id}] Magic byte mismatch: {file.filename}")
         raise HTTPException(status_code=400, detail="File content does not match extension")
-    
+
     # ✅ Parse options with Pydantic + safe fallbacks
     try:
         opts_dict = json.loads(options) if options else {}
@@ -199,11 +209,11 @@ async def ingest_document(
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid options: {e}")
-    
+
     logger.info(f"[{corr_id}] Ingest: file={file.filename} user={user.user_id[:8]}... workspace={user.workspace_id}")
-    
+
     start_ts = time.perf_counter()
-    
+
     try:
         # ✅ Isolated temp directory
         with tempfile.TemporaryDirectory(dir=getattr(settings, "tmp_dir", None)) as tmp_dir:
@@ -212,15 +222,18 @@ async def ingest_document(
 
             # Persist original file so the download endpoint can serve it
             import tempfile as _tf
+
             _orig_name = file.filename or f"upload{suffix}"
-            _ul_dir = Path(getattr(settings, "upload_dir", None) or _tf.gettempdir()) / "docmind_uploads" / user.workspace_id
+            _ul_dir = (
+                Path(getattr(settings, "upload_dir", None) or _tf.gettempdir()) / "docmind_uploads" / user.workspace_id
+            )
             _ul_dir.mkdir(parents=True, exist_ok=True)
             (_ul_dir / _orig_name).write_bytes(content)
 
             # ✅ Free memory early + hint GC
             del content, chunks_read
             gc.collect()
-            
+
             # Step 1: Extract text — plain text files bypass OCR
             if suffix == ".txt":
                 try:
@@ -233,6 +246,7 @@ async def ingest_document(
                     pages = []
                     detected_lang = None
                     document_id = None
+
                 ocr_result = _FakeOCRResult()
             else:
                 # Step 1: OCR for PDF/image files
@@ -259,7 +273,9 @@ async def ingest_document(
                 if not _explicit_lang and ocr_result.full_text:
                     detected = detect_language_vectorized(ocr_result.full_text)
                     if detected != "en":
-                        logger.info(f"[{corr_id}] Auto-detected script language: {detected}, re-running OCR with language hint")
+                        logger.info(
+                            f"[{corr_id}] Auto-detected script language: {detected}, re-running OCR with language hint"
+                        )
                         try:
                             ocr2 = get_ocr_pipeline(
                                 confidence_threshold=settings.ocr_confidence_threshold,
@@ -283,6 +299,7 @@ async def ingest_document(
                 if ingest_opts.enable_vision_enrichment and suffix in _image_exts:
                     try:
                         from app.ingestion.handwriting_ocr import HandwritingOCR
+
                         hw_ocr = HandwritingOCR()
                         hw_result = await hw_ocr.transcribe_document_async(str(tmp_path))
                         if hw_result and hw_result.get("text", "").strip():
@@ -300,12 +317,10 @@ async def ingest_document(
             if ingest_opts.enable_vision_enrichment and suffix == ".pdf":
                 try:
                     from app.core.vision_llm import get_vision_llm
-                    import base64
 
                     # Check if OCR result has page images (populated by PDF pipeline)
                     pages_with_images = [
-                        p for p in getattr(ocr_result, "pages", [])
-                        if p and getattr(p, "image_b64", None)
+                        p for p in getattr(ocr_result, "pages", []) if p and getattr(p, "image_b64", None)
                     ]
                     if pages_with_images:
                         vision_llm = get_vision_llm(timeout=30.0)
@@ -322,13 +337,20 @@ async def ingest_document(
                             )
                             try:
                                 resp = await asyncio.wait_for(
-                                    vision_llm.ainvoke([{
-                                        "role": "user",
-                                        "content": [
-                                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
-                                            {"type": "text", "text": prompt},
-                                        ],
-                                    }]),
+                                    vision_llm.ainvoke(
+                                        [
+                                            {
+                                                "role": "user",
+                                                "content": [
+                                                    {
+                                                        "type": "image_url",
+                                                        "image_url": {"url": f"data:image/png;base64,{b64}"},
+                                                    },
+                                                    {"type": "text", "text": prompt},
+                                                ],
+                                            }
+                                        ]
+                                    ),
                                     timeout=25.0,
                                 )
                                 desc = resp.content if hasattr(resp, "content") else str(resp)
@@ -340,7 +362,9 @@ async def ingest_document(
 
                         if enrichments:
                             ocr_result.full_text += "\n".join(enrichments)
-                            logger.info(f"[{corr_id}] Vision-enriched {len(enrichments)} pages with diagram/chart descriptions")
+                            logger.info(
+                                f"[{corr_id}] Vision-enriched {len(enrichments)} pages with diagram/chart descriptions"
+                            )
                 except ImportError:
                     logger.debug(f"[{corr_id}] Vision LLM not available, skipping diagram enrichment")
                 except Exception as e:
@@ -388,13 +412,17 @@ async def ingest_document(
                     ),
                     timeout=_VECTOR_STORE_TIMEOUT,
                 )
-                indexed = result_dict.get("child_chunks", len(child_chunks)) if isinstance(result_dict, dict) else len(child_chunks)
+                indexed = (
+                    result_dict.get("child_chunks", len(child_chunks))
+                    if isinstance(result_dict, dict)
+                    else len(child_chunks)
+                )
             except asyncio.TimeoutError:
                 logger.error(f"[{corr_id}] Vector store indexing timed out after {_VECTOR_STORE_TIMEOUT}s")
                 raise HTTPException(status_code=408, detail="Indexing timed out")
-            
+
             latency = time.perf_counter() - start_ts
-            
+
             # ✅ Cache invalidation on successful ingest
             background_tasks.add_task(invalidate_workspace_cache, workspace_id=user.workspace_id)
             background_tasks.add_task(
@@ -405,7 +433,7 @@ async def ingest_document(
                 success=True,
                 chunks=len(child_chunks),
             )
-            
+
             return IngestResponse(
                 filename=file.filename or "document",
                 status="indexed",
@@ -418,7 +446,7 @@ async def ingest_document(
                 message="Document successfully indexed.",
                 correlation_id=corr_id,
             )
-            
+
     except ValueError as e:
         background_tasks.add_task(record_ingest_error, user.workspace_id, corr_id, str(e), "validation")
         raise HTTPException(status_code=400, detail=str(e))
@@ -430,26 +458,30 @@ async def ingest_document(
         raise HTTPException(status_code=500, detail="Document processing failed")
 
 
-@router.get("/status/{document_id}", response_model=IngestResponse, summary="Check ingest status")
+@router.get(
+    "/status/{document_id}",
+    response_model=IngestResponse,
+    summary="Check ingest status",
+)
 async def get_ingest_status(
     document_id: Annotated[str, FastAPIPath(...)],
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ):
     corr_id = generate_correlation_id("status")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_ingest_inputs(None, None, document_id, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     try:
         vector_store = VectorStoreManager(workspace_id=user.workspace_id)
-        
+
         exists = await asyncio.wait_for(
             vector_store.document_exists_async(document_id),
             timeout=_VECTOR_STORE_TIMEOUT,
         )
-        
+
         if exists:
             return IngestResponse(
                 filename=document_id,
@@ -469,7 +501,7 @@ async def get_ingest_status(
     except Exception as e:
         logger.error(f"[{corr_id}] Status check failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to check document status")
-    
+
     raise HTTPException(status_code=404, detail="Document not found or still processing")
 
 
@@ -489,7 +521,10 @@ async def _ingest_via_universal(
 
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in allowed_ext:
-        raise HTTPException(status_code=415, detail=f"Unsupported file type '{suffix}'. Allowed: {sorted(allowed_ext)}")
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported file type '{suffix}'. Allowed: {sorted(allowed_ext)}",
+        )
 
     max_bytes = settings.max_upload_size_mb * 1024 * 1024
     total_bytes = 0
@@ -505,7 +540,10 @@ async def _ingest_via_universal(
                 chunk = chunk.encode("utf-8")
             total_bytes += len(chunk)
             if total_bytes > max_bytes:
-                raise HTTPException(status_code=413, detail=f"File exceeds {settings.max_upload_size_mb}MB limit")
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File exceeds {settings.max_upload_size_mb}MB limit",
+                )
             chunks_read.append(chunk)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=408, detail="File upload timed out")
@@ -537,10 +575,16 @@ async def _ingest_via_universal(
                     timeout=_OCR_TIMEOUT,
                 )
             except asyncio.TimeoutError:
-                raise HTTPException(status_code=408, detail=f"Processing timed out after {_OCR_TIMEOUT}s")
+                raise HTTPException(
+                    status_code=408,
+                    detail=f"Processing timed out after {_OCR_TIMEOUT}s",
+                )
 
             if not result.is_successful:
-                raise HTTPException(status_code=422, detail=result.error or "No content extracted from file")
+                raise HTTPException(
+                    status_code=422,
+                    detail=result.error or "No content extracted from file",
+                )
 
             # Index the resulting Document chunks
             vector_store = VectorStoreManager(workspace_id=user.workspace_id)
@@ -722,6 +766,7 @@ async def ingest_url(
 
     # Derive filename from URL
     from urllib.parse import urlparse
+
     parsed = urlparse(url)
     safe_name = _re.sub(r"[^\w.-]", "_", (parsed.netloc + parsed.path).strip("/"))[:80] or "webpage"
     filename = f"{safe_name}.txt"
@@ -804,10 +849,9 @@ def get_ingest_metadata() -> dict[str, Any]:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["router", "get_ingest_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

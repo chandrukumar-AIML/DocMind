@@ -1,4 +1,4 @@
-﻿# backend/app/rate_limiter/rate_limiter.py
+# backend/app/rate_limiter/rate_limiter.py
 # DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
 # BATMAN-FIX: A - True async, T - Atomic operations, M - Memory safety
 # OWASP-FIX: 3 - Credential safety, 9 - Input sanitization
@@ -21,7 +21,12 @@ from redis.exceptions import RedisError
 from fastapi import Request, HTTPException, status, Depends
 
 # DVMELTSS-M: Import centralized Redis utilities
-from app.core.redis_utils import get_async_redis, sanitize_redis_key, load_lua_script, safe_evalsha
+from app.core.redis_utils import (
+    get_async_redis,
+    sanitize_redis_key,
+    load_lua_script,
+    safe_evalsha,
+)
 from app.core.celery_utils import run_async_in_task  # ✅ NEW: For safe async execution
 from app.config import get_settings
 
@@ -33,10 +38,10 @@ logger = logging.getLogger(__name__)
 
 # Default rate limit configurations per endpoint group
 _DEFAULT_RATE_LIMITS: Final = {
-    "query":   {"requests": 100, "window_seconds": 3600},    # 100/hour
-    "ingest":  {"requests": 10,  "window_seconds": 3600},    # 10/hour (expensive)
-    "default": {"requests": 200, "window_seconds": 3600},    # 200/hour
-    "domains": {"requests": 50,  "window_seconds": 3600},    # 50/hour
+    "query": {"requests": 100, "window_seconds": 3600},  # 100/hour
+    "ingest": {"requests": 10, "window_seconds": 3600},  # 10/hour (expensive)
+    "default": {"requests": 200, "window_seconds": 3600},  # 200/hour
+    "domains": {"requests": 50, "window_seconds": 3600},  # 50/hour
 }
 
 # Redis key prefix for rate limiting
@@ -81,6 +86,7 @@ class RateLimitResult:
     Immutable result of a rate limit check.
     DVMELTSS-M: Frozen dataclass prevents runtime mutation.
     """
+
     allowed: bool
     limit: int
     remaining: int
@@ -189,7 +195,7 @@ class RateLimiter:
         BATMAN-A: Non-blocking Redis operations via aioredis.
         """
         corr_id = correlation_id or "rate_unknown"
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_rate_limit_inputs(workspace_id, endpoint_group, identifier, correlation_id, corr_id)
         if not is_valid:
@@ -213,14 +219,14 @@ class RateLimiter:
         # FIXED: Use centralized key sanitization
         safe_id = sanitize_redis_key(identifier or workspace_id)
         key = sanitize_redis_key(f"{safe_id}:{endpoint_group}", prefix=_REDIS_KEY_PREFIX)
-        
+
         now = time.time()
         # FIXED: Use UUID for unique request ID (more reliable than id(object()))
         request_id = f"{now}:{uuid.uuid4().hex[:8]}"
 
         try:
             redis = await self._get_redis()
-            
+
             # FIXED: Execute atomic Lua script via centralized safe_evalsha with timeout
             result = await asyncio.wait_for(
                 safe_evalsha(
@@ -231,15 +237,14 @@ class RateLimiter:
                 ),
                 timeout=_REDIS_TIMEOUT,
             )
-            
+
             allowed, count, limit_ret, reset_at = result
             allowed = bool(allowed)
             remaining = max(0, int(limit_ret) - int(count))
-            
+
             if not allowed:
                 logger.warning(
-                    f"[{corr_id}] Rate limit exceeded: {safe_id} | "
-                    f"group={endpoint_group} | count={count}/{limit}"
+                    f"[{corr_id}] Rate limit exceeded: {safe_id} | " f"group={endpoint_group} | count={count}/{limit}"
                 )
 
             return RateLimitResult(
@@ -255,34 +260,54 @@ class RateLimiter:
             logger.error(f"[{corr_id}] Redis operation timed out after {_REDIS_TIMEOUT}s")
             if self.fail_open:
                 return RateLimitResult(
-                    allowed=True, limit=limit, remaining=limit,
-                    reset_at=now + window, retry_after=0, correlation_id=corr_id
+                    allowed=True,
+                    limit=limit,
+                    remaining=limit,
+                    reset_at=now + window,
+                    retry_after=0,
+                    correlation_id=corr_id,
                 )
             else:
                 return RateLimitResult(
-                    allowed=False, limit=limit, remaining=0,
-                    reset_at=now + window, retry_after=window, correlation_id=corr_id
+                    allowed=False,
+                    limit=limit,
+                    remaining=0,
+                    reset_at=now + window,
+                    retry_after=window,
+                    correlation_id=corr_id,
                 )
         except RedisError as e:
             logger.warning(f"[{corr_id}] Redis error in rate limiter: {e}")
             if self.fail_open:
                 # DVMELTSS-E: Fail open — don't block legitimate traffic
                 return RateLimitResult(
-                    allowed=True, limit=limit, remaining=limit,
-                    reset_at=now + window, retry_after=0, correlation_id=corr_id
+                    allowed=True,
+                    limit=limit,
+                    remaining=limit,
+                    reset_at=now + window,
+                    retry_after=0,
+                    correlation_id=corr_id,
                 )
             else:
                 # Fail closed — block on Redis failure (stricter)
                 return RateLimitResult(
-                    allowed=False, limit=limit, remaining=0,
-                    reset_at=now + window, retry_after=window, correlation_id=corr_id
+                    allowed=False,
+                    limit=limit,
+                    remaining=0,
+                    reset_at=now + window,
+                    retry_after=window,
+                    correlation_id=corr_id,
                 )
         except Exception as e:
             logger.error(f"[{corr_id}] Unexpected rate limiter error: {type(e).__name__}: {e}")
             if self.fail_open:
                 return RateLimitResult(
-                    allowed=True, limit=limit, remaining=limit,
-                    reset_at=now + window, retry_after=0, correlation_id=corr_id
+                    allowed=True,
+                    limit=limit,
+                    remaining=limit,
+                    reset_at=now + window,
+                    retry_after=0,
+                    correlation_id=corr_id,
                 )
             else:
                 raise
@@ -295,16 +320,20 @@ class RateLimiter:
     ) -> dict:
         """Async: Get current rate limit usage for a workspace."""
         corr_id = correlation_id or "rate_unknown"
-        
+
         # ✅ Validate inputs
         is_valid, error = _validate_rate_limit_inputs(workspace_id, endpoint_group, None, correlation_id, corr_id)
         if not is_valid:
             logger.error(f"[{corr_id}] Invalid usage inputs: {error}")
             config = _DEFAULT_RATE_LIMITS.get("default", _DEFAULT_RATE_LIMITS["default"])
             return {
-                "limit": config["requests"], "used": 0, "remaining": config["requests"],
-                "window_seconds": config["window_seconds"], "reset_in_seconds": config["window_seconds"],
-                "correlation_id": corr_id, "error": error,
+                "limit": config["requests"],
+                "used": 0,
+                "remaining": config["requests"],
+                "window_seconds": config["window_seconds"],
+                "reset_in_seconds": config["window_seconds"],
+                "correlation_id": corr_id,
+                "error": error,
             }
 
         config = _DEFAULT_RATE_LIMITS.get(endpoint_group, _DEFAULT_RATE_LIMITS["default"])
@@ -328,7 +357,7 @@ class RateLimiter:
                 redis.zcard(key),
                 timeout=_REDIS_TIMEOUT,
             )
-            
+
             # Get oldest entry for reset calculation
             oldest = await asyncio.wait_for(
                 redis.zrange(key, 0, 0, withscores=True),
@@ -338,7 +367,7 @@ class RateLimiter:
             if oldest:
                 oldest_ts = float(oldest[0][1])
                 reset_in = max(0, int(window - (now - oldest_ts)))
-            
+
             return {
                 "limit": limit,
                 "used": int(count),
@@ -350,9 +379,13 @@ class RateLimiter:
         except Exception as e:
             logger.warning(f"[{corr_id}] Usage check failed: {e}")
             return {
-                "limit": limit, "used": 0, "remaining": limit,
-                "window_seconds": window, "reset_in_seconds": window,
-                "correlation_id": corr_id, "error": str(e),
+                "limit": limit,
+                "used": 0,
+                "remaining": limit,
+                "window_seconds": window,
+                "reset_in_seconds": window,
+                "correlation_id": corr_id,
+                "error": str(e),
             }
 
     # ====================================================================
@@ -370,8 +403,10 @@ class RateLimiter:
         Sync wrapper — prefers async version in new code.
         ✅ FIXED: Use run_async_in_task helper to avoid deadlock.
         """
+
         async def _do_check():
             return await self.check_async(workspace_id, endpoint_group, identifier, correlation_id)
+
         return run_async_in_task(_do_check)
 
     def get_usage(
@@ -384,8 +419,10 @@ class RateLimiter:
         Sync wrapper — prefers async version in new code.
         ✅ FIXED: Use run_async_in_task helper to avoid deadlock.
         """
+
         async def _do_usage():
             return await self.get_usage_async(workspace_id, endpoint_group, correlation_id)
+
         return run_async_in_task(_do_usage)
 
 
@@ -402,15 +439,16 @@ def rate_limit_middleware(endpoint_group: str = "default"):
             # Your handler code here
     """
     # ✅ FIXED: Import at module level (already done at top)
-    
+
     async def _check(request: Request):
         corr_id = request.headers.get("X-Correlation-ID") or "rate_middleware"
-        
+
         # DVMELTSS-V: Get workspace_id from JWT or fallback to IP
         workspace_id = "anonymous"
         try:
             # ✅ FIXED: Lazy import to avoid circular deps
             from app.auth.jwt_handler import verify_access_token
+
             auth_header = request.headers.get("Authorization", "")
             if auth_header.startswith("Bearer "):
                 token = auth_header[7:]
@@ -466,10 +504,9 @@ __all__ = [
     "_DEFAULT_RATE_LIMITS",
     "get_rate_limiter_metadata",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

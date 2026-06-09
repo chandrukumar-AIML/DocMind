@@ -1,4 +1,5 @@
-﻿"""Task-related Pydantic models for FastAPI validation."""
+"""Task-related Pydantic models for FastAPI validation."""
+
 from __future__ import annotations
 
 import re
@@ -11,11 +12,12 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 # DVMELTSS-M: Import centralized utilities
-from app.core.schema_utils import CorrelationIdField, sanitize_text
+from app.core.schema_utils import CorrelationIdField
 
 
 class TaskStatus(str, Enum):
     """Task execution status."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -25,9 +27,14 @@ class TaskStatus(str, Enum):
 
 class TaskCreateRequest(BaseModel):
     """Request to create a new background task."""
+
     task_type: str = Field(..., min_length=1, max_length=64, description="Type of task to create")
     workspace_id: Optional[str] = Field(default=None, max_length=64, description="Workspace context")
-    priority: str = Field(default="default", pattern="^(high|default|bulk)$", description="Task priority tier")
+    priority: str = Field(
+        default="default",
+        pattern="^(high|default|bulk)$",
+        description="Task priority tier",
+    )
     metadata: Optional[dict[str, Any]] = Field(default=None, description="Additional task metadata")
     correlation_id: Optional[str] = CorrelationIdField
 
@@ -51,7 +58,7 @@ class TaskCreateRequest(BaseModel):
         if not re.match(r"^[a-zA-Z0-9_]+$", v):
             raise ValueError("task_type may contain only letters, numbers, and underscores")
         return v
-    
+
     @model_validator(mode="before")
     @classmethod
     def sanitize_metadata(cls, data: Any) -> Any:
@@ -59,7 +66,7 @@ class TaskCreateRequest(BaseModel):
         # ✅ FIXED: Proper signature with cls + data parameters
         if not isinstance(data, dict):
             return data
-            
+
         if data.get("metadata"):
             safe_meta = {}
             for k, v in data["metadata"].items():
@@ -79,6 +86,7 @@ class TaskCreateRequest(BaseModel):
 
 class TaskResponse(BaseModel):
     """Task details returned to API clients."""
+
     task_id: str
     task_type: str
     workspace_id: str
@@ -104,15 +112,15 @@ class TaskResponse(BaseModel):
                 "result": {"chunks": 45},
                 "correlation_id": "req-xyz789",
             }
-        }
+        },
     )
-    
+
     # ✅ NEW: Helper to convert from dict (for ORM compatibility)
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TaskResponse":
         """Create TaskResponse from dict with safe field mapping."""
         # ✅ FIXED: Proper classmethod signature with cls parameter
-        
+
         def _safe_datetime(value: Any) -> Optional[datetime]:
             """Safely parse datetime from string or return as-is."""
             if value is None:
@@ -128,7 +136,7 @@ class TaskResponse(BaseModel):
                 except ValueError:
                     return None
             return None
-        
+
         return cls(
             task_id=data.get("task_id", ""),
             task_type=data.get("task_type", ""),
@@ -145,11 +153,12 @@ class TaskResponse(BaseModel):
 
 class TaskListResponse(BaseModel):
     """Paginated list of tasks."""
+
     tasks: list[TaskResponse]
     total: int = Field(..., ge=0, description="Total number of tasks")
     limit: int = Field(..., ge=1, le=1000, description="Number of tasks per page")
     offset: int = Field(..., ge=0, description="Offset for pagination")
-    
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -164,9 +173,10 @@ class TaskListResponse(BaseModel):
 
 class TaskCancelRequest(BaseModel):
     """Request to cancel a running task."""
+
     task_id: str = Field(..., description="ID of task to cancel")
     reason: Optional[str] = Field(default=None, max_length=255, description="Optional cancellation reason")
-    
+
     @field_validator("task_id")
     @classmethod
     def validate_task_id_format(cls, v: str) -> str:
@@ -206,10 +216,9 @@ __all__ = [
     "TaskCancelRequest",
     "get_task_models_metadata",
 ]  # ✅ FIXED: Closed the list properly
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

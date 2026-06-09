@@ -1,21 +1,24 @@
-﻿# backend/app/api/routes/tasks.py
+# backend/app/api/routes/tasks.py
 # DVMELTSS-FIX: M/E/S + ASCALE-A + WebSockets
 # ✅ FIXED: Proper WebSocket auth + input validation + timeout handling + safe manager ops
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from typing import Annotated, Optional, Any, Final
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
-from pydantic import BaseModel, Field
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+)
 
-from app.config import get_settings, lazy_settings as settings  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.ids import generate_correlation_id
 from app.auth.dependencies import get_current_user, AuthenticatedUser
-from app.models import ErrorResponse
 from app.tasks.manager import TaskManager
 from app.tasks.models import TaskStatus
 
@@ -61,14 +64,14 @@ async def get_task_status(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict:
     corr_id = generate_correlation_id("task_status")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_task_inputs(task_id, None, None, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     manager = TaskManager()
-    
+
     try:
         task = await asyncio.wait_for(
             asyncio.to_thread(manager.get_task, task_id),
@@ -80,10 +83,10 @@ async def get_task_status(
     except Exception as e:
         logger.error(f"[{corr_id}] Task status check failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve task status")
-    
+
     if not task:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found or access denied")
-    
+
     return {
         "task_id": getattr(task, "id", task_id),
         "status": getattr(task, "status", TaskStatus.UNKNOWN).value if hasattr(task, "status") else "unknown",
@@ -107,14 +110,14 @@ async def list_user_tasks(
     status: Optional[TaskStatus] = Query(default=None),
 ) -> dict:
     corr_id = generate_correlation_id("list_tasks")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_task_inputs(None, limit, offset, status, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     manager = TaskManager()
-    
+
     try:
         tasks = await asyncio.wait_for(
             asyncio.to_thread(
@@ -126,7 +129,7 @@ async def list_user_tasks(
             ),
             timeout=_MANAGER_TIMEOUT,
         )
-        
+
         return {
             "tasks": [t.model_dump() if hasattr(t, "model_dump") else {} for t in (tasks or [])],
             "total": len(tasks) if tasks else 0,
@@ -152,28 +155,30 @@ async def websocket_task_progress(
     Client connects to /ws/tasks/{task_id} with valid JWT in query or header.
     """
     corr_id = generate_correlation_id("ws_task")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_task_inputs(task_id, None, None, None, corr_id)
     if not is_valid:
         await websocket.close(code=1008, reason=f"Invalid parameters: {error}")
         return
-    
+
     await websocket.accept()
-    
+
     manager = TaskManager()
     start_time = asyncio.get_running_loop().time()  # FIXED: get_event_loop() deprecated in Python 3.10+
     logger.info(f"[{corr_id}] WebSocket connected for task {task_id} user={user.user_id[:8]}...")
-    
+
     try:
         while True:
             # ✅ Check max connection duration
-            elapsed = asyncio.get_running_loop().time() - start_time  # FIXED: get_event_loop() deprecated in Python 3.10+
+            elapsed = (
+                asyncio.get_running_loop().time() - start_time
+            )  # FIXED: get_event_loop() deprecated in Python 3.10+
             if elapsed > _WS_MAX_DURATION:
                 logger.warning(f"[{corr_id}] WebSocket connection exceeded max duration {_WS_MAX_DURATION}s")
                 await websocket.send_json({"error": "Connection timeout"})
                 break
-            
+
             try:
                 task = await asyncio.wait_for(
                     asyncio.to_thread(manager.get_task, task_id),
@@ -187,37 +192,47 @@ async def websocket_task_progress(
                 logger.error(f"[{corr_id}] Task fetch failed: {e}")
                 await websocket.send_json({"error": "Internal error"})
                 break
-            
+
             if not task:
                 await websocket.send_json({"error": "Task not found or access denied"})
                 break
-            
+
             # Send progress update
-            await websocket.send_json({
-                "type": "progress",
-                "task_id": getattr(task, "id", task_id),
-                "status": getattr(task, "status", TaskStatus.UNKNOWN).value if hasattr(task, "status") else "unknown",
-                "progress": getattr(task, "progress", 0),
-                "message": getattr(task, "message", ""),
-                "correlation_id": corr_id,
-            })
-            
+            await websocket.send_json(
+                {
+                    "type": "progress",
+                    "task_id": getattr(task, "id", task_id),
+                    "status": getattr(task, "status", TaskStatus.UNKNOWN).value
+                    if hasattr(task, "status")
+                    else "unknown",
+                    "progress": getattr(task, "progress", 0),
+                    "message": getattr(task, "message", ""),
+                    "correlation_id": corr_id,
+                }
+            )
+
             # If task is terminal, close connection
             task_status = getattr(task, "status", None)
-            if task_status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
-                await websocket.send_json({
-                    "type": "final",
-                    "task_id": getattr(task, "id", task_id),
-                    "status": task_status.value if hasattr(task_status, "value") else str(task_status),
-                    "result": getattr(task, "result", None),
-                    "error": getattr(task, "error", None),
-                    "correlation_id": corr_id,
-                })
+            if task_status in [
+                TaskStatus.COMPLETED,
+                TaskStatus.FAILED,
+                TaskStatus.CANCELLED,
+            ]:
+                await websocket.send_json(
+                    {
+                        "type": "final",
+                        "task_id": getattr(task, "id", task_id),
+                        "status": task_status.value if hasattr(task_status, "value") else str(task_status),
+                        "result": getattr(task, "result", None),
+                        "error": getattr(task, "error", None),
+                        "correlation_id": corr_id,
+                    }
+                )
                 break
-            
+
             # Poll interval
             await asyncio.sleep(_WS_POLL_INTERVAL)
-            
+
     except WebSocketDisconnect:
         logger.info(f"[{corr_id}] WebSocket disconnected for task {task_id}")
     except Exception as e:
@@ -238,39 +253,43 @@ async def cancel_task(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict:
     corr_id = generate_correlation_id("cancel_task")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_task_inputs(task_id, None, None, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     manager = TaskManager()
-    
+
     try:
         # ✅ FIXED: Verify task ownership before cancellation
         task = await asyncio.wait_for(
             asyncio.to_thread(manager.get_task, task_id),
             timeout=_MANAGER_TIMEOUT,
         )
-        
+
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found or access denied")
-        
+
         # Check if task belongs to user (additional safety)
         if hasattr(task, "user_id") and task.user_id != user.user_id:
             raise HTTPException(status_code=403, detail="Cannot cancel task owned by another user")
-        
+
         success = await asyncio.wait_for(
             asyncio.to_thread(manager.cancel_task, task_id),
             timeout=_MANAGER_TIMEOUT,
         )
-        
+
         if not success:
             task_status = getattr(task, "status", None)
-            if task_status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
+            if task_status in [
+                TaskStatus.COMPLETED,
+                TaskStatus.FAILED,
+                TaskStatus.CANCELLED,
+            ]:
                 raise HTTPException(status_code=400, detail="Task is already in a terminal state")
             raise HTTPException(status_code=400, detail="Task cannot be cancelled")
-        
+
         return {
             "status": "cancelled",
             "task_id": task_id,
@@ -312,10 +331,9 @@ def get_tasks_metadata() -> dict[str, Any]:
 
 
 __all__ = ["router", "get_tasks_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

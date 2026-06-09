@@ -1,4 +1,4 @@
-﻿# backend/app/core/domain_utils.py
+# backend/app/core/domain_utils.py
 # DVMELTSS-FIX: M - Modular, S - Security, V - Validate
 # ASCALE-FIX: S - Separation, C - Coupling
 # OWASP-FIX: 1 - Prompt injection prevention
@@ -15,12 +15,11 @@ Centralizes:
 Usage:
     from app.core.domain_utils import build_domain_prompt, safe_parse_llm_json
 """
+
 from __future__ import annotations
 
-import json
 import logging
-import re
-from typing import Any, Final, Optional, TypeVar
+from typing import Final, Optional, TypeVar
 
 from app.core.prompts import build_safe_prompt, escape_prompt_content
 from app.core.serializers import safe_json_loads
@@ -39,11 +38,11 @@ T = TypeVar("T")
 def build_domain_prompt(template: str, **variables: str) -> str:
     """
     Build domain-specific prompt with escaped variables.
-    
+
     Args:
         template: Prompt template with {var} placeholders
         **variables: Variables to inject (will be escaped)
-    
+
     Returns:
         Safe prompt string ready for LLM invocation
     """
@@ -60,34 +59,34 @@ def build_domain_prompt(template: str, **variables: str) -> str:
 def safe_parse_llm_json(content: str, default: T = None) -> T | dict | list:
     """
     Parse LLM JSON response with graceful fallback.
-    
+
     Args:
         content: Raw LLM response content
         default: Value to return on parse failure
-    
+
     Returns:
         Parsed JSON object or default
     """
     if not content:
         return default
-    
+
     # Strip markdown fences if present
     cleaned = content.strip()
     if "```" in cleaned:
         parts = cleaned.split("```")
         cleaned = parts[1].strip() if len(parts) >= 3 else cleaned
-    
+
     return safe_json_loads(cleaned, default=default)
 
 
 def get_domain_llm(streaming: bool = False, model_override: Optional[str] = None):
     """
     Get LLM instance configured for domain extraction tasks.
-    
+
     Args:
         streaming: Enable token streaming (default: False for structured output)
         model_override: Optional model name override
-    
+
     Returns:
         Configured ChatOpenAI instance
     """
@@ -106,21 +105,21 @@ def generate_domain_correlation_id(prefix: str = "domain") -> str:
 def validate_domain_output(data: dict, required_fields: list[str]) -> tuple[bool, str]:
     """
     Validate domain extraction output has required fields.
-    
+
     Args:
         data: Parsed JSON output from LLM
         required_fields: List of required field names
-    
+
     Returns:
         (is_valid, error_message)
     """
     if not isinstance(data, dict):
         return False, f"Expected dict, got {type(data).__name__}"
-    
+
     missing = [f for f in required_fields if f not in data]
     if missing:
         return False, f"Missing required fields: {missing}"
-    
+
     return True, ""
 
 
@@ -161,10 +160,9 @@ __all__ = [
     "validate_legal_output",
     "validate_logistics_output",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

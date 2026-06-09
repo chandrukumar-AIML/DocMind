@@ -1,4 +1,4 @@
-﻿# backend/app/api/routes/provenance.py
+# backend/app/api/routes/provenance.py
 # DVMELTSS-FIX: M/E/S + ASCALE-L + OWASP-3
 # ✅ FIXED: Safe dict access + input validation + timeout handling + proper error codes
 
@@ -8,13 +8,11 @@ import asyncio
 import logging
 from typing import Annotated, Optional, Any, Final
 
-from fastapi import APIRouter, Depends, HTTPException, Query as FastAPIQuery, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query as FastAPIQuery
+from pydantic import BaseModel
 
-from app.config import get_settings, lazy_settings as settings  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.ids import generate_correlation_id
 from app.auth.dependencies import get_current_user, AuthenticatedUser
-from app.models import ErrorResponse
 from app.provenance.store import ProvenanceStore
 
 logger = logging.getLogger(__name__)
@@ -93,14 +91,14 @@ async def list_answers(
     offset: Annotated[int, FastAPIQuery(ge=0)] = 0,
 ) -> list[AnswerResponse]:
     corr_id = generate_correlation_id("list_answers")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_provenance_inputs(None, source_file, None, limit, offset, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     store = ProvenanceStore()
-    
+
     try:
         answers = await asyncio.wait_for(
             store.list_answers(
@@ -131,14 +129,14 @@ async def get_answer(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> AnswerResponse:
     corr_id = generate_correlation_id("get_answer")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_provenance_inputs(answer_id, None, None, None, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     store = ProvenanceStore()
-    
+
     try:
         answer = await asyncio.wait_for(
             store.get_answer(
@@ -154,10 +152,10 @@ async def get_answer(
     except Exception as e:
         logger.error(f"[{corr_id}] Get answer failed: {e}")
         raise HTTPException(status_code=404, detail=f"Answer not found: {answer_id}")
-    
+
     if not answer:
         raise HTTPException(status_code=404, detail=f"Answer not found in your workspace: {answer_id}")
-    
+
     return _dict_to_answer_response(answer)
 
 
@@ -172,14 +170,14 @@ async def get_document_citations(
     limit: Annotated[int, FastAPIQuery(ge=1, le=200)] = 50,
 ) -> dict:
     corr_id = generate_correlation_id("doc_citations")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_provenance_inputs(None, source_file, None, limit, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     store = ProvenanceStore()
-    
+
     try:
         citations = await asyncio.wait_for(
             store.get_citations_for_document(
@@ -215,14 +213,14 @@ async def get_document_citation_stats(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict:
     corr_id = generate_correlation_id("doc_citation_stats")
-    
+
     # ✅ Validate inputs
     is_valid, error = _validate_provenance_inputs(None, source_file, None, None, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     store = ProvenanceStore()
-    
+
     try:
         stats = await asyncio.wait_for(
             store.get_document_citation_stats(
@@ -256,17 +254,17 @@ async def search_citations(
     limit: Annotated[int, FastAPIQuery(ge=1, le=50)] = 20,
 ) -> dict:
     corr_id = generate_correlation_id("provenance_search")
-    
+
     # ✅ Validate inputs + sanitize query
     is_valid, error = _validate_provenance_inputs(None, None, q, limit, None, corr_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
-    
+
     # ✅ FIXED: Basic query sanitization to prevent injection
     safe_q = q.strip()[:200]
-    
+
     store = ProvenanceStore()
-    
+
     try:
         citations = await asyncio.wait_for(
             store.search_citations(
@@ -323,7 +321,8 @@ def _dict_to_answer_response(a: dict) -> AnswerResponse:
                 char_offset_end=c.get("char_offset_end"),
                 created_at=c.get("created_at", ""),
             )
-            for c in a.get("citations", []) if isinstance(c, dict)
+            for c in a.get("citations", [])
+            if isinstance(c, dict)
         ],
     )
 
@@ -351,10 +350,9 @@ def get_provenance_metadata() -> dict[str, Any]:
 
 
 __all__ = ["router", "get_provenance_metadata"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

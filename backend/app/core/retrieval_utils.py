@@ -1,4 +1,4 @@
-﻿# backend/app/core/retrieval_utils.py
+# backend/app/core/retrieval_utils.py
 # DVMELTSS-FIX: M - Modular, V - Validate, A - Async
 # ASCALE-FIX: S - Separation, C - Coupling
 # BATMAN-FIX: A - True async, M - Memory safety
@@ -14,14 +14,13 @@ Centralizes:
 Usage:
     from app.core.retrieval_utils import reciprocal_rank_fusion, hybrid_score
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-import math
-from typing import Final, Optional, Union, List, Dict, Any
+from typing import Final, Optional, List, Dict, Any
 
-from app.config import get_settings 
 
 from app.core.ids import generate_correlation_id
 
@@ -43,17 +42,17 @@ def reciprocal_rank_fusion(
 ) -> Dict[str, float]:
     """
     Apply Reciprocal Rank Fusion to merge multiple ranked result lists.
-    
+
     Args:
         results: List of result lists, each containing dicts with 'id' and 'score'
         k: RRF constant (higher = less rank sensitivity)
         weights: Optional weights for each result list
-    
+
     Returns:
         Dict mapping doc_id to fused score
     """
     fused_scores: Dict[str, float] = {}
-    
+
     for i, result_list in enumerate(results):
         weight = weights[i] if weights and i < len(weights) else 1.0
         for rank, item in enumerate(result_list, start=1):
@@ -62,7 +61,7 @@ def reciprocal_rank_fusion(
                 continue
             # RRF formula: score = weight / (k + rank)
             fused_scores[doc_id] = fused_scores.get(doc_id, 0.0) + weight / (k + rank)
-    
+
     return fused_scores
 
 
@@ -73,19 +72,19 @@ def hybrid_score(
 ) -> float:
     """
     Compute weighted hybrid score combining dense and sparse retrieval.
-    
+
     Args:
         dense_score: Score from dense/vector retrieval (0.0-1.0)
         sparse_score: Score from sparse/BM25 retrieval (0.0-1.0)
         alpha: Weight for dense score (1-alpha for sparse)
-    
+
     Returns:
         Combined hybrid score (0.0-1.0)
     """
     # Normalize inputs to [0, 1] range
     dense_norm = max(0.0, min(1.0, dense_score))
     sparse_norm = max(0.0, min(1.0, sparse_score))
-    
+
     # Weighted combination
     combined = alpha * dense_norm + (1 - alpha) * sparse_norm
     return max(0.0, min(1.0, combined))
@@ -101,7 +100,7 @@ async def safe_vector_search(
 ) -> List[Dict[str, Any]]:
     """
     Execute vector search with timeout guard and error handling.
-    
+
     Args:
         search_fn: Async function that performs the actual search
         query_embedding: Query vector for similarity search
@@ -109,12 +108,12 @@ async def safe_vector_search(
         filter_dict: Optional metadata filters
         timeout: Maximum seconds to wait for search
         correlation_id: Request ID for tracing
-    
+
     Returns:
         List of search results or empty list on timeout/error
     """
     corr_id = correlation_id or "retrieval_unknown"
-    
+
     try:
         # Wrap search in timeout to prevent hanging
         results = await asyncio.wait_for(
@@ -123,7 +122,7 @@ async def safe_vector_search(
         )
         # Safety cap on result count
         return results[:_MAX_CANDIDATES] if results else []
-        
+
     except asyncio.TimeoutError:
         logger.warning(f"[{corr_id}] Vector search timed out after {timeout}s")
         return []
@@ -156,10 +155,9 @@ __all__ = [
     "generate_retrieval_correlation_id",
     "validate_top_k",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

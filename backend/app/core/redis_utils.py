@@ -1,8 +1,9 @@
-﻿"""Shared Redis helpers for async services.
+"""Shared Redis helpers for async services.
 
 # ADDED: Centralized Redis client and Lua helpers used by rate limiting and
 # task progress tracking.
 """
+
 from __future__ import annotations
 
 import re
@@ -69,10 +70,9 @@ __all__ = [
     "load_lua_script",
     "safe_evalsha",
 ]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-

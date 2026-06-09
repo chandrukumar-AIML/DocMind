@@ -87,7 +87,7 @@ export function LoginForm({ onLogin, onRegister }) {
   }, []);
 
   const handleForgotPassword = useCallback(() => {
-    toast("To reset your password, contact support@docmind.ai", {
+    toast("To reset your password, contact support@documind.ai", {
       icon: "🔑",
       duration: 5000,
     });

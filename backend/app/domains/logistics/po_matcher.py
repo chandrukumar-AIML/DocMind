@@ -1,11 +1,11 @@
-﻿# backend/app/domains/logistics/po_matcher.py
+# backend/app/domains/logistics/po_matcher.py
 # DVMELTSS-FIX: V - Validate, M - Modular, S - Scalability
 
 from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Final, List, Optional
 
 from .invoice_extractor import ExtractedInvoice, LineItem
@@ -31,7 +31,7 @@ class MatchResult:
 class POMatcher:
     """
     Matches extracted invoice items to Purchase Order (PO) data.
-    
+
     Features:
     - Exact matching on SKU/Part numbers
     - Fuzzy matching on descriptions using Levenshtein distance
@@ -46,7 +46,7 @@ class POMatcher:
     ) -> List[MatchResult]:
         """
         Match invoice items against PO items.
-        
+
         Args:
             invoice: Extracted invoice data.
             po_data: List of dicts from PO system.
@@ -70,9 +70,9 @@ class POMatcher:
             for idx, po_item in enumerate(po_data):
                 if idx in used_po_indices:
                     continue
-                
+
                 score, match_type = self._score_match(inv_item, po_item)
-                
+
                 if score > best_match.confidence:
                     best_match = MatchResult(
                         invoice_item=inv_item,
@@ -87,16 +87,16 @@ class POMatcher:
                     if po_price > 0 and abs(inv_item.unit_price - po_price) > _AMOUNT_TOLERANCE * po_price:
                         best_match = MatchResult(
                             **{k: v for k, v in best_match.__dict__.items() if k != "__dataclass_fields__"},
-                            discrepancy=f"Price mismatch: Invoice ${inv_item.unit_price:.2f} vs PO ${po_price:.2f}"
+                            discrepancy=f"Price mismatch: Invoice ${inv_item.unit_price:.2f} vs PO ${po_price:.2f}",
                         )
-            
+
             if best_match.is_matched:
                 # Find the index of the matched PO item to mark used
                 for idx, po in enumerate(po_data):
                     if po == best_match.po_item:
                         used_po_indices.add(idx)
                         break
-            
+
             results.append(best_match)
 
         return results
@@ -105,7 +105,7 @@ class POMatcher:
         """Score the match between an invoice item and a PO item."""
         inv_desc = inv_item.description.lower()
         po_desc = po_item.get("description", "").lower()
-        
+
         # 1. Exact SKU match (if available in metadata/desc)
         sku_match = self._extract_sku(inv_desc) == self._extract_sku(po_desc)
         if sku_match:
@@ -115,7 +115,7 @@ class POMatcher:
         overlap = len(set(inv_desc.split()) & set(po_desc.split()))
         total_words = max(len(set(inv_desc.split())), len(set(po_desc.split())), 1)
         text_score = overlap / total_words
-        
+
         if text_score >= _DESCRIPTION_MATCH_THRESHOLD:
             return text_score, "fuzzy"
 
@@ -129,10 +129,9 @@ class POMatcher:
 
 # DVMELTSS-M: Explicit module exports
 __all__ = ["POMatcher", "MatchResult"]
-# Local smoke test entry point. Run: python -m 
+# Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys
     from app.core.module_smoke import run_module_smoke
 
     run_module_smoke(sys.modules[__name__], __file__)
-
