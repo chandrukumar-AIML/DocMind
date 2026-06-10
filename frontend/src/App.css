@@ -1884,3 +1884,28 @@
   .msg-user-bubble { max-width: 88%; }
   .chat-window { gap: 16px; }
 }
+
+/* ── Light-theme overrides ─────────────────────────────────
+   The topbar and chat-input-area use hardcoded dark RGBA values
+   for the blur/glass effect. Override them in light mode so the
+   whole shell stays coherent when the user switches themes.     */
+.theme-light .topbar {
+  background: rgba(255, 255, 255, 0.85);
+}
+.theme-light .chat-input-area {
+  background: rgba(241, 245, 249, 0.95);
+}
+
+/* ── Mobile sidebar backdrop ───────────────────────────────
+   When the sidebar is open on mobile it overlays the entire
+   chat area (position:fixed, z:20). A semi-transparent
+   backdrop lets users dismiss it with a single tap.             */
+@media (max-width: 768px) {
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 19; /* just below sidebar (z:20) */
+    cursor: pointer;
+  }
+}

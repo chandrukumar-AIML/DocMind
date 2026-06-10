@@ -63,6 +63,16 @@ export default function App() {
     } catch { /* storage unavailable */ }
   }, [theme]);
 
+  // Auto-collapse sidebar when viewport shrinks to mobile width so the overlay
+  // doesn't permanently trap users on small screens.
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth < 768) setSidebarOpen(false);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   const refreshDocuments = useCallback(async (workspaceId = null) => {
     setLoadingDocs(true);
     setLoadError(null);
@@ -304,6 +314,15 @@ export default function App() {
           onNew:     newConversation,
         }}
       />
+
+      {/* ── Mobile sidebar backdrop — tap to collapse ────── */}
+      {sidebarOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
 
       {/* ── Chat Main ────────────────────────────────────── */}
       <main className="chat-main" role="main" aria-label="Chat interface">
