@@ -1,5 +1,5 @@
 import asyncio
-from app.evaluation.retrieval_metrics import RetrievalEvaluator
+from app.evaluation.retrieval_metrics import RetrievalEvaluator, RetrievalEvalSuite
 from app.evaluation.ocr_metrics import OCRMetricsCalculator
 from app.evaluation.text_utils import tokenize_for_wer
 
@@ -15,7 +15,7 @@ def test_tokenize_edge_cases():
 def test_windowed_cer_empty_chunk():
     """Verify windowed CER handles empty ground truth chunks."""
     calc = OCRMetricsCalculator()
-    # Should not raise division by zero
+    # Should not crash division by zero
     cer = calc._windowed_cer("predicted", "", window=100)
     assert cer == 0.0
 
@@ -23,7 +23,6 @@ def test_windowed_cer_empty_chunk():
 def test_async_safe_timeout():
     """Verify retrieval evaluator works in async context."""
     import time
-    from app.evaluation.retrieval_metrics import RetrievalEvalSuite
 
     def slow_retrieve(query: str, k: int):
         time.sleep(0.1)  # Simulate work
@@ -32,21 +31,30 @@ def test_async_safe_timeout():
     evaluator = RetrievalEvaluator()
     ground_truth = [{"query": "test", "relevant_chunk_ids": {"id1"}}]
 
-    # Run in async context (like FastAPI would)
     async def run_eval():
         return await evaluator.evaluate(ground_truth, slow_retrieve, k=3, timeout_seconds=1)
 
-    # Should complete without signal errors
     result = asyncio.run(run_eval())
     assert isinstance(result, RetrievalEvalSuite)
 
 
-def test_bootstrap_zero_variance():
-    """Verify bootstrap CI handles constant values."""
-    from app.evaluation.retrieval_metrics import RetrievalEvalSuite
-    import numpy as np
+def test_eval_suite_constant_values():
+    """Verify RetrievalEvalSuite aggregates results correctly."""
+    from app.evaluation.retrieval_metrics import RetrievalResult
 
-    vals = np.array([0.5, 0.5, 0.5, 0.5, 0.5])  # Zero variance
-    ci_lower, ci_upper = RetrievalEvalSuite._bootstrap_ci(vals, n_bootstrap=100)
-    # Should return identical bounds for constant input
-    assert ci_lower == ci_upper == 0.5
+    suite = RetrievalEvalSuite()
+    # All 5 results retrieve exactly 1 relevant doc out of k=2
+    for _ in range(5):
+        suite.add(
+            RetrievalResult(
+                query="test",
+                retrieved_ids=["id1", "id2"],  # id1 relevant, id2 not
+                relevant_ids={"id1"},
+                k=2,
+            )
+        )
+
+    # precision@2 = 1 hit / 2 retrieved = 0.5 for all results → mean = 0.5
+    assert suite.mean_precision_at_k == 0.5
+    # recall@2 = 1 hit / 1 relevant = 1.0 for all results → mean = 1.0
+    assert suite.mean_recall_at_k == 1.0

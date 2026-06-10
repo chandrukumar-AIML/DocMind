@@ -303,7 +303,7 @@ export function LoginForm({ onLogin, onRegister }) {
               </div>
               {mode === "register" && (
                 <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 5, lineHeight: 1.5 }}>
-                  Min 12 chars · uppercase · lowercase · number · special char (e.g. <code style={{ fontSize: 11 }}>Chandru@1313!</code>)
+                  Min 12 chars · uppercase · lowercase · number · special char (e.g. <code style={{ fontSize: 11 }}>Secure@Pass1!</code>)
                 </div>
               )}
             </div>

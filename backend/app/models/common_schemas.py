@@ -194,13 +194,18 @@ class CitationModel(BaseModel):
     def from_citation(cls, c: "Citation") -> "CitationModel":
         """
         Convert internal Citation dataclass to API response model.
-        FIXED: Use centralized conversion helper.
+        Computes derived fields (page_display, truncated chunk_text, rounded
+        rerank_score) that are not stored verbatim on the internal dataclass.
         """
-        # FIXED: Use centralized dataclass_to_pydantic helper
-        return dataclass_to_pydantic(
-            c, 
-            cls, 
-            exclude={"chunk_id", "parent_id"}  # Exclude internal fields
+        raw_text = getattr(c, "chunk_text", "") or ""
+        truncated = raw_text[:297] + "..." if len(raw_text) > 300 else raw_text
+        return cls(
+            source_file=c.source_file,
+            page_number=c.page_number,
+            page_display=c.page_number + 1,  # 0-indexed → 1-indexed for UI
+            block_type=c.block_type,
+            chunk_text=truncated,
+            rerank_score=round(c.rerank_score, 4),
         )
 
     model_config = ConfigDict(

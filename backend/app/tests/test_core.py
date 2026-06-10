@@ -1,3 +1,4 @@
+from unittest.mock import patch, Mock
 from app.core.exceptions import ValidationError
 from app.core.openai_errors import is_insufficient_quota_error, get_openai_error_type
 from openai import RateLimitError
@@ -14,49 +15,42 @@ def test_exception_api_response():
 
 def test_quota_error_detection():
     """Verify quota error patterns are detected."""
-    # Test message patterns
+    # Test plain exception message patterns
     assert is_insufficient_quota_error(Exception("You exceeded your current quota"))
     assert is_insufficient_quota_error(Exception("insufficient_quota"))
 
-    # Test RateLimitError with quota message
-    quota_exc = RateLimitError(message="You exceeded your current quota", response=None, body=None)
+    # Test RateLimitError with quota message — use a proper mock response
+    # because openai SDK >= 1.0 requires response.request to exist
+    mock_response = Mock()
+    mock_response.request = Mock()
+    mock_response.status_code = 429
+    mock_response.headers = {}
+    quota_exc = RateLimitError(
+        message="You exceeded your current quota",
+        response=mock_response,
+        body={"error": {"type": "insufficient_quota"}},
+    )
     assert is_insufficient_quota_error(quota_exc)
-
-    # Test error type classification
     assert get_openai_error_type(quota_exc) == "quota"
 
 
 def test_dead_letter_rotation(tmp_path):
     """Verify dead-letter rotation keeps only N files."""
-    from app.core.dead_letter import log_failed_page
+    from app.core.dead_letter import log_failed_page, _rotate_dead_letter_files
 
-    # Mock settings to use tmp_path
-    import app.config
-
-    original_get = app.config.get_settings
-
+    # Patch dead_letter's get_settings to redirect to tmp_path
     class MockSettings:
         dead_letter_dir = str(tmp_path)
 
-    app.config.get_settings = lambda: MockSettings()
-
-    try:
-        # Log 5 files
+    with patch("app.core.dead_letter.get_settings", return_value=MockSettings()):
         for i in range(5):
             log_failed_page(f"test_{i}.pdf", 0, f"Error {i}")
 
-        # Verify all exist
         files = list(tmp_path.glob("failed_*.json"))
         assert len(files) == 5
 
-        # Configure rotation to keep only 3
-        from app.core.dead_letter import _rotate_dead_letter_files
-
+        # Rotate to keep only 3
         _rotate_dead_letter_files(tmp_path, max_files=3)
 
-        # Verify only 3 remain
         files = list(tmp_path.glob("failed_*.json"))
         assert len(files) == 3
-
-    finally:
-        app.config.get_settings = original_get
