@@ -67,6 +67,17 @@ function getDemoAnswer(question) {
   return DEMO_ANSWERS.default;
 }
 
+// Per-document answers used when a query is scoped to a single file
+// (filter_source_file) — e.g. the side-by-side Document Comparison panel.
+// Each document must answer from its own perspective, otherwise both
+// compare panes show identical text and the feature looks broken.
+const DOC_SCOPED_ANSWERS = {
+  "uploads/Annual_Report_2024.pdf": `**From Annual_Report_2024.pdf (p. 5, 12):**\n\nRevenue for FY2024 reached **$142M, up 23% YoY**, driven by enterprise expansion (41 net-new accounts). Revenue is recognised on delivery per ASC 606, with deferred revenue of $19.8M carried into FY2025.\n\nNo customer payment terms are defined here — this report only discloses *recognised* revenue and collection performance (DSO improved from 48 to 41 days).`,
+  "uploads/Service_Agreement_v3.docx": `**From Service_Agreement_v3.docx (Section 4 — Payment Terms):**\n\n1. **Net-30** payment terms from invoice date\n2. Late payments accrue interest at **1.5% per month**\n3. Early payment discount: **2% if paid within 10 days**\n4. Currency: USD with FX conversion at the daily rate\n\nAll payments must reference the Purchase Order number in Schedule A.`,
+  "uploads/Q4_Financial_Data.xlsx": `**From Q4_Financial_Data.xlsx (Sheet: Cost Centers):**\n\nQ4 recorded **847 transactions** across 12 cost centers totalling **$4.2M actual vs $3.9M budget** (+7.7%). The largest variances: Engineering **+$140K** and Sales **+$120K**.\n\nThis workbook tracks expenditure only — no revenue or payment-term data is present.`,
+  "uploads/Product_Overview.mp3": `**From Product_Overview.mp3 (audio transcript, 18:42):**\n\nThe recording covers product positioning and pricing: three tiers are mentioned (Starter, Pro, Enterprise) with **annual billing discounted 15%** (at 14:32). The speaker notes enterprise deals are invoiced "on standard Net-30 terms" (at 16:05).\n\nNo contractual terms are defined in this recording — it references the Service Agreement for specifics.`,
+};
+
 const DEMO_CITATIONS = [
   { source_file: "uploads/Annual_Report_2024.pdf", page_number: 4, page_display: 5, block_type: "text", chunk_text: "Revenue for fiscal year 2024 increased by 23% year-over-year, reaching $142 million driven by enterprise expansion...", rerank_score: 0.94 },
   { source_file: "uploads/Service_Agreement_v3.docx", page_number: 6, page_display: 7, block_type: "text", chunk_text: "Section 7.2 — Limitation of Liability: Total liability shall not exceed the total fees paid in the twelve months preceding the claim...", rerank_score: 0.87 },
@@ -153,8 +164,9 @@ export const demoApi = {
 
   query: async (request) => {
     await new Promise(r => setTimeout(r, 900));
+    const scoped = request.filter_source_file && DOC_SCOPED_ANSWERS[request.filter_source_file];
     return {
-      answer: getDemoAnswer(request.question),
+      answer: scoped || getDemoAnswer(request.question),
       citations: DEMO_CITATIONS,
       latency_seconds: 0.9,
     };

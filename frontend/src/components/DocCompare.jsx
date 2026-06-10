@@ -1,7 +1,9 @@
 // frontend/src/components/DocCompare.jsx
-import { useState, useCallback, memo } from "react";
+import { useState, useCallback, useEffect, memo } from "react";
 import { api } from "../api/client";
 import PropTypes from "prop-types";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 function shortName(f) {
   return (f || "").split("/").pop().split("\\").pop();
@@ -35,6 +37,14 @@ function ComparePanel({ label, doc, workspaceId, query }) {
 
   const runQuery = useCallback(() => run(query, doc), [run, query, doc]);
 
+  // Auto-run when the user hits "Compare" (the panel is remounted with the
+  // submitted query) or picks a different document while a query is active —
+  // without this the Compare button only cleared the panes and users had to
+  // click "Run →" in each pane separately.
+  useEffect(() => {
+    if (query && doc) run(query, doc);
+  }, [query, doc, run]);
+
   return (
     <div className="compare-panel">
       <div className="compare-panel-header">
@@ -52,7 +62,9 @@ function ComparePanel({ label, doc, workspaceId, query }) {
       ) : (
         <div className="compare-answer">
           {queried && <div className="compare-queried">Q: {queried}</div>}
-          <div className="compare-text">{result}</div>
+          <div className="compare-text">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{result}</ReactMarkdown>
+          </div>
         </div>
       )}
       {doc && query && !loading && (
