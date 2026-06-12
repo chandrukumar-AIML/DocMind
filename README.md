@@ -54,6 +54,33 @@ clause extraction, compliance scanning, and all 10 collaboration panels. To run 
 real LLM backend, set `VITE_DEMO_MODE=false` and add an `OPENAI_API_KEY`
 (see [DEPLOY.md](DEPLOY.md)).
 
+<!-- ════════════════════════════════════════════════════════════════
+  📸 SCREENSHOTS & GIFS — uncomment each block after recording.
+  Drop files into docs/media/ with the exact names below.
+  Recommended: 1280×800 browser window, ~10s per GIF, <5 MB each.
+
+## 📸 Screenshots
+
+### Ask anything — cited answers in seconds
+![RAG chat with citations](docs/media/chat-rag.gif)
+
+### Three retrieval modes — RAG · Agent · Graph
+![Mode switching](docs/media/modes.gif)
+
+### Side-by-side document comparison
+![A/B document compare](docs/media/compare.gif)
+
+### Legal clause extraction with risk scoring
+![Legal domain analysis](docs/media/legal.gif)
+
+### Upload anything — PDF, Word, Excel, audio, URLs
+![Multi-format ingest](docs/media/upload.gif)
+
+### Light & dark themes · mobile-ready
+![Theme toggle and mobile](docs/media/themes-mobile.gif)
+
+═════════════════════════════════════════════════════════════════ -->
+
 ---
 
 ## What is DocuMind AI?
@@ -85,6 +112,10 @@ collaboratively, compare documents, and automate document workflows.
 | 8 | **Workflow Automation** | Event-triggered rules for post-ingest actions + outbound webhooks |
 | 9 | **Knowledge Graph** | Neo4j entity extraction + relationship visualisation |
 | 10 | **Multi-workspace RBAC** | Workspace isolation, role-based access (viewer / editor / admin / superadmin) |
+| 11 | **A/B Document Compare** | In-app side-by-side modal — ask one question, get per-document answers with markdown rendering |
+| 12 | **Voice Input + Export** | Web Speech API dictation in the chat input; one-click conversation export to Markdown / PDF |
+| 13 | **Demo Mode** | Fully-mocked client demo (`VITE_DEMO_MODE=true`) — every panel works with zero backend or API key |
+| 14 | **Theming + Mobile** | Dark / light themes (persisted per user) + fully responsive mobile layout with dismissible sidebar |
 
 ---
 
@@ -93,7 +124,7 @@ collaboratively, compare documents, and automate document workflows.
 | Category | Technology | Purpose |
 |---|---|---|
 | Backend | FastAPI 0.111 + Uvicorn | Async REST API + SSE streaming |
-| Frontend | React 19 + Vite | SPA — dark nebula design system, 44 components |
+| Frontend | React 19 + Vite | SPA — dark nebula design system, 46 components |
 | Database | PostgreSQL 16 + asyncpg | Users, workspaces, annotations, audit trail |
 | Vector DB | ChromaDB + FAISS | Dual hybrid vector store |
 | Sparse Search | rank-bm25 | Keyword retrieval with RRF fusion |
@@ -133,7 +164,7 @@ DocMind/
 │   └── seed_data.py
 ├── frontend/
 │   ├── src/
-│   │   ├── components/       # 44 React components (chat, sidebar, panels, viewers)
+│   │   ├── components/       # 46 React components (chat, sidebar, panels, viewers)
 │   │   ├── hooks/            # useStreamQuery, useAuth, useConversationHistory
 │   │   └── api/              # Axios client + demo mock layer
 │   ├── vite.config.js
@@ -248,7 +279,7 @@ See [.env.example](.env.example) for the complete list of 50+ variables.
 ## 🧪 Test Results
 
 ```
-Backend  · pytest suite (app/tests):   67 test fns / 14 modules ✅   (regional + validators: 57 cases, pure-unit)
+Backend  · pytest suite (app/tests):   89 passed · 2 skipped · 0 failed ✅   (skips = optional PaddleOCR deps)
 Backend  · E2E scripts (live API):     integration_test.py · batch_test.py · test_endpoints.py
 Frontend · Vitest suite:               24 / 24 passing ✅   (demo proxy, isDemoMode, panels, components)
 ESLint:                                0 errors ✅          (5 warnings — intentional ref patterns)
