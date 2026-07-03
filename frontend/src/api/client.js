@@ -642,17 +642,23 @@ const apiImpl = {
   testLlmSettings: () =>
     apiClient.post("/api/v1/llm-settings/test").then(r => r.data),
 
-  // ── Access Management: Billing (Stripe) ────────────────────────
+  // ── Billing ───────────────────────────────────────────────────
   listPlans: () =>
     apiClient.get("/api/v1/billing/plans").then(r => r.data),
   getSubscription: () =>
     apiClient.get("/api/v1/billing/subscription").then(r => r.data),
+  getBillingUsage: () =>
+    apiClient.get("/api/v1/billing/usage").then(r => r.data),
   getUsage: () =>
     apiClient.get("/api/v1/billing/usage").then(r => r.data),
-  startCheckout: (plan) =>
-    apiClient.post("/api/v1/billing/checkout", { plan }).then(r => r.data),
-  openBillingPortal: () =>
-    apiClient.post("/api/v1/billing/portal").then(r => r.data),
+
+  // ── Razorpay (India / INR) ────────────────────────────────────
+  razorpayConfig: () =>
+    apiClient.get("/api/v1/razorpay/config").then(r => r.data),
+  razorpaySubscribe: (plan) =>
+    apiClient.post("/api/v1/razorpay/subscribe", { plan }).then(r => r.data),
+  razorpayVerify: (data) =>
+    apiClient.post("/api/v1/razorpay/verify", data).then(r => r.data),
 
   // ── Access Management: SSO (OIDC) ───────────────────────────────
   getSsoConfig: () =>

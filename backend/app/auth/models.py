@@ -124,13 +124,13 @@ class Workspace(Base):
     # Access management additions
     client_name = Column(String(128), nullable=True)
     client_email = Column(String(255), nullable=True)
-    plan = Column(String(20), nullable=False, default="starter", server_default="starter")
-    max_docs = Column(Integer, default=100, nullable=False, server_default=text("100"))
-    max_queries_per_day = Column(Integer, default=500, nullable=False, server_default=text("500"))
-    max_storage_gb = Column(Float, default=5.0, nullable=False, server_default=text("5.0"))
+    plan = Column(String(20), nullable=False, default="free", server_default="free")
+    max_docs = Column(Integer, default=5, nullable=False, server_default=text("5"))
+    max_queries_per_day = Column(Integer, default=50, nullable=False, server_default=text("50"))
+    max_storage_gb = Column(Float, default=0.1, nullable=False, server_default=text("0.1"))
     storage_used_mb = Column(Float, default=0.0, nullable=False, server_default=text("0.0"))
     query_count_today = Column(Integer, default=0, nullable=False, server_default=text("0"))
-    # Lazy daily-reset marker for query_count_today — see usage_tracker.check_query_limit().
+    # Lazy monthly-reset marker for query_count_today — see usage_tracker.check_query_limit().
     query_count_reset_at = Column(Date, nullable=False, default=lambda: _utcnow().date(), server_default=func.current_date())
     doc_count = Column(Integer, default=0, nullable=False, server_default=text("0"))
     domain_type = Column(String(50), nullable=True)

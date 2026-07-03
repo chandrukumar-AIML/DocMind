@@ -447,6 +447,70 @@ async def send_invite_email(
         return False
 
 
+# ── Welcome email ────────────────────────────────────────────────────────────
+
+
+async def send_welcome_email(to_email: str, display_name: str, workspace_name: str) -> bool:
+    """
+    Send a welcome email after successful registration.
+    Silently skips if SMTP is not configured — never blocks signup.
+    """
+    settings = get_settings()
+    smtp_host = getattr(settings, "smtp_host", None)
+    if not smtp_host:
+        logger.info(f"SMTP not configured — skipping welcome email to {to_email}")
+        return False
+
+    name = display_name or to_email.split("@")[0]
+    app_url = getattr(settings, "frontend_url", "https://app.documind.ai")
+
+    subject = "Welcome to DocuMind AI — Your workspace is ready"
+    body = f"""Hi {name},
+
+Welcome to DocuMind AI! Your workspace "{workspace_name}" is ready to use.
+
+You're on the Free plan — here's what you get:
+  • 5 documents
+  • 50 queries / month
+  • RAG search, PDF/Word/Excel support
+
+Get started → {app_url}/app
+
+Need more? Upgrade to Starter (₹2,499/mo) or Pro (₹6,599/mo) any time from the Billing panel inside the app.
+
+Questions? Reply to this email or write to terazionservices@gmail.com
+
+— The Terazion Team
+"""
+
+    try:
+        import aiosmtplib
+        from email.mime.text import MIMEText
+
+        msg = MIMEText(body, "plain")
+        msg["Subject"] = subject
+        msg["From"]    = getattr(settings, "smtp_from", "noreply@documind.ai")
+        msg["To"]      = to_email
+
+        port    = int(getattr(settings, "smtp_port", 587))
+        use_tls = port == 465
+
+        await aiosmtplib.send(
+            msg,
+            hostname=smtp_host,
+            port=port,
+            start_tls=(not use_tls) and (port == 587),
+            use_tls=use_tls,
+            username=getattr(settings, "smtp_user", None),
+            password=getattr(settings, "smtp_password", None),
+        )
+        logger.info(f"Welcome email sent to {to_email}")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to send welcome email to {to_email}: {e}")
+        return False
+
+
 # ── Onboarding progress ───────────────────────────────────────────────────────
 
 

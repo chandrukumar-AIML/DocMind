@@ -96,10 +96,50 @@ class Settings(BaseSettings):
         description=(
             "Separate real-OpenAI key for embeddings, used when OPENAI_API_KEY/OPENAI_BASE_URL "
             "point chat at a non-OpenAI provider (e.g. Groq has no embeddings API). "
-            "Leave unset to use local hash-based embeddings instead of OpenAI."
+            "Leave unset to use local sentence-transformers embeddings instead of OpenAI."
         ),
     )
     fallback_to_openai: bool = Field(default=True)
+
+    # -- Groq (free cloud LLM fallback when Ollama is unavailable) -----
+    groq_api_key: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("GROQ_API_KEY", "groq_api_key"),
+        description="Groq API key — used as cloud LLM fallback when Ollama is down. Free tier available.",
+    )
+    groq_model: str = Field(
+        default="llama-3.3-70b-versatile",
+        description="Groq model to use as LLM fallback (llama-3.3-70b-versatile or mixtral-8x7b-32768).",
+    )
+
+    # -- Voyage AI (free cloud embedding fallback) ---------------------
+    voyage_api_key: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("VOYAGE_API_KEY", "voyage_api_key"),
+        description="Voyage AI key — used as embedding fallback when local sentence-transformers fail. 50M free tokens.",
+    )
+    voyage_model: str = Field(default="voyage-3-lite", description="Voyage AI embedding model.")
+
+    # -- Mistral (free cloud OCR fallback) ----------------------------
+    mistral_api_key: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("MISTRAL_API_KEY", "mistral_api_key"),
+        description="Mistral API key — used as OCR fallback when PaddleOCR fails. Free tier available.",
+    )
+
+    # -- Embedding provider priority -----------------------------------
+    embedding_provider: str = Field(
+        default="local",
+        description="Primary embedding source: 'local' (sentence-transformers) | 'openai' | 'voyage'.",
+    )
+    local_embedding_model: str = Field(
+        default="all-mpnet-base-v2",
+        description="sentence-transformers model for local embeddings (768-dim, no API cost).",
+    )
+    embedding_dimensions: int = Field(
+        default=768,
+        description="Output embedding dimensions. 768 = local/voyage-3-lite compatible. 3072 = OpenAI large.",
+    )
 
     @field_validator("openai_api_key")
     @classmethod
@@ -259,9 +299,47 @@ class Settings(BaseSettings):
         default=None,
         description="Stripe webhook signing secret (whsec_...) — from the webhook endpoint's settings page.",
     )
+    # Stripe price IDs per plan (create Products + Prices in Stripe dashboard, paste IDs here)
+    stripe_price_id_starter: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("STRIPE_PRICE_ID_STARTER", "stripe_price_id_starter"),
+        description="Stripe Price ID for the 'starter' plan ($29/mo).",
+    )
+    stripe_price_id_pro: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("STRIPE_PRICE_ID_PRO", "stripe_price_id_pro"),
+        description="Stripe Price ID for the 'pro' plan ($79/mo).",
+    )
+    # Legacy alias kept for backward compat — maps to pro
     stripe_price_id_business: Optional[str] = Field(
         default=None,
-        description="Stripe Price ID for the 'business' plan's recurring subscription — from the Stripe product catalog.",
+        description="[Deprecated] use STRIPE_PRICE_ID_PRO instead.",
+    )
+
+    # Razorpay (India / INR payments)
+    razorpay_key_id: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("RAZORPAY_KEY_ID", "razorpay_key_id"),
+        description="Razorpay Key ID (rzp_test_... / rzp_live_...) — from Razorpay dashboard.",
+    )
+    razorpay_key_secret: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("RAZORPAY_KEY_SECRET", "razorpay_key_secret"),
+        description="Razorpay Key Secret — from Razorpay dashboard.",
+    )
+    razorpay_webhook_secret: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("RAZORPAY_WEBHOOK_SECRET", "razorpay_webhook_secret"),
+        description="Razorpay webhook secret for signature verification.",
+    )
+    # Razorpay Plan IDs (create Subscriptions Plans in Razorpay dashboard)
+    razorpay_plan_id_starter: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("RAZORPAY_PLAN_ID_STARTER", "razorpay_plan_id_starter"),
+    )
+    razorpay_plan_id_pro: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("RAZORPAY_PLAN_ID_PRO", "razorpay_plan_id_pro"),
     )
 
     default_workspace_id: str = Field(

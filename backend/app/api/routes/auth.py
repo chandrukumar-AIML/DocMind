@@ -511,6 +511,17 @@ async def register(
 
         await db.commit()
         await db.refresh(new_user)
+
+        # Fire welcome email as background task (non-blocking; silently skips if SMTP not set)
+        if background_tasks:
+            from app.core.invite_manager import send_welcome_email
+            background_tasks.add_task(
+                send_welcome_email,
+                to_email=new_user.email,
+                display_name=new_user.display_name or "",
+                workspace_name=ws_display_name,
+            )
+
         if not is_dev:
             verification_token = _create_email_verification_token(new_user.id, new_user.email)
             if background_tasks:

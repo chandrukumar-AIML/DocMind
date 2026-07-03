@@ -279,9 +279,9 @@ See [.env.example](.env.example) for the complete list of 50+ variables.
 ## 🧪 Test Results
 
 ```
-Backend  · pytest suite (app/tests):   89 passed · 2 skipped · 0 failed ✅   (skips = optional PaddleOCR deps)
+Backend  · pytest suite (app/tests):   145 passed · 1 skipped · 0 failed ✅   (skip = optional PaddleOCR dep)
 Backend  · E2E scripts (live API):     integration_test.py · batch_test.py · test_endpoints.py
-Frontend · Vitest suite:               24 / 24 passing ✅   (demo proxy, isDemoMode, panels, components)
+Frontend · Vitest suite:               34 / 34 passing ✅   (demo proxy, isDemoMode, panels, components)
 ESLint:                                0 errors ✅          (5 warnings — intentional ref patterns)
 Production build:                      ✅ zero errors
 CI/CD (GitHub Actions):                ruff + pytest + eslint + vitest + build ✅

@@ -42,10 +42,12 @@ without a dedicated, regression-tested upgrade sprint:
 - `transformers` 4.36.0 → 5.x (28 findings), `mlflow` (40 findings)
 - `starlette` 0.37.2 (8) — pinned by FastAPI; bump requires a FastAPI upgrade
 
-### Safe to bump — low-coupling leaf libs (do with a full test run)
-- `cryptography` 48.0.0 → 48.0.1 (patch; used for Fernet — worth doing)
-- `pillow` (6) — image OCR input surface; stable API across patches
-- `urllib3` (3), `idna` (1), `ujson` (1), `python-multipart` (3), `bleach` (3)
+### ~~Safe to bump~~ — **DONE (2026-07-03)** ✅
+Bumped and verified against the full 145-test suite; security floors pinned in
+`backend/requirements.txt`:
+- `cryptography` 48.0.0 → 49.0.0 (Fernet at-rest encryption path)
+- `pillow` 10.4 → 12.3 (image OCR input surface — PaddleOCR compatibility test-verified)
+- `urllib3` → 2.7.0, `idna` → 3.18, `ujson` → 5.13.0, `python-multipart` → 0.0.32, `bleach` → 6.4.0
 
 ### Not in our code path
 - `pyjwt` (8) — **transitive only**; our auth uses `python-jose`, so these do not affect
@@ -55,6 +57,8 @@ without a dedicated, regression-tested upgrade sprint:
 - `torch`/`torchaudio`/`torchvision` (CPU builds) — track via the PyTorch security channel.
 
 **Reproduce:** `cd backend && .venv/Scripts/python.exe -m pip_audit --progress-spinner off`
+(On Windows, add `PYTHONUTF8=1` when using `-r requirements.txt` — the file's UTF-8
+box-drawing comment characters trip the cp1252 default locale.)
 
 ---
 

@@ -142,14 +142,12 @@ async def _increment_workspace(
 
 
 async def check_doc_limit(workspace_id: str) -> tuple[bool, str]:
-    """Returns (ok, message). ok=True means under limit."""
+    """Returns (ok, message). ok=True means under limit. None limit = unlimited."""
     async with async_engine.connect() as conn:
         row = (
             (
                 await conn.execute(
-                    text("""
-            SELECT doc_count, max_docs, plan FROM workspaces WHERE id = :wsid
-        """),
+                    text("SELECT doc_count, max_docs, plan FROM workspaces WHERE id = :wsid"),
                     {"wsid": workspace_id},
                 )
             )
@@ -159,6 +157,8 @@ async def check_doc_limit(workspace_id: str) -> tuple[bool, str]:
 
     if not row:
         return False, "Workspace not found"
+    if row["max_docs"] is None:
+        return True, "ok"  # unlimited (enterprise)
     if row["doc_count"] >= row["max_docs"]:
         return False, (
             f"Document limit reached ({row['doc_count']}/{row['max_docs']}). "
@@ -168,15 +168,18 @@ async def check_doc_limit(workspace_id: str) -> tuple[bool, str]:
 
 
 async def check_query_limit(workspace_id: str) -> tuple[bool, str]:
-    # Lazy reset: if the stored reset marker is before today, zero the counter here
-    # instead of depending on a scheduled job (no Celery Beat schedule exists for
-    # reset_daily_query_counts() in this codebase — this makes every check self-healing).
+    # Lazy monthly reset: if the stored reset marker is in a different month, zero the counter.
     async with async_engine.begin() as conn:
         await conn.execute(
             text("""
                 UPDATE workspaces
-                SET query_count_today = 0, query_count_reset_at = CURRENT_DATE
-                WHERE id = :wsid AND query_count_reset_at < CURRENT_DATE
+                SET query_count_today = 0,
+                    query_count_reset_at = CURRENT_DATE
+                WHERE id = :wsid
+                  AND (
+                    EXTRACT(MONTH FROM query_count_reset_at) <> EXTRACT(MONTH FROM CURRENT_DATE)
+                    OR EXTRACT(YEAR  FROM query_count_reset_at) <> EXTRACT(YEAR  FROM CURRENT_DATE)
+                  )
             """),
             {"wsid": workspace_id},
         )
@@ -198,10 +201,12 @@ async def check_query_limit(workspace_id: str) -> tuple[bool, str]:
 
     if not row:
         return False, "Workspace not found"
+    if row["max_queries_per_day"] is None:
+        return True, "ok"  # unlimited (pro / enterprise)
     if row["query_count_today"] >= row["max_queries_per_day"]:
         return False, (
-            f"Daily query limit reached ({row['query_count_today']}/"
-            f"{row['max_queries_per_day']}). Resets at midnight UTC."
+            f"Monthly query limit reached ({row['query_count_today']}/"
+            f"{row['max_queries_per_day']}). Resets next month."
         )
     return True, "ok"
 
@@ -211,9 +216,7 @@ async def check_storage_limit(workspace_id: str, incoming_mb: float) -> tuple[bo
         row = (
             (
                 await conn.execute(
-                    text("""
-            SELECT storage_used_mb, max_storage_gb FROM workspaces WHERE id = :wsid
-        """),
+                    text("SELECT storage_used_mb, max_storage_gb FROM workspaces WHERE id = :wsid"),
                     {"wsid": workspace_id},
                 )
             )
@@ -223,22 +226,27 @@ async def check_storage_limit(workspace_id: str, incoming_mb: float) -> tuple[bo
 
     if not row:
         return False, "Workspace not found"
+    if row["max_storage_gb"] is None:
+        return True, "ok"  # unlimited (enterprise)
     max_mb = row["max_storage_gb"] * 1024
     if (row["storage_used_mb"] + incoming_mb) > max_mb:
         used_gb = row["storage_used_mb"] / 1024
         return False, (
-            f"Storage limit reached ({used_gb:.1f}/{row['max_storage_gb']} GB). " f"Upgrade your plan for more storage."
+            f"Storage limit reached ({used_gb:.1f}/{row['max_storage_gb']} GB). "
+            f"Upgrade your plan for more storage."
         )
     return True, "ok"
 
 
-# ── Daily counter reset (call from a scheduled Celery task) ──────────────────
+# ── Monthly counter reset (call from a scheduled Celery task or cron) ────────
 
 
-async def reset_daily_query_counts() -> int:
+async def reset_monthly_query_counts() -> int:
     """Reset query_count_today for all workspaces. Returns rows updated."""
     async with async_engine.begin() as conn:
-        result = await conn.execute(text("UPDATE workspaces SET query_count_today = 0 WHERE query_count_today > 0"))
+        result = await conn.execute(
+            text("UPDATE workspaces SET query_count_today = 0, query_count_reset_at = CURRENT_DATE WHERE query_count_today > 0")
+        )
         return result.rowcount
 
 

@@ -27,6 +27,115 @@ from app.core.pii_utils import scrub_pii_for_evaluation
 logger = logging.getLogger(__name__)
 
 
+# ── Local sentence-transformers embeddings (primary — no API cost) ─────────
+class LocalSentenceTransformerEmbeddings(Embeddings):
+    """
+    Local embedding using sentence-transformers (all-mpnet-base-v2 → 768-dim).
+    Free, offline, already installed via requirements.txt.
+    Falls back to Voyage AI → hash if torch/model unavailable.
+    """
+
+    def __init__(
+        self,
+        model_name: str = "all-mpnet-base-v2",
+        voyage_api_key: Optional[str] = None,
+        voyage_model: str = "voyage-3-lite",
+        dimensions: int = 768,
+    ):
+        self.model_name = model_name
+        self.voyage_api_key = voyage_api_key
+        self.voyage_model = voyage_model
+        self.dimensions = dimensions
+        self._model = None
+        self._voyage_client = None
+        self._mode = "uninitialized"
+        self._init()
+
+    def _init(self) -> None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            self._model = SentenceTransformer(self.model_name)
+            self._mode = "local"
+            logger.info(f"LocalSentenceTransformerEmbeddings: loaded {self.model_name} (local)")
+        except Exception as e:
+            logger.warning(f"sentence-transformers unavailable: {e}. Trying Voyage AI.")
+            if self.voyage_api_key:
+                try:
+                    import voyageai
+                    self._voyage_client = voyageai.Client(api_key=self.voyage_api_key)
+                    self._mode = "voyage"
+                    logger.info(f"LocalSentenceTransformerEmbeddings: using Voyage AI fallback ({self.voyage_model})")
+                except Exception as ve:
+                    logger.warning(f"Voyage AI unavailable: {ve}. Falling back to hash embeddings.")
+                    self._mode = "hash"
+            else:
+                logger.warning("No VOYAGE_API_KEY set. Falling back to hash embeddings.")
+                self._mode = "hash"
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self._embed_one(t) for t in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._embed_one(text)
+
+    def _embed_one(self, text: str) -> list[float]:
+        if not text or not text.strip():
+            return [0.0] * self.dimensions
+
+        if self._mode == "local" and self._model is not None:
+            try:
+                vec = self._model.encode(text, normalize_embeddings=True)
+                return vec.tolist()
+            except Exception as e:
+                logger.warning(f"Local embedding failed: {e}. Trying Voyage AI.")
+                self._mode = "voyage" if self.voyage_api_key else "hash"
+
+        if self._mode == "voyage" and self._voyage_client is not None:
+            try:
+                result = self._voyage_client.embed(
+                    [text], model=self.voyage_model, output_dimension=self.dimensions
+                )
+                return result.embeddings[0]
+            except Exception as e:
+                logger.warning(f"Voyage AI embedding failed: {e}. Falling back to hash.")
+                self._mode = "hash"
+
+        return self._hash_embed(text)
+
+    def _hash_embed(self, text: str) -> list[float]:
+        import hashlib
+        tokens = sorted(re.findall(r"\w+", text.lower()))
+        vector = np.zeros(self.dimensions, dtype=np.float32)
+        for token in tokens:
+            digest = hashlib.sha256(token.encode()).digest()
+            idx = int.from_bytes(digest[:4], "little") % self.dimensions
+            sign = 1.0 if digest[4] % 2 == 0 else -1.0
+            vector[idx] += sign * 0.1
+        norm = np.linalg.norm(vector)
+        if norm > 1e-6:
+            vector /= norm
+        return vector.tolist()
+
+    @property
+    def active_mode(self) -> str:
+        return self._mode
+
+
+def get_local_embeddings(
+    model_name: str = "all-mpnet-base-v2",
+    voyage_api_key: Optional[str] = None,
+    voyage_model: str = "voyage-3-lite",
+    dimensions: int = 768,
+) -> LocalSentenceTransformerEmbeddings:
+    """Factory: local sentence-transformers → Voyage AI → hash fallback chain."""
+    return LocalSentenceTransformerEmbeddings(
+        model_name=model_name,
+        voyage_api_key=voyage_api_key,
+        voyage_model=voyage_model,
+        dimensions=dimensions,
+    )
+
+
 class CachedOpenAIEmbeddings(Embeddings):
     """
     Production embedding wrapper with:
@@ -341,7 +450,12 @@ def get_embeddings_metadata() -> dict[str, Any]:
 
 
 # DVMELTSS-M: Explicit module exports
-__all__ = ["CachedOpenAIEmbeddings", "get_embeddings_metadata"]
+__all__ = [
+    "LocalSentenceTransformerEmbeddings",
+    "get_local_embeddings",
+    "CachedOpenAIEmbeddings",
+    "get_embeddings_metadata",
+]
 # Local smoke test entry point. Run: python -m
 if __name__ == "__main__":
     import sys

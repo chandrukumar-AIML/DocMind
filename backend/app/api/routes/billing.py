@@ -107,7 +107,11 @@ async def start_checkout(
             detail=f"'{body.plan}' is not self-serve — contact sales instead of checkout.",
         )
 
-    price_id = {"business": settings.stripe_price_id_business}.get(body.plan)
+    price_map = {
+        "starter": settings.stripe_price_id_starter,
+        "pro":     settings.stripe_price_id_pro or settings.stripe_price_id_business,  # legacy fallback
+    }
+    price_id = price_map.get(body.plan)
     if not price_id:
         raise HTTPException(status_code=503, detail=f"No Stripe price configured for plan '{body.plan}'")
 
@@ -197,10 +201,22 @@ async def stripe_webhook(request: Request) -> dict:
             await update_subscription(workspace_id, plan=plan, subscription_id=data.get("id"), status=status)
 
     elif event_type == "customer.subscription.deleted":
+        from app.core.plan_registry import CANCELLED_DOWNGRADE_PLAN
         customer_id = data.get("customer")
         workspace_id = await get_workspace_id_by_stripe_customer(customer_id) if customer_id else None
         if workspace_id:
-            await update_subscription(workspace_id, plan="starter", subscription_id=None, status="canceled")
+            await update_subscription(workspace_id, plan=CANCELLED_DOWNGRADE_PLAN, subscription_id=None, status="canceled")
+
+    elif event_type == "invoice.payment_failed":
+        # Mark subscription as past_due so the frontend can show a payment banner
+        customer_id = data.get("customer")
+        workspace_id = await get_workspace_id_by_stripe_customer(customer_id) if customer_id else None
+        if workspace_id:
+            current_state = await get_billing_state(workspace_id)
+            plan = current_state.plan if current_state else "free"
+            sub_id = current_state.stripe_subscription_id if current_state else None
+            await update_subscription(workspace_id, plan=plan, subscription_id=sub_id, status="past_due")
+            logger.warning(f"Payment failed for workspace {workspace_id} — marked past_due")
 
     else:
         logger.debug(f"Unhandled Stripe event type: {event_type}")

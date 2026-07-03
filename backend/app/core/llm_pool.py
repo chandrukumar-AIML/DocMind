@@ -116,7 +116,29 @@ def get_llm(
         except Exception as e:
             logger.warning(f"Ollama unavailable: {e}. Falling back to OpenAI.")
 
-        # Ollama failed → try OpenAI (or OpenAI-compatible provider) as fallback
+        # Ollama failed → try Groq (free cloud) as first cloud fallback
+        groq_key = getattr(_settings, "groq_api_key", None)
+        if groq_key:
+            try:
+                from langchain_openai import ChatOpenAI
+
+                groq_model = getattr(_settings, "groq_model", "llama-3.3-70b-versatile")
+                llm = ChatOpenAI(
+                    model=groq_model,
+                    api_key=groq_key,
+                    base_url="https://api.groq.com/openai/v1",
+                    temperature=temperature,
+                    streaming=streaming,
+                    max_retries=2,
+                    request_timeout=30,
+                    max_tokens=4096,
+                )
+                logger.info(f"Ollama unavailable — using Groq fallback: {groq_model}")
+                return llm
+            except Exception as e:
+                logger.warning(f"Groq fallback failed: {e}. Trying OpenAI.")
+
+        # Groq failed (or no key) → try OpenAI as second cloud fallback
         api_key = getattr(_settings, "openai_api_key", None)
         if api_key:
             try:
@@ -132,12 +154,12 @@ def get_llm(
                     request_timeout=getattr(_settings, "llm_request_timeout", 30),
                     max_tokens=getattr(_settings, "llm_max_tokens", 4096),
                 )
-                logger.info(f"Ollama unavailable — using OpenAI-compatible fallback: {llm.model_name}")
+                logger.info(f"Ollama+Groq unavailable — using OpenAI fallback: {llm.model_name}")
                 return llm
             except Exception as e:
-                logger.error(f"OpenAI-compatible fallback also failed: {e}. Using mock LLM.")
+                logger.error(f"OpenAI fallback also failed: {e}. Using mock LLM.")
         else:
-            logger.warning("Ollama unavailable and no OPENAI_API_KEY set. Using mock LLM.")
+            logger.warning("Ollama unavailable, no GROQ_API_KEY, no OPENAI_API_KEY. Using mock LLM.")
         return _get_mock_llm()
 
     # -- 2. Try OpenAI or an OpenAI-compatible provider (Groq, etc.) --

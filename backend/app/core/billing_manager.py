@@ -111,10 +111,14 @@ async def update_subscription(
     app/middleware/usage_limiter.py enforces against these columns, not against `plan`
     directly.
     """
-    plan_limits = PLAN_REGISTRY.get(plan)
+    plan_limits = PLAN_REGISTRY.get(plan, {})
+    max_docs    = plan_limits.get("max_docs")
+    # Registry uses max_queries_per_month; the DB column is max_queries_per_day (monthly budget)
+    max_queries = plan_limits.get("max_queries_per_month")
+    max_storage = plan_limits.get("max_storage_gb")
 
     async with async_engine.begin() as conn:
-        if plan_limits and plan_limits["max_docs"] is not None:
+        if plan_limits and max_docs is not None:
             await conn.execute(
                 text("""
                     UPDATE workspaces
@@ -127,15 +131,14 @@ async def update_subscription(
                     "subscription_id": subscription_id,
                     "status": status,
                     "workspace_id": workspace_id,
-                    "max_docs": plan_limits["max_docs"],
-                    "max_queries": plan_limits["max_queries_per_day"],
-                    "max_storage": plan_limits["max_storage_gb"],
+                    "max_docs": max_docs,
+                    "max_queries": max_queries,
+                    "max_storage": max_storage,
                 },
             )
         else:
-            # Unknown plan string, or a plan with "unlimited" (None) limits (enterprise) —
-            # leave the existing limit columns untouched rather than writing NULL into
-            # NOT NULL columns; enterprise limits are set manually via superadmin instead.
+            # Unknown plan string, or enterprise (all-None limits) —
+            # leave existing limit columns untouched; enterprise limits are set via superadmin.
             await conn.execute(
                 text("""
                     UPDATE workspaces

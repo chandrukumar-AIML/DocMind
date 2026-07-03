@@ -1,7 +1,7 @@
 // frontend/src/components/Sidebar.jsx — DocuMind AI left-hand panel
 // Manages its own tab/feature/stats state so App.jsx stays lean.
 // All data dependencies arrive as grouped prop objects (see JSDoc below).
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "react-hot-toast";
 import { DropZone }             from "./DropZone";
 import { DocumentList }         from "./DocumentList";
@@ -62,6 +62,30 @@ const FEATURE_TABS = [
   ["sso",        "SSO"],
 ];
 
+// ── UsageMeter ───────────────────────────────────────────────────────────────
+
+function UsageMeter({ label, used, limit, style }) {
+  const unlimited = limit === null || limit === undefined;
+  const pct = unlimited ? 0 : Math.min(100, Math.round((used / limit) * 100));
+  const warn = !unlimited && pct >= 80;
+  const color = pct >= 100 ? "var(--red, #ef4444)" : warn ? "var(--yellow, #f59e0b)" : "var(--teal, #0d9488)";
+  return (
+    <div style={{ fontSize: 10, color: "var(--tx-2)", ...style }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+        <span>{label}</span>
+        <span style={{ color: warn ? color : undefined }}>
+          {unlimited ? `${used} / ∞` : `${used} / ${limit}`}
+        </span>
+      </div>
+      {!unlimited && (
+        <div style={{ height: 3, background: "var(--bg-3)", borderRadius: 2, overflow: "hidden" }}>
+          <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 2, transition: "width .4s" }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 /**
@@ -104,6 +128,14 @@ export function Sidebar({
   const { conversations, activeId: sessionId, onSelect: onSelectConv, onDelete: onDeleteConv, onClear: onClearHistory, onNew: onNewChat } = history;
 
   // ── Handlers ─────────────────────────────────────────────────────────────
+
+  // ── Usage limits ─────────────────────────────────────────────────────────
+  const [usage, setUsage] = useState(null);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    api.getBillingUsage().then(setUsage).catch(() => {});
+  }, [workspaceId]);
 
   const handleStatsTabClick = () => {
     setSidebarTab("stats");
@@ -455,6 +487,28 @@ export function Sidebar({
         )}
 
       </div>
+
+      {/* ── Usage Bar Footer ─────────────────────────────────────────────── */}
+      {usage && (
+        <div style={{
+          padding: "10px 12px",
+          borderTop: "1px solid var(--bg-3)",
+          background: "var(--bg-1)",
+          flexShrink: 0,
+        }}>
+          <UsageMeter
+            label="Docs"
+            used={usage.docs?.used ?? 0}
+            limit={usage.docs?.limit}
+          />
+          <UsageMeter
+            label="Queries"
+            used={usage.queries_today?.used ?? 0}
+            limit={usage.queries_today?.limit}
+            style={{ marginTop: 5 }}
+          />
+        </div>
+      )}
     </aside>
   );
 }

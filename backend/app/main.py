@@ -448,6 +448,8 @@ def create_app() -> FastAPI:
         billing,
         sso,
     )
+    from app.api.routes import razorpay
+    from app.api.routes import gst_invoice
 
     app.include_router(health.router, prefix="", tags=["health"])
 
@@ -483,6 +485,8 @@ def create_app() -> FastAPI:
     app.include_router(audit.router, prefix=api_prefix, tags=["audit"])
     app.include_router(llm_settings.router, prefix=api_prefix, tags=["llm-settings"])
     app.include_router(billing.router, prefix=api_prefix, tags=["billing"])
+    app.include_router(razorpay.router, prefix=api_prefix, tags=["razorpay"])
+    app.include_router(gst_invoice.router, prefix=api_prefix, tags=["gst-invoice"])
     app.include_router(sso.router, prefix=api_prefix, tags=["sso"])
 
     # Backward-compatible auth aliases used by earlier tests and Swagger clients.

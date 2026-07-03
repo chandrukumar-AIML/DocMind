@@ -1,274 +1,212 @@
-# DocuMind AI — Free Deployment Guide
+# DocuMind AI — Production Deploy Guide
 
-Deploy the full stack for **$0/month** using:
+## Stack
 
-| Service | What | Free Tier Limit |
+| Service | What | Cost |
 |---|---|---|
-| **Vercel** | Frontend (React/Vite) | Unlimited static, 100GB bandwidth |
-| **Render** | Backend (FastAPI) | 750 hrs/month, 512 MB RAM |
-| **Supabase** | PostgreSQL 16 | 500 MB DB, 2 GB bandwidth |
-| **Upstash** | Redis | 10,000 commands/day |
-
-> **Note on Render free tier**: The instance sleeps after 15 min of inactivity and takes ~30 s to cold-start. Upgrade to Starter ($7/mo) for always-on. For portfolio demos, free is fine.
+| **Railway** | Backend (FastAPI) + PostgreSQL + Redis | $5/mo Hobby |
+| **Cloudflare Pages** | Frontend (React/Vite) | Free forever |
+| **Razorpay** | Payments (INR) | Free account, 2% per transaction |
 
 ---
 
-## Pre-Deploy Checklist
-
-Run this before you start:
+## Pre-Deploy — Run once on your machine
 
 ```bash
-# 1. Make sure your latest code is committed
-git status
+# 1. Make sure all code is committed
 git add -A
-git commit -m "pre-deploy cleanup"
+git commit -m "production deploy"
 
-# 2. Generate a strong JWT secret (run in any terminal)
+# 2. Generate a strong JWT secret
 python -c "import secrets; print(secrets.token_hex(64))"
-# Copy the output — you'll need it in step 4
+# Copy the output — paste as JWT_SECRET_KEY in Railway
 ```
 
 ---
 
-## Step 1 — Supabase (PostgreSQL)
+## Step 1 — Railway (Backend + DB + Redis)
 
-1. Go to [supabase.com](https://supabase.com) → **New Project**
-2. Set a strong **Database Password** (save it)
-3. Choose the region closest to you
-4. Wait ~2 min for provisioning
-5. Go to **Settings → Database** → copy the **Connection string (URI)**
-   - It looks like: `postgresql://postgres:[PASSWORD]@db.[REF].supabase.co:5432/postgres`
-6. Replace `postgresql://` with `postgresql+asyncpg://` (required for SQLAlchemy async)
+### 1.1 Create Railway project
 
-> Save this — you'll use it as `DATABASE_URL` in Render.
+1. Go to [railway.app](https://railway.app) → Sign up / Login
+2. **New Project → Deploy from GitHub repo**
+3. Select your `docmind-ai` repo
+4. Railway auto-detects the `backend/` folder's `Dockerfile`
 
----
+### 1.2 Add PostgreSQL
 
-## Step 2 — Upstash Redis
+In your Railway project → **+ New → Database → PostgreSQL**
+- Railway auto-injects `DATABASE_URL` — nothing to copy manually
 
-1. Go to [upstash.com](https://upstash.com) → **Create Database**
-2. Name: `docmind-redis`, Region: nearest to you, Type: **Regional**
-3. After creation, go to **Details** → copy the **Redis URL**
-   - It looks like: `rediss://default:[PASSWORD]@[HOST].upstash.io:6379`
+### 1.3 Add Redis
 
-> Save this — you'll use it as `REDIS_URL` in Render.
+**+ New → Database → Redis**
+- Railway auto-injects `REDIS_URL` — nothing to copy manually
 
----
+### 1.4 Set environment variables
 
-## Step 3 — Render (Backend)
+In your backend service → **Variables** tab → paste each of these:
 
-### 3a. Push your code to GitHub first
-
-```bash
-# If you haven't pushed yet:
-git remote add origin https://github.com/YOUR_USERNAME/docmind-ai.git
-git branch -M main
-git push -u origin main
-```
-
-### 3b. Create the Web Service
-
-1. Go to [render.com](https://render.com) → **New → Web Service**
-2. Connect your GitHub repo → select `DocMind`
-3. Set:
-   - **Name**: `docmind-backend`
-   - **Root Directory**: *(leave blank — render.yaml handles it)*
-   - **Runtime**: **Docker** ← important, NOT Python
-   - **Dockerfile Path**: `./backend/Dockerfile`
-   - **Docker Context**: `./backend`
-   - **Plan**: Free
-
-> ⚠️ **Why Docker, not Python runtime?**
-> PaddleOCR + paddlepaddle = 500 MB+. `pip install` on Render free tier
-> will timeout (20 min limit). The Dockerfile uses multi-stage build with
-> cached model layers — much faster and reliable.
->
-> A `render.yaml` is already in the repo root — Render will auto-detect it.
-
-### 3c. Add Persistent Disk
-
-1. In your service → **Disks** → **Add Disk**
-2. Set:
-   - **Name**: `docmind-data`
-   - **Mount Path**: `/data`
-   - **Size**: 1 GB (free)
-
-> This is where ChromaDB and FAISS indexes will persist between deploys.
-
-### 3d. Set Environment Variables
-
-In Render → your service → **Environment** → add each one:
-
-```
+```env
+# ── App ──────────────────────────────────────────────────────
+APP_NAME=DocuMind AI
 ENVIRONMENT=production
-API_HOST=0.0.0.0
 API_RELOAD=false
-
-# Auth
 AUTH_ENABLED=true
-ALLOW_SELF_REGISTRATION=false
-JWT_SECRET_KEY=<paste the 128-char secret from pre-deploy step>
-# ⚠️  IMPORTANT: The variable name MUST be JWT_SECRET_KEY (not DOCUMIND_JWT_SECRET_KEY)
-#     The app config only reads JWT_SECRET_KEY — wrong name = auth broken
-JWT_ALGORITHM=HS256
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
-JWT_REFRESH_TOKEN_EXPIRE_DAYS=30
-DEFAULT_WORKSPACE_ID=default
+SKIP_EMAIL_VERIFICATION=false
 
-# CORS — fill in your Vercel URL (you'll know it after step 4)
-CORS_ORIGINS=["https://YOUR-APP.vercel.app"]
-FRONTEND_URL=https://YOUR-APP.vercel.app
+# ── JWT (paste output from python command above) ─────────────
+JWT_SECRET_KEY=PASTE_YOUR_64_CHAR_SECRET_HERE
 
-# Database (from Supabase step 1)
-DATABASE_URL=postgresql+asyncpg://postgres:[PASSWORD]@db.[REF].supabase.co:5432/postgres
+# ── CORS (update after Cloudflare Pages deploy) ──────────────
+CORS_ORIGINS=["https://your-app.pages.dev","https://yourdomain.com"]
 
-# Redis (from Upstash step 2)
-REDIS_URL=rediss://default:[PASSWORD]@[HOST].upstash.io:6379
+# ── Frontend URL (update after Cloudflare deploy) ────────────
+FRONTEND_URL=https://your-app.pages.dev
 
-# OpenAI — required for embeddings + LLM
-OPENAI_API_KEY=sk-...
-OPENAI_EMBEDDING_MODEL=text-embedding-3-large
-OPENAI_CHAT_MODEL=gpt-4o
-LLM_PROVIDER=openai
+# ── Encryption key (generate once) ──────────────────────────
+# python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+ENCRYPTION_KEY=PASTE_GENERATED_FERNET_KEY
 
-# Vector stores
+# ── LLM (Groq free tier — get key at console.groq.com) ──────
+GROQ_API_KEY=gsk_your_groq_key
+GROQ_MODEL=llama-3.3-70b-versatile
+LLM_PROVIDER=groq
+
+# ── Embeddings (Voyage AI free — dash.voyageai.com) ─────────
+VOYAGE_API_KEY=pa-your_voyage_key
+VOYAGE_MODEL=voyage-3-lite
+EMBEDDING_PROVIDER=voyage
+
+# ── OCR (Mistral free — console.mistral.ai) ─────────────────
+MISTRAL_API_KEY=your_mistral_key
+
+# ── Razorpay ─────────────────────────────────────────────────
+RAZORPAY_KEY_ID=rzp_live_your_key_id
+RAZORPAY_KEY_SECRET=your_razorpay_secret
+RAZORPAY_WEBHOOK_SECRET=your_webhook_secret
+RAZORPAY_PLAN_ID_STARTER=plan_your_starter_id
+RAZORPAY_PLAN_ID_PRO=plan_your_pro_id
+
+# ── OCR config ───────────────────────────────────────────────
+OCR_USE_GPU=false
+OCR_LANGUAGES=en,hi,ta
+
+# ── Storage paths (Railway persistent volume) ────────────────
 CHROMA_PERSIST_DIR=/data/chroma
 FAISS_INDEX_PATH=/data/faiss/index.bin
-CHROMA_COLLECTION_NAME=documind_docs
-
-# Misc
 TMP_DIR=/tmp/documind
-MAX_UPLOAD_SIZE_MB=50
 ```
 
-> **Skip** Neo4j, MLflow, Celery — they're optional. The app falls back gracefully.
+> **Tip:** Railway auto-provides `DATABASE_URL` and `REDIS_URL` from the databases you added — don't set these manually, Railway fills them in automatically.
 
-### 3e. Deploy
+### 1.5 Add persistent volume
 
-Click **Deploy**. Watch the logs — first deploy takes ~3–4 minutes (installing dependencies).
+Backend service → **Settings → Volumes → Add Volume**
+- Mount path: `/data`
+- This stores Chroma + FAISS index between deploys
 
-When you see `Application startup complete`, note your Render URL:
-`https://docmind-backend.onrender.com`
+### 1.6 Deploy
 
-### 3f. Initialize the Database
+Click **Deploy** — Railway builds the Docker image and starts the service.
+- First build takes ~5–8 min (downloads Python deps)
+- After that: ~2 min per deploy (cached layers)
 
-Once deployed, open the Render **Shell** tab and run:
+Check logs: your backend URL will be something like `https://documind-backend.up.railway.app`
 
-```bash
-python -c "
-import asyncio
-from app.database.session import init_db
-asyncio.run(init_db())
-print('DB initialized')
-"
-```
+Test it: `https://your-backend.up.railway.app/health` should return `{"status":"ok"}`
 
-Then seed demo data (optional):
+### 1.7 Set Razorpay webhook URL
 
-```bash
-python seed_data.py
-```
+Railway dashboard → your backend service → copy the public URL
+
+Razorpay dashboard → **Settings → Webhooks → Edit your webhook**
+- URL: `https://your-backend.up.railway.app/api/v1/razorpay/webhook`
 
 ---
 
-## Step 4 — Vercel (Frontend)
+## Step 2 — Cloudflare Pages (Frontend)
 
-### 4a. Import project
+### 2.1 Connect repo
 
-1. Go to [vercel.com](https://vercel.com) → **Add New Project**
-2. Import your GitHub repo
-3. Set:
-   - **Root Directory**: `frontend`
-   - **Framework Preset**: Vite
-   - **Build Command**: `npm run build`
-   - **Output Directory**: `dist`
+1. Go to [pages.cloudflare.com](https://pages.cloudflare.com) → **Create a project**
+2. **Connect to Git → select your repo**
+3. Configure build:
 
-### 4b. Set Environment Variables
+| Setting | Value |
+|---|---|
+| Framework preset | Vite |
+| Root directory | `frontend` |
+| Build command | `npm run build` |
+| Output directory | `dist` |
 
-In Vercel → your project → **Settings → Environment Variables**:
+### 2.2 Set environment variables
 
-```
-VITE_API_URL=https://docmind-backend.onrender.com
-VITE_WS_URL=wss://docmind-backend.onrender.com
-VITE_APP_NAME=DocuMind AI
-VITE_APP_VERSION=2.0.0
+In Cloudflare Pages → **Settings → Environment variables**:
+
+```env
+VITE_API_URL=https://your-backend.up.railway.app
 VITE_DEMO_MODE=false
 ```
 
-### 4c. Deploy
+### 2.3 Deploy
 
-Click **Deploy**. Vercel builds in ~60 seconds.
+Click **Save and Deploy** — Cloudflare builds and publishes.
+Your app is live at: `https://your-project.pages.dev`
 
-Your frontend URL: `https://docmind-ai.vercel.app` (or similar)
+### 2.4 Update Railway CORS
 
-### 4d. Update CORS on Render
+Go back to Railway → update these two variables with your Cloudflare URL:
 
-Go back to Render → Environment → update:
-
+```env
+CORS_ORIGINS=["https://your-project.pages.dev"]
+FRONTEND_URL=https://your-project.pages.dev
 ```
-CORS_ORIGINS=["https://docmind-ai.vercel.app"]
-FRONTEND_URL=https://docmind-ai.vercel.app
-```
-
-Click **Save** → Render will redeploy automatically.
 
 ---
 
-## Step 5 — Verify Everything Works
+## Step 3 — Run DB migration (once after first deploy)
+
+After your Railway backend is live, run the migration to fix plan defaults:
 
 ```bash
-# 1. Health check
-curl https://docmind-backend.onrender.com/health
-
-# 2. API docs
-# Open: https://docmind-backend.onrender.com/docs
-
-# 3. Frontend
-# Open: https://docmind-ai.vercel.app
-# Login with: admin@docmind.ai / AdminP@ssw0rd!2026
+# In Railway dashboard → your backend service → Shell tab → run:
+python migrate_plan_defaults.py
 ```
 
 ---
 
-## Test Credentials (after seeding)
+## Step 4 — Custom domain (optional)
 
-| Email | Password | Role |
-|---|---|---|
-| `admin@docmind.ai` | `AdminP@ssw0rd!2026` | Admin |
-| `demo@docmind.ai` | `DemoP@ssw0rd!2026` | Editor |
+**Cloudflare Pages:** Settings → Custom Domains → Add `app.yourdomain.com`
 
----
+**Railway:** Settings → Networking → Custom Domain → Add `api.yourdomain.com`
 
-## Custom Domain (Optional, Free)
-
-**Vercel**: Settings → Domains → add your domain → update DNS CNAME to `cname.vercel-dns.com`
-
-**Render**: Settings → Custom Domains → add your domain → update DNS
+Update `CORS_ORIGINS` and `FRONTEND_URL` in Railway to match.
 
 ---
 
-## Future Upgrades (When You Need Them)
+## Verify everything works
 
-| Need | Upgrade |
+```
+✅ https://your-app.pages.dev          → Landing page loads
+✅ https://your-app.pages.dev/app      → Login page loads
+✅ https://your-backend.railway.app/health  → {"status":"ok"}
+✅ Register a new account → lands on free plan (5 docs, 50 queries)
+✅ Features → Billing → plan cards show ₹ prices
+✅ Upgrade button → Razorpay modal opens with your key
+```
+
+---
+
+## Monthly cost breakdown
+
+| Service | Cost |
 |---|---|
-| Always-on backend (no cold start) | Render Starter $7/mo |
-| More DB storage | Supabase Pro $25/mo |
-| More Redis commands | Upstash Pay-as-you-go |
-| Background jobs (Celery) | Add Render Worker service |
-| Graph queries (Neo4j) | Neo4j AuraDB Free (1 instance) |
-
----
-
-## Environment Variables Quick Reference
-
-| Variable | Where to set | Value |
-|---|---|---|
-| `DATABASE_URL` | Render | Supabase connection string (asyncpg) |
-| `REDIS_URL` | Render | Upstash Redis URL |
-| `OPENAI_API_KEY` | Render | Your OpenAI key |
-| `JWT_SECRET_KEY` | Render | 128-char random secret |
-| `CORS_ORIGINS` | Render | `["https://your-app.vercel.app"]` |
-| `FRONTEND_URL` | Render | `https://your-app.vercel.app` |
-| `VITE_API_URL` | Vercel | `https://docmind-backend.onrender.com` |
-| `CHROMA_PERSIST_DIR` | Render | `/data/chroma` |
-| `FAISS_INDEX_PATH` | Render | `/data/faiss/index.bin` |
+| Railway Hobby plan | $5/mo |
+| Cloudflare Pages | Free |
+| Groq LLM | Free (rate-limited) |
+| Voyage AI embeddings | Free (50M tokens) |
+| Mistral OCR | Free tier |
+| Razorpay | 2% per transaction only |
+| **Total fixed** | **$5/mo** |
