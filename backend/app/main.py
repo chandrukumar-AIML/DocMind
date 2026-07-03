@@ -22,6 +22,7 @@ from app.config import (
 )  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.logging_config import configure_logging
 from app.core.exceptions import DocuMindError, ValidationError, NotFoundError
+from app.middleware.usage_limiter import UsageLimiterMiddleware, ApiKeyAuthMiddleware
 from .security import add_security_headers, add_correlation_id
 
 # Configure logging FIRST
@@ -112,6 +113,10 @@ async def lifespan(app: FastAPI):
         from app.core.template_extractor import ensure_template_schema
         from app.core.esign_handler import ensure_esign_schema
         from app.core.compliance_checker import ensure_compliance_schema
+        from app.core.workspace_llm_config import ensure_workspace_llm_schema
+        from app.core.billing_manager import ensure_billing_schema
+        from app.core.workspace_sso_config import ensure_workspace_sso_schema
+        from app.core.usage_tracker import ensure_usage_schema
         from app.core.invite_manager import ensure_invite_schema
         from app.core.superadmin_utils import ensure_superadmin_schema
 
@@ -142,6 +147,10 @@ async def lifespan(app: FastAPI):
             await asyncio.wait_for(ensure_template_schema(), timeout=_STARTUP_TIMEOUT)
             await asyncio.wait_for(ensure_esign_schema(), timeout=_STARTUP_TIMEOUT)
             await asyncio.wait_for(ensure_compliance_schema(), timeout=_STARTUP_TIMEOUT)
+            await asyncio.wait_for(ensure_workspace_llm_schema(), timeout=_STARTUP_TIMEOUT)
+            await asyncio.wait_for(ensure_billing_schema(), timeout=_STARTUP_TIMEOUT)
+            await asyncio.wait_for(ensure_workspace_sso_schema(), timeout=_STARTUP_TIMEOUT)
+            await asyncio.wait_for(ensure_usage_schema(), timeout=_STARTUP_TIMEOUT)
             await asyncio.wait_for(ensure_invite_schema(), timeout=_STARTUP_TIMEOUT)
             await asyncio.wait_for(ensure_superadmin_schema(), timeout=_STARTUP_TIMEOUT)
         except asyncio.TimeoutError:
@@ -153,6 +162,7 @@ async def lifespan(app: FastAPI):
         app.state.ocr_pipeline = None
         app.state.store_manager = None
         app.state.rag_chain = None
+        app.state.agent_chain = None
         app.state.neo4j_store = None
 
         if settings.eager_startup_services:
@@ -160,6 +170,7 @@ async def lifespan(app: FastAPI):
                 get_ocr_pipeline,
                 get_store_manager,
                 get_rag_chain,
+                get_agent_chain,
             )
 
             try:
@@ -197,6 +208,17 @@ async def lifespan(app: FastAPI):
                 app.state.startup_errors.append("RAG chain init timeout")
             except Exception as e:
                 logger.warning(f"RAG chain init failed: {e}")
+
+            try:
+                app.state.agent_chain = await asyncio.wait_for(
+                    loop.run_in_executor(None, get_agent_chain),
+                    timeout=_STARTUP_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"Agent chain init timed out after {_STARTUP_TIMEOUT}s")
+                app.state.startup_errors.append("Agent chain init timeout")
+            except Exception as e:
+                logger.warning(f"Agent chain init failed: {e}")
 
             try:
                 ocr = app.state.ocr_pipeline
@@ -332,6 +354,12 @@ def create_app() -> FastAPI:
     app.middleware("http")(add_correlation_id)
     app.middleware("http")(add_security_headers)
     app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(UsageLimiterMiddleware)
+    # Added last → runs OUTERMOST, so `Authorization: ApiKey dmk_...` requests are
+    # validated and request.state is populated before UsageLimiterMiddleware and the
+    # route's get_current_user dependency read it. JWT/cookie requests pass straight
+    # through (the middleware only activates on the ApiKey scheme).
+    app.add_middleware(ApiKeyAuthMiddleware)
 
     # -- Exception Handlers -------
 
@@ -416,6 +444,9 @@ def create_app() -> FastAPI:
         regional,
         apikeys,
         audit,
+        llm_settings,
+        billing,
+        sso,
     )
 
     app.include_router(health.router, prefix="", tags=["health"])
@@ -450,6 +481,9 @@ def create_app() -> FastAPI:
     app.include_router(regional.router, prefix=api_prefix, tags=["regional"])
     app.include_router(apikeys.router, prefix=api_prefix, tags=["apikeys"])
     app.include_router(audit.router, prefix=api_prefix, tags=["audit"])
+    app.include_router(llm_settings.router, prefix=api_prefix, tags=["llm-settings"])
+    app.include_router(billing.router, prefix=api_prefix, tags=["billing"])
+    app.include_router(sso.router, prefix=api_prefix, tags=["sso"])
 
     # Backward-compatible auth aliases used by earlier tests and Swagger clients.
     app.add_api_route(f"{api_prefix}/verify-email", auth.verify_email, methods=["POST"], tags=["auth"])

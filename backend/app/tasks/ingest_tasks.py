@@ -230,7 +230,7 @@ def ingest_document(
 
         from app.vectorstore.store_manager import VectorStoreManager
 
-        store = VectorStoreManager()
+        store = VectorStoreManager(workspace_id=workspace_id)
 
         # Batch embedding with progress
         batch_size = 50

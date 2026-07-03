@@ -247,13 +247,19 @@ class AdvancedRAGChain:
         top_k_rerank: int = 3,
         timeout_seconds: int = 120,
         correlation_id: Optional[str] = None,
+        workspace_id: Optional[str] = None,
+        thread_id: Optional[str] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
         """
         Stream RAG response token-by-token with metadata chunks.
         ✅ FIXED: Proper async iterator handling + memory guard.
+
+        workspace_id: see query() — required for multi-tenant isolation since this
+        chain instance is shared across all workspaces.
         """
-        corr_id = correlation_id or self.correlation_id
+        corr_id = correlation_id or thread_id or self.correlation_id
         start_time = time.perf_counter()
+        store, searcher = self._resolve_workspace_store(workspace_id)
 
         try:
             yield {"type": "status", "content": "searching"}
@@ -266,6 +272,8 @@ class AdvancedRAGChain:
                     top_k_retrieve,
                     top_k_rerank,
                     corr_id,
+                    store=store,
+                    searcher=searcher,
                 ),
                 timeout=timeout_seconds * 0.7,
             )
@@ -345,10 +353,19 @@ class AdvancedRAGChain:
         top_k_rerank: int = 3,
         timeout_seconds: int = 120,
         correlation_id: Optional[str] = None,
+        workspace_id: Optional[str] = None,
+        thread_id: Optional[str] = None,
     ) -> RAGResponse:
-        """Non-streaming RAG query returning complete response object."""
-        corr_id = correlation_id or self.correlation_id
+        """Non-streaming RAG query returning complete response object.
+
+        workspace_id: when given, retrieval is scoped to that workspace's own
+        Chroma collection + FAISS index + BM25 cache instead of this chain's
+        construction-time default store — required for multi-tenant isolation
+        since this chain instance is shared across all workspaces.
+        """
+        corr_id = correlation_id or thread_id or self.correlation_id
         start_time = time.perf_counter()
+        store, searcher = self._resolve_workspace_store(workspace_id)
 
         try:
             result = await asyncio.wait_for(
@@ -359,6 +376,8 @@ class AdvancedRAGChain:
                     top_k_retrieve,
                     top_k_rerank,
                     corr_id,
+                    store=store,
+                    searcher=searcher,
                 ),
                 timeout=timeout_seconds * 0.7,
             )
@@ -395,6 +414,31 @@ class AdvancedRAGChain:
             logger.error(f"[{corr_id}] RAG query failed: {e}")
             raise
 
+    def _resolve_workspace_store(self, workspace_id: Optional[str]):
+        """Resolve the (store, searcher) pair to use for a query.
+
+        Without workspace_id, returns this chain's construction-time default
+        (self.store, self.searcher) — unchanged behavior. With workspace_id, resolves
+        a cached workspace-scoped VectorStoreManager (app.dependencies) and builds a
+        lightweight HybridSearcher over it, including a workspace-scoped BM25 cache
+        path, so keyword-search hits can't return another workspace's documents.
+        """
+        if not workspace_id:
+            return self.store, self.searcher
+
+        from app.dependencies import get_store_manager_for_workspace
+        from app.core.workspace_utils import get_bm25_index_path
+        from app.rag.hybrid_search import HybridSearcher
+
+        store = get_store_manager_for_workspace(workspace_id)
+        searcher = HybridSearcher(
+            store_manager=store,
+            semantic_weight=self.searcher.semantic_weight,
+            keyword_weight=self.searcher.keyword_weight,
+            bm25_cache_path=get_bm25_index_path(workspace_id),
+        )
+        return store, searcher
+
     async def _run_retrieval_pipeline(
         self,
         question: str,
@@ -403,8 +447,12 @@ class AdvancedRAGChain:
         top_k_retrieve: int,
         top_k_rerank: int,
         correlation_id: str,
+        store: Optional[VectorStoreManager] = None,
+        searcher: Optional[Any] = None,
     ) -> RetrievalResult:
         """Core retrieval pipeline with correlation ID propagation."""
+        store = store or self.store
+        searcher = searcher or self.searcher
         if not question or not question.strip():
             raise RAGChainError("Question cannot be empty")
         if top_k_rerank > top_k_retrieve:
@@ -428,7 +476,7 @@ class AdvancedRAGChain:
         candidates = await loop.run_in_executor(
             None,
             partial(
-                self.searcher.search,
+                searcher.search,
                 query=standalone_q,
                 k=top_k_retrieve,
                 filter_dict=filter_dict,
@@ -439,7 +487,9 @@ class AdvancedRAGChain:
         timings["search_ms"] = round((time.perf_counter() - t2) * 1000)
 
         candidate_docs = [doc for doc, _ in candidates]
-        expanded_docs = await loop.run_in_executor(None, self._expand_to_parents, candidate_docs)
+        expanded_docs = await loop.run_in_executor(
+            None, partial(self._expand_to_parents, candidate_docs, store=store)
+        )
 
         # Stage 4: Reranking (toggle-gated — skipped on low-RAM hosts)
         t3 = time.perf_counter()
@@ -552,8 +602,9 @@ class AdvancedRAGChain:
 
         return "\n".join(lines)
 
-    def _expand_to_parents(self, docs: List[Any]) -> List[Any]:
+    def _expand_to_parents(self, docs: List[Any], store: Optional[VectorStoreManager] = None) -> List[Any]:
         """Expand child chunks to parent documents with deduplication."""
+        store = store or self.store
         expanded = []
         seen_ids: set[str] = set()
 
@@ -563,7 +614,7 @@ class AdvancedRAGChain:
             chunk_id = meta.get("chunk_id", "")
 
             if parent_id and parent_id not in seen_ids:
-                parent_text = self.store.get_parent(parent_id)
+                parent_text = store.get_parent(parent_id)
                 if parent_text:
                     parent_doc = Document(
                         page_content=parent_text,

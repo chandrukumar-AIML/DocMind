@@ -29,6 +29,9 @@ import { CompliancePanel }      from "./CompliancePanel";
 import { SuperAdminPanel }      from "./SuperAdminPanel";
 import { OnboardingPanel }      from "./OnboardingPanel";
 import { RegionalPanel }        from "./RegionalPanel";
+import { LlmSettingsPanel }     from "./LlmSettingsPanel";
+import { BillingPanel }         from "./BillingPanel";
+import { SsoSettingsPanel }     from "./SsoSettingsPanel";
 import { IconClose }            from "./Icons";
 import { api }                  from "../api/client";
 
@@ -54,6 +57,9 @@ const FEATURE_TABS = [
   ["admin",      "Admin"],
   ["onboard",    "Onboard"],
   ["regional",   "Regional"],
+  ["llm",        "AI Model"],
+  ["billing",    "Billing"],
+  ["sso",        "SSO"],
 ];
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -207,6 +213,9 @@ export function Sidebar({
               {featureTab === "admin"      && <SuperAdminPanel user={user} />}
               {featureTab === "onboard"    && <OnboardingPanel />}
               {featureTab === "regional"   && <RegionalPanel />}
+              {featureTab === "llm"        && <LlmSettingsPanel />}
+              {featureTab === "billing"    && <BillingPanel />}
+              {featureTab === "sso"        && <SsoSettingsPanel />}
               {!featureTab && (
                 <div className="panel-empty" style={{ padding: 20 }}>
                   Select a feature above to get started

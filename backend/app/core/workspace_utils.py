@@ -90,6 +90,23 @@ def get_embeddings_cache_path(workspace_id: str, persist_dir: Optional[str] = No
     return base_dir / "embeddings" / safe_id
 
 
+def get_faiss_index_path(workspace_id: str, persist_dir: Optional[str] = None) -> Path:
+    """
+    Generate FAISS index base path for workspace (mirrors get_bm25_index_path).
+
+    The returned path is virtual — FAISSVectorStore treats `.parent` as the folder
+    passed to save_local/load_local and `.stem` as the index_name, so this file never
+    needs to exist itself; only `<stem>.faiss`/`<stem>.pkl` get written.
+    """
+    safe_id = validate_workspace_id(workspace_id)
+    settings = get_settings()
+    # Matches today's real global default (./data/faiss/index.bin lives under data_dir),
+    # so FAISSVectorStore's path-containment check (against faiss_index_path's parent)
+    # keeps working unmodified for workspace-scoped paths.
+    base_dir = Path(persist_dir) if persist_dir else Path(getattr(settings, "data_dir", None) or "./data")
+    return base_dir / "faiss" / f"faiss_{safe_id}.bin"
+
+
 def generate_workspace_correlation_id(prefix: str = "workspace") -> str:
     """Generate correlation ID for workspace operations."""
     return f"{prefix}_{generate_correlation_id()}"
@@ -101,6 +118,7 @@ __all__ = [
     "get_chroma_collection_name",
     "get_neo4j_namespace",
     "get_bm25_index_path",
+    "get_faiss_index_path",
     "get_embeddings_cache_path",
     "generate_workspace_correlation_id",
 ]

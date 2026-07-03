@@ -118,9 +118,7 @@ class LegalAnalysisRequest(BaseModel):
 async def analyze_legal_document(
     request: LegalAnalysisRequest,
     user: AuthenticatedUser = Depends(get_current_user),
-    store: VectorStoreManager = Depends(
-        lambda: VectorStoreManager()
-    ),  # ✅ Keep as-is if this pattern works in your setup
+    store: VectorStoreManager = Depends(get_vector_store_manager()),
 ):
     corr_id = generate_correlation_id("legal_analyze")
 
@@ -242,7 +240,7 @@ async def analyze_legal_document(
 async def analyze_medical_document(
     source_file: str = Query(..., max_length=255),
     user: AuthenticatedUser = Depends(get_current_user),
-    store: VectorStoreManager = Depends(lambda: VectorStoreManager()),
+    store: VectorStoreManager = Depends(get_vector_store_manager()),
 ):
     """
     HIPAA-compliant medical record analysis.
@@ -371,7 +369,7 @@ class InvoiceAnalysisRequest(BaseModel):
 async def analyze_invoices(
     request: InvoiceAnalysisRequest,
     user: AuthenticatedUser = Depends(get_current_user),
-    store: VectorStoreManager = Depends(lambda: VectorStoreManager()),
+    store: VectorStoreManager = Depends(get_vector_store_manager()),
 ):
     """
     Extract invoice fields and detect anomalies across multiple invoices.
@@ -472,7 +470,7 @@ async def analyze_invoices(
 async def extract_invoice(
     source_file: str,
     user: AuthenticatedUser = Depends(get_current_user),
-    store: VectorStoreManager = Depends(lambda: VectorStoreManager()),
+    store: VectorStoreManager = Depends(get_vector_store_manager()),
 ):
     """Extract all fields from a single invoice document."""
     corr_id = generate_correlation_id("extract_invoice")
@@ -528,7 +526,7 @@ class BillCalculatorRequest(BaseModel):
 async def calculate_bills(
     request: BillCalculatorRequest,
     user: AuthenticatedUser = Depends(get_current_user),
-    store: VectorStoreManager = Depends(lambda: VectorStoreManager()),
+    store: VectorStoreManager = Depends(get_vector_store_manager()),
 ):
     """
     Extract line items from each invoice, merge them, and return:
@@ -632,7 +630,7 @@ class SignatureDetectRequest(BaseModel):
 async def detect_signatures(
     request: SignatureDetectRequest,
     user: AuthenticatedUser = Depends(get_current_user),
-    store: VectorStoreManager = Depends(lambda: VectorStoreManager()),
+    store: VectorStoreManager = Depends(get_vector_store_manager()),
 ):
     corr_id = generate_correlation_id("detect_signatures")
 

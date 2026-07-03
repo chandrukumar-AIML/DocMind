@@ -179,7 +179,7 @@ export function useStreamQuery() {
                   m.id === assistantId ? { ...m, citations: event.content } : m
                 )
               );
-            } else if (event.type === "status") {
+            } else if (event.type === "status" || event.type === "step") {
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantId ? { ...m, statusStep: event.content } : m

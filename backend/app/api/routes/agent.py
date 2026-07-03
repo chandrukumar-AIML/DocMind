@@ -23,6 +23,7 @@ from app.agent.agent_chain import AgentRAGChain
 from app.cache import get_cache
 from app.monitoring.metrics_collector import record_query_latency, record_query_error
 from app.middleware.rate_limiter import RateLimiter  # FIXED: actual module path
+from app.core.usage_tracker import log_action, ACTION_AGENT_QUERY
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -267,6 +268,14 @@ async def agent_query(
             latency_seconds=response_data.get("latency_seconds", 0),
             success=response_data.get("success", False),
         )
+
+    # ✅ Count every agent query attempt against the workspace's daily plan quota.
+    background_tasks.add_task(
+        log_action,
+        workspace_id=user.workspace_id,
+        action_type=ACTION_AGENT_QUERY,
+        user_id=user.user_id,
+    )
 
     if response_type == "stream":
         return StreamingResponse(

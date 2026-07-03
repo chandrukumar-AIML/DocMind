@@ -252,8 +252,8 @@ class AutoImprover:
         from app.retrieval import HybridRetriever, RETRIEVAL_PROFILES
         from app.vectorstore.store_manager import VectorStoreManager
 
-        # ✅ FIXED: Properly instantiate VectorStoreManager
-        store = VectorStoreManager()
+        # ✅ FIXED: Properly instantiate VectorStoreManager, scoped to this workspace
+        store = VectorStoreManager(workspace_id=self.workspace_id)
 
         # Analyze document type distribution
         docs = store.list_documents()
@@ -287,8 +287,8 @@ class AutoImprover:
         """
         from app.vectorstore.store_manager import VectorStoreManager
 
-        # ✅ FIXED: Properly instantiate VectorStoreManager
-        store = VectorStoreManager()
+        # ✅ FIXED: Properly instantiate VectorStoreManager, scoped to this workspace
+        store = VectorStoreManager(workspace_id=self.workspace_id)
         docs = store.list_documents()
 
         logger.info(f"[{corr_id}] Re-embedding {len(docs or [])} documents for workspace {self.workspace_id}")
@@ -318,8 +318,8 @@ class AutoImprover:
         """
         from app.vectorstore.store_manager import VectorStoreManager
 
-        # ✅ FIXED: Properly instantiate VectorStoreManager
-        store = VectorStoreManager()
+        # ✅ FIXED: Properly instantiate VectorStoreManager, scoped to this workspace
+        store = VectorStoreManager(workspace_id=self.workspace_id)
         docs = store.list_documents()
 
         # For full rechunking: queue each document to Celery with new params

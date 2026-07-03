@@ -34,6 +34,7 @@ from app.graph.neo4j_store import get_neo4j_store
 from app.rag.chain import AdvancedRAGChain
 from app.vectorstore.store_manager import VectorStoreManager
 from app.core.llm_pool import get_llm  # ✅ FIXED: Use centralized LLM pool
+from app.core.usage_tracker import log_action, ACTION_GRAPH_QUERY
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/graph", tags=["graph"])
@@ -281,6 +282,7 @@ def _build_neighborhood_visualization(records: list[dict]) -> GraphVisualization
 async def graph_query(
     request: GraphQueryRequest,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    background_tasks: BackgroundTasks,
 ) -> GraphQueryResponse:
     if not settings.openai_api_key:
         raise HTTPException(
@@ -362,6 +364,14 @@ async def graph_query(
                     "relevance_score": metadata.get("relevance_score", 0.0),
                 }
             )
+
+        # ✅ Count this graph query against the workspace's daily plan quota.
+        background_tasks.add_task(
+            log_action,
+            workspace_id=workspace_id,
+            action_type=ACTION_GRAPH_QUERY,
+            user_id=user.user_id,
+        )
 
         return GraphQueryResponse(
             answer=answer,

@@ -24,20 +24,9 @@ ACTION_GRAPH_QUERY = "graph_query"
 ACTION_DOCUMENT_DELETED = "document_deleted"
 ACTION_API_KEY_USED = "api_key_used"
 
-# Plan limits
-_PLAN_LIMITS = {
-    "starter": {"max_docs": 100, "max_queries_per_day": 500, "max_storage_gb": 5.0},
-    "business": {
-        "max_docs": 1_000,
-        "max_queries_per_day": 5_000,
-        "max_storage_gb": 50.0,
-    },
-    "enterprise": {
-        "max_docs": 10_000_000,
-        "max_queries_per_day": 10_000_000,
-        "max_storage_gb": 99999.0,
-    },
-}
+# Plan limits live in app.core.plan_registry.PLAN_REGISTRY (single source of truth,
+# synced onto Workspace.max_docs/max_queries_per_day/max_storage_gb by
+# app.core.billing_manager.update_subscription() whenever a plan changes).
 
 
 # ── Schema bootstrap ─────────────────────────────────────────────────────────
@@ -65,6 +54,15 @@ async def ensure_usage_schema() -> None:
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usage_logs_workspace_id " "ON usage_logs(workspace_id)"))
         await conn.execute(
             text("CREATE INDEX IF NOT EXISTS ix_usage_logs_ws_date " "ON usage_logs(workspace_id, created_at)")
+        )
+        # Lazy daily-reset marker for query_count_today (see check_query_limit()) — no
+        # Celery Beat schedule exists in this codebase, so resets happen on next check
+        # instead of depending on a scheduler.
+        await conn.execute(
+            text(
+                "ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS "
+                "query_count_reset_at DATE NOT NULL DEFAULT CURRENT_DATE"
+            )
         )
 
 
@@ -170,6 +168,19 @@ async def check_doc_limit(workspace_id: str) -> tuple[bool, str]:
 
 
 async def check_query_limit(workspace_id: str) -> tuple[bool, str]:
+    # Lazy reset: if the stored reset marker is before today, zero the counter here
+    # instead of depending on a scheduled job (no Celery Beat schedule exists for
+    # reset_daily_query_counts() in this codebase — this makes every check self-healing).
+    async with async_engine.begin() as conn:
+        await conn.execute(
+            text("""
+                UPDATE workspaces
+                SET query_count_today = 0, query_count_reset_at = CURRENT_DATE
+                WHERE id = :wsid AND query_count_reset_at < CURRENT_DATE
+            """),
+            {"wsid": workspace_id},
+        )
+
     async with async_engine.connect() as conn:
         row = (
             (

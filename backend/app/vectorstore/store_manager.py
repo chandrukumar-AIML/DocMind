@@ -80,14 +80,35 @@ class VectorStoreManager:
             from .embeddings import CachedOpenAIEmbeddings
             from .chroma_store import ChromaVectorStore
             from .faiss_store import FAISSVectorStore
+            from app.core.workspace_utils import get_chroma_collection_name, get_faiss_index_path
 
             self.embeddings = embeddings or CachedOpenAIEmbeddings(
-                api_key=settings.openai_api_key,
+                api_key=settings.effective_embedding_api_key,
                 model=settings.openai_embedding_model,
                 dimensions=EMBEDDING_DIM,
             )
-            self.chroma = ChromaVectorStore(self.embeddings)
-            self.faiss = FAISSVectorStore(self.embeddings, self.chroma)
+
+            # Per-workspace isolation: derive a workspace-scoped Chroma collection name
+            # and FAISS index path whenever workspace_id is given (unless collection_name
+            # was explicitly overridden). Without workspace_id, both fall back to the
+            # legacy global defaults — unchanged from today's behavior.
+            effective_collection_name = self.collection_name
+            effective_faiss_index_path = None
+            if self.workspace_id and not self.collection_name:
+                effective_collection_name = get_chroma_collection_name(self.workspace_id)
+            if self.workspace_id:
+                effective_faiss_index_path = get_faiss_index_path(self.workspace_id)
+
+            self.chroma = ChromaVectorStore(
+                self.embeddings,
+                collection_name=effective_collection_name,
+                persist_directory=self.persist_directory,
+            )
+            self.faiss = FAISSVectorStore(
+                self.embeddings,
+                self.chroma,
+                index_path=effective_faiss_index_path,
+            )
 
             # Validate FAISS index dimension matches expected
             if self.faiss._store is not None:

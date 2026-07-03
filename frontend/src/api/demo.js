@@ -396,6 +396,98 @@ export const demoApi = {
     };
   },
 
+  // ── LLM Settings (per-workspace BYOK) ──────────────────────
+  listLlmProviders: async () => {
+    await delay(200);
+    return {
+      providers: [
+        { id: "openai", label: "OpenAI", default_model: "gpt-4o", base_url: null },
+        { id: "groq", label: "Groq (Free)", default_model: "llama-3.3-70b-versatile", base_url: "https://api.groq.com/openai/v1" },
+        { id: "gemini", label: "Google Gemini", default_model: "gemini-2.0-flash", base_url: "https://generativelanguage.googleapis.com/v1beta/openai/" },
+        { id: "ollama", label: "Ollama (Local)", default_model: "llama3.2:7b", base_url: "http://localhost:11434" },
+      ],
+    };
+  },
+  getLlmSettings: async () => {
+    await delay(300);
+    return {
+      configured: true,
+      provider: "groq",
+      model: "llama-3.3-70b-versatile",
+      base_url: "https://api.groq.com/openai/v1",
+      api_key_masked: "****demo",
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    };
+  },
+  updateLlmSettings: async (data) => {
+    await delay(500);
+    return {
+      configured: true,
+      provider: data.provider,
+      model: data.model || "llama-3.3-70b-versatile",
+      base_url: data.base_url || null,
+      api_key_masked: `****${(data.api_key || "demo").slice(-4)}`,
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    };
+  },
+  deleteLlmSettings: async () => { await delay(300); return { deleted: true }; },
+  testLlmSettings: async () => {
+    await delay(700);
+    return { success: true, provider: "groq", model: "llama-3.3-70b-versatile", latency_ms: 340, sample_response: "OK" };
+  },
+
+  // ── Billing (Stripe) ────────────────────────────────────────
+  listPlans: async () => {
+    await delay(200);
+    return {
+      plans: [
+        { id: "starter", label: "Starter", price_display: "Free", self_serve: false, max_docs: 100, max_queries_per_day: 500, max_storage_gb: 5.0 },
+        { id: "business", label: "Business", price_display: "$49/mo", self_serve: true, max_docs: 1000, max_queries_per_day: 5000, max_storage_gb: 50.0 },
+        { id: "enterprise", label: "Enterprise", price_display: "Contact us", self_serve: false, max_docs: null, max_queries_per_day: null, max_storage_gb: null },
+      ],
+    };
+  },
+  getSubscription: async () => {
+    await delay(300);
+    return { plan: "starter", subscription_status: "none", has_stripe_customer: false };
+  },
+  getUsage: async () => {
+    await delay(250);
+    return {
+      docs: { used: 20, limit: 100 },
+      queries_today: { used: 12, limit: 500 },
+      storage_mb: { used: 340, limit_mb: 5120 },
+    };
+  },
+  startCheckout: async () => {
+    await delay(500);
+    return { checkout_url: "#demo-checkout-not-available" };
+  },
+  openBillingPortal: async () => {
+    await delay(400);
+    return { portal_url: "#demo-portal-not-available" };
+  },
+
+  // ── SSO (OIDC) ────────────────────────────────────────────
+  getSsoConfig: async () => {
+    await delay(300);
+    return { configured: false };
+  },
+  updateSsoConfig: async (data) => {
+    await delay(500);
+    return {
+      configured: true,
+      client_id: data.client_id,
+      client_secret_masked: `****${(data.client_secret || "demo").slice(-4)}`,
+      issuer: data.issuer,
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    };
+  },
+  deleteSsoConfig: async () => { await delay(300); return { deleted: true }; },
+
   // ── Workflows ─────────────────────────────────────────────
   listWorkflows: async () => {
     await delay(300);
@@ -496,6 +588,7 @@ export const demoApi = {
         INDIAN_CONTRACT: "Indian Contract Act, 1872",
         HIPAA: "US Health Insurance Portability & Accountability Act",
         SOC2: "SOC 2 Trust Services Criteria",
+        COMPANIES_ACT: "Companies Act, 2013 (India)",
       },
     };
   },

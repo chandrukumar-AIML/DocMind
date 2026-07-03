@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Optional, Final
 from sqlalchemy import (
     Boolean,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     String,
@@ -129,10 +130,17 @@ class Workspace(Base):
     max_storage_gb = Column(Float, default=5.0, nullable=False, server_default=text("5.0"))
     storage_used_mb = Column(Float, default=0.0, nullable=False, server_default=text("0.0"))
     query_count_today = Column(Integer, default=0, nullable=False, server_default=text("0"))
+    # Lazy daily-reset marker for query_count_today — see usage_tracker.check_query_limit().
+    query_count_reset_at = Column(Date, nullable=False, default=lambda: _utcnow().date(), server_default=func.current_date())
     doc_count = Column(Integer, default=0, nullable=False, server_default=text("0"))
     domain_type = Column(String(50), nullable=True)
     suspended_at = Column(DateTime(timezone=True), nullable=True)
     suspended_reason = Column(Text, nullable=True)
+
+    # Stripe billing (added post-creation via ensure_billing_schema — see app/core/billing_manager.py)
+    stripe_customer_id = Column(String(255), nullable=True)
+    stripe_subscription_id = Column(String(255), nullable=True)
+    subscription_status = Column(String(30), nullable=False, default="none", server_default="none")
 
     members: Mapped[list["WorkspaceMember"]] = relationship(
         "WorkspaceMember",
@@ -177,7 +185,9 @@ class User(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String(255), nullable=False, unique=True, index=True)
-    hashed_password = Column(String(255), nullable=False)
+    # Nullable: SSO-only users (see app/api/routes/sso.py) are JIT-provisioned without a
+    # password — DROP NOT NULL is repaired via ensure_workspace_sso_schema().
+    hashed_password = Column(String(255), nullable=True)
     full_name = Column(String(128), nullable=True)
     display_name = Column(String(100), nullable=True)
 

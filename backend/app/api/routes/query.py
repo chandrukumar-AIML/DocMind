@@ -32,6 +32,7 @@ from app.rag.chain import AdvancedRAGChain as AgentRAGChain
 from app.cache import get_cache, invalidate_workspace_cache
 from app.monitoring.metrics_collector import record_query_latency, record_query_error
 from app.middleware.rate_limiter import RateLimiter  # FIXED: actual module path
+from app.core.usage_tracker import log_action, ACTION_QUERY_EXECUTED
 from app.provenance.store import ProvenanceStore
 
 logger = logging.getLogger(__name__)
@@ -178,6 +179,7 @@ async def _execute_rag_query(
                         filter_dict=filter_dict,
                         timeout_seconds=timeout,
                         correlation_id=corr_id,
+                        workspace_id=user.workspace_id,
                     )
                     async for event in stream_task:
                         # ✅ FIXED: Check if client disconnected
@@ -209,6 +211,7 @@ async def _execute_rag_query(
                     filter_dict=filter_dict,
                     timeout_seconds=timeout,
                     correlation_id=corr_id,
+                    workspace_id=user.workspace_id,
                 ),
                 timeout=timeout,
             )
@@ -381,6 +384,15 @@ async def query_documents(
             latency_seconds=response_data.get("latency_seconds", 0),
             success=response_data.get("success", False),
         )
+
+    # ✅ Count every query attempt against the workspace's daily plan quota — regardless
+    # of streaming/batch/cached, since all of them represent a question actually asked.
+    background_tasks.add_task(
+        log_action,
+        workspace_id=user.workspace_id,
+        action_type=ACTION_QUERY_EXECUTED,
+        user_id=user.user_id,
+    )
 
     if response_type == "stream":
         return StreamingResponse(

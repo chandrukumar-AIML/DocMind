@@ -183,7 +183,7 @@ export function useAuth() {
     return data;
   }, [fetchMe]);
 
-  const register = useCallback(async (email, password, fullName) => {
+  const register = useCallback(async (email, password, fullName, workspaceName) => {
     let data;
     if (isDemoMode()) {
       data = await demoApi.register(email, password, fullName);
@@ -194,7 +194,12 @@ export function useAuth() {
           "Content-Type": "application/json",
           "X-Correlation-ID": `register_${Date.now()}`,
         },
-        body: JSON.stringify({ email, password, display_name: fullName }),
+        body: JSON.stringify({
+          email,
+          password,
+          display_name: fullName,
+          ...(workspaceName ? { workspace_name: workspaceName } : {}),
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

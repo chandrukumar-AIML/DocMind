@@ -50,14 +50,19 @@ const HERO_FEATURES = [
   },
 ];
 
+const API_URL = (import.meta.env?.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
+
 export function LoginForm({ onLogin, onRegister }) {
   const [mode, setMode]               = useState("login");
   const [email, setEmail]             = useState("");
   const [password, setPassword]       = useState("");
   const [name, setName]               = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showSso, setShowSso]         = useState(false);
+  const [ssoSlug, setSsoSlug]         = useState("");
 
   const handleSubmit = useCallback(async () => {
     if (!email || !password) { setError("Email and password are required"); return; }
@@ -68,14 +73,14 @@ export function LoginForm({ onLogin, onRegister }) {
       if (mode === "login") {
         await onLogin(email, password);
       } else {
-        await onRegister(email, password, name);
+        await onRegister(email, password, name, workspaceName);
       }
     } catch (err) {
       setError(err.message || "Authentication failed. Check your credentials and try again.");
     } finally {
       setLoading(false);
     }
-  }, [mode, email, password, name, onLogin, onRegister]);
+  }, [mode, email, password, name, workspaceName, onLogin, onRegister]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === "Enter") { e.preventDefault(); handleSubmit(); }
@@ -223,6 +228,65 @@ export function LoginForm({ onLogin, onRegister }) {
             </button>
           </div>
 
+          {/* SSO entry point (login only) */}
+          {mode === "login" && (
+            <div style={{ marginBottom: 14 }}>
+              {!showSso ? (
+                <button
+                  type="button"
+                  className="btn-sm"
+                  style={{ width: "100%" }}
+                  onClick={() => setShowSso(true)}
+                >
+                  Continue with company SSO
+                </button>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 }}>
+                  <label className="form-label" htmlFor="sso-slug">Company workspace</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      id="sso-slug"
+                      className="input"
+                      value={ssoSlug}
+                      onChange={e => setSsoSlug(e.target.value)}
+                      placeholder="your-company"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={!ssoSlug.trim()}
+                      onClick={() => {
+                        window.location.href =
+                          `${API_URL}/api/v1/sso/authorize?workspace_slug=${encodeURIComponent(ssoSlug.trim())}`;
+                      }}
+                    >
+                      Continue
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowSso(false)}
+                    style={{
+                      background: "none", border: "none", cursor: "pointer",
+                      fontSize: 11, color: "var(--text-3)", padding: 0, alignSelf: "flex-start",
+                    }}
+                  >
+                    Use email &amp; password instead
+                  </button>
+                </div>
+              )}
+              <div style={{
+                display: "flex", alignItems: "center", gap: 10, margin: "14px 0 0",
+                fontSize: 11, color: "var(--text-4)",
+              }}>
+                <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                or
+                <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+              </div>
+            </div>
+          )}
+
           {/* Form */}
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {mode === "register" && (
@@ -238,6 +302,25 @@ export function LoginForm({ onLogin, onRegister }) {
                   disabled={loading}
                   autoComplete="name"
                 />
+              </div>
+            )}
+
+            {mode === "register" && (
+              <div className="form-field">
+                <label className="form-label" htmlFor="auth-workspace">Company or team name</label>
+                <input
+                  id="auth-workspace"
+                  className="input"
+                  value={workspaceName}
+                  onChange={e => setWorkspaceName(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Acme Corp (optional)"
+                  disabled={loading}
+                  autoComplete="organization"
+                />
+                <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 5 }}>
+                  You'll get your own private workspace. Leave blank to use a default name.
+                </div>
               </div>
             )}
 
@@ -357,6 +440,16 @@ export function LoginForm({ onLogin, onRegister }) {
             </button>
           </div>
 
+          {/* Consent line (register only) */}
+          {mode === "register" && (
+            <div style={{ marginTop: 14, textAlign: "center", fontSize: 11, color: "var(--text-3)", lineHeight: 1.6 }}>
+              By creating an account you agree to our{" "}
+              <a href="/legal/terms" target="_blank" rel="noopener noreferrer" style={{ color: "var(--violet-2)" }}>Terms of Service</a>
+              {" "}and{" "}
+              <a href="/legal/privacy" target="_blank" rel="noopener noreferrer" style={{ color: "var(--violet-2)" }}>Privacy Policy</a>.
+            </div>
+          )}
+
           {/* Footer */}
           <div style={{ marginTop: 20, textAlign: "center", fontSize: 12, color: "var(--text-3)" }}>
             {mode === "login" ? "Don't have an account? " : "Already have an account? "}
@@ -370,6 +463,13 @@ export function LoginForm({ onLogin, onRegister }) {
             >
               {mode === "login" ? "Register" : "Sign in"}
             </button>
+          </div>
+
+          {/* Legal links */}
+          <div style={{ marginTop: 14, textAlign: "center", fontSize: 11, color: "var(--text-4)", display: "flex", gap: 14, justifyContent: "center" }}>
+            <a href="/legal/terms" target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-3)" }}>Terms</a>
+            <a href="/legal/privacy" target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-3)" }}>Privacy</a>
+            <a href="/legal/dpa" target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-3)" }}>DPA</a>
           </div>
         </div>
       </div>

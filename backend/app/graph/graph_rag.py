@@ -157,12 +157,18 @@ class GraphRAGRetriever:
         correlation_id: str,
     ) -> tuple[list[Document], float]:
         """Async vector retrieval with timeout guard."""
+        # Resolve a workspace-scoped store instead of self.store (fixed at construction,
+        # shared across all workspaces) — otherwise every graph query would search
+        # whichever workspace's collection self.store happened to be built against.
+        from app.dependencies import get_store_manager_for_workspace
+
+        store = get_store_manager_for_workspace(workspace_id) if workspace_id else self.store
         start = time.perf_counter()
         try:
             # ✅ Use asyncio.to_thread for Python 3.9+ or fallback for 3.8
             if sys.version_info >= (3, 9):
                 results = await asyncio.wait_for(
-                    asyncio.to_thread(lambda: self.store.search(query=query, k=k, filter_dict=filter_dict)),
+                    asyncio.to_thread(lambda: store.search(query=query, k=k, filter_dict=filter_dict)),
                     timeout=_RETRIEVAL_TIMEOUT_SECONDS,
                 )
             else:
@@ -170,7 +176,7 @@ class GraphRAGRetriever:
                 results = await asyncio.wait_for(
                     loop.run_in_executor(
                         None,
-                        lambda: self.store.search(query=query, k=k, filter_dict=filter_dict),
+                        lambda: store.search(query=query, k=k, filter_dict=filter_dict),
                     ),
                     timeout=_RETRIEVAL_TIMEOUT_SECONDS,
                 )

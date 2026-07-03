@@ -86,6 +86,18 @@ SUPPORTED_REGULATIONS = {
             "filing deadlines",
         ],
     },
+    "COMPANIES_ACT": {
+        "name": "Companies Act, 2013 (India)",
+        "key_requirements": [
+            "board resolution requirements",
+            "annual return filing (MGT-7)",
+            "financial statement filing (AOC-4)",
+            "director KYC (DIN)",
+            "related party transaction disclosure",
+            "statutory register maintenance",
+            "CSR compliance (where applicable)",
+        ],
+    },
 }
 
 

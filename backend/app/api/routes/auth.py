@@ -90,6 +90,7 @@ class RegistrationPendingResponse(BaseModel):
     user_id: str
     email: str
     workspace_id: str
+    workspace_slug: str
     correlation_id: str
 
 
@@ -144,6 +145,9 @@ class UserCreate(BaseModel):
     password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=BCRYPT_MAX_LENGTH)
     invite_token: Optional[str] = Field(default=None)
     display_name: Optional[str] = Field(default=None, max_length=100)
+    # Optional — self-registration creates a new isolated workspace named after this
+    # (see register() below); if omitted, a default name is derived.
+    workspace_name: Optional[str] = Field(default=None, max_length=128)
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -478,29 +482,33 @@ async def register(
         db.add(new_user)
         await db.flush()
 
-        # Look up default workspace by slug to get its UUID
-        ws_slug = getattr(settings, "default_workspace_slug", "default")
-        ws_result = await db.execute(
-            select(WorkspaceModel).where(WorkspaceModel.slug == ws_slug, WorkspaceModel.is_active == True)
+        # ✅ Self-serve multi-tenant signup: each registration gets its OWN isolated
+        # workspace (not a shared "default" one — two different companies signing up
+        # must never land in the same workspace). Storage (Chroma/Neo4j/BM25) is left
+        # to lazy-init on first ingest, matching every other workspace in this app —
+        # no synchronous provisioning call needed here.
+        ws_display_name = (
+            body.workspace_name.strip()
+            if body.workspace_name and body.workspace_name.strip()
+            else f"{(new_user.display_name or body.email.split('@')[0]).strip()}'s Workspace"
         )
-        default_ws = ws_result.scalar_one_or_none()
-        ws_uuid = default_ws.id if default_ws else None
-        workspace_id = str(ws_uuid) if ws_uuid else ws_slug
+        slug_base = re.sub(r"[^a-z0-9]+", "-", ws_display_name.lower()).strip("-") or "workspace"
+        ws_slug = f"{slug_base[:40]}-{uuid.uuid4().hex[:6]}"
 
-        if ws_uuid:
-            ws_stmt = select(WorkspaceMember).where(
-                WorkspaceMember.workspace_id == ws_uuid,
-                WorkspaceMember.user_id == new_user.id,
-            )
-            if not (await db.execute(ws_stmt)).scalar_one_or_none():
-                member = WorkspaceMember(
-                    user_id=new_user.id,
-                    workspace_id=ws_uuid,
-                    role=UserRole.EDITOR,
-                    is_primary=True,
-                    is_active=True,
-                )
-                db.add(member)
+        new_workspace = WorkspaceModel(name=ws_display_name, slug=ws_slug, is_active=True)
+        db.add(new_workspace)
+        await db.flush()
+
+        member = WorkspaceMember(
+            user_id=new_user.id,
+            workspace_id=new_workspace.id,
+            role=UserRole.WORKSPACE_ADMIN,
+            is_primary=True,
+            is_active=True,
+        )
+        db.add(member)
+        workspace_id = str(new_workspace.id)
+
         await db.commit()
         await db.refresh(new_user)
         if not is_dev:
@@ -518,6 +526,7 @@ async def register(
                 user_id=str(new_user.id),
                 email=new_user.email,
                 workspace_id=workspace_id,
+                workspace_slug=ws_slug,
                 correlation_id=corr_id,
             )
         logger.info(f"[{corr_id}] User registered and auto-verified (dev mode): id={new_user.id}")
@@ -526,6 +535,7 @@ async def register(
             user_id=str(new_user.id),
             email=new_user.email,
             workspace_id=workspace_id,
+            workspace_slug=ws_slug,
             correlation_id=corr_id,
         )
     except HTTPException:

@@ -110,19 +110,22 @@ def route_after_retry(
 
 def route_after_hallucination_check(
     state: AgentState,
-) -> Literal["human_review", "end"]:
+) -> Literal["human_review", "__end__"]:
     """
     Routes based on grounding confidence and human review flag.
     ✅ FIXED: Safe .get() + correlation_id logging.
 
-    Matches keys: human_review, end
+    Matches keys: human_review, __end__ (LangGraph's END sentinel — the conditional-edge
+    mapping in app/agent/graph.py registers "__end__", not "end"; returning "end" here
+    never matched and made every "no review needed" outcome crash after falling through
+    the validation wrapper).
     """
     corr_id = state.get("correlation_id", "route_after_hallucination_check")
 
     if state.get("needs_human_review", False):
         logger.info(f"[{corr_id}] Routing to human_review: low confidence or unsupported claims detected")
         return "human_review"
-    return "end"
+    return "__end__"
 
 
 def route_after_crag_grading(
@@ -377,15 +380,15 @@ if __name__ == "__main__":
             assert route_after_hallucination_check(state) == "human_review"
             print("   ✅ Needs review: routes to 'human_review'")
 
-            # No review needed -> end
+            # No review needed -> __end__
             state = {"correlation_id": "test-12", "needs_human_review": False}
-            assert route_after_hallucination_check(state) == "end"
-            print("   ✅ No review: routes to 'end'")
+            assert route_after_hallucination_check(state) == "__end__"
+            print("   ✅ No review: routes to '__end__'")
 
-            # Missing flag -> default to end
+            # Missing flag -> default to __end__
             state = {"correlation_id": "test-13"}
-            assert route_after_hallucination_check(state) == "end"
-            print("   ✅ Missing flag: defaults to 'end'")
+            assert route_after_hallucination_check(state) == "__end__"
+            print("   ✅ Missing flag: defaults to '__end__'")
 
             # -- Test 7: route_after_crag_grading -----------------------
             print("\n📌 Test 7: route_after_crag_grading")
@@ -506,7 +509,7 @@ if __name__ == "__main__":
             }
             assert route_after_hallucination_check(empty_state) in {
                 "human_review",
-                "end",
+                "__end__",
             }
             assert route_after_crag_grading(empty_state) in {
                 "answer_generator",

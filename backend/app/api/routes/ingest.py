@@ -41,6 +41,7 @@ from app.ingestion.universal_ingestion import UniversalIngestionPipeline
 from app.cache import invalidate_workspace_cache
 from app.monitoring.metrics_collector import record_ingest_latency, record_ingest_error
 from app.middleware.rate_limiter import RateLimiter  # FIXED: actual module path
+from app.core.usage_tracker import log_action, check_doc_limit, check_storage_limit, ACTION_DOCUMENT_UPLOADED
 from app.core.ocr_utils import detect_language_vectorized
 
 logger = logging.getLogger(__name__)
@@ -191,6 +192,17 @@ async def ingest_document(
         raise HTTPException(status_code=400, detail="Empty file upload")
 
     content = b"".join(chunks_read)
+
+    # ✅ Accurate plan-limit check now that the real file size is known — the middleware
+    # already did a fast coarse pre-check before this handler ran, but with a 0.1MB stub
+    # (real size isn't known until the file is read). Reject here with the real size
+    # BEFORE the expensive OCR/embedding pipeline starts.
+    ok, limit_msg = await check_doc_limit(user.workspace_id)
+    if not ok:
+        raise HTTPException(status_code=429, detail=limit_msg)
+    ok, limit_msg = await check_storage_limit(user.workspace_id, incoming_mb=total_bytes / (1024 * 1024))
+    if not ok:
+        raise HTTPException(status_code=429, detail=limit_msg)
 
     # ✅ Magic byte validation (OWASP-9) — skip for plain text files
     if suffix != ".txt" and not _validate_file_magic(content, suffix):
@@ -429,9 +441,17 @@ async def ingest_document(
                 record_ingest_latency,
                 workspace_id=user.workspace_id,
                 correlation_id=corr_id,
-                latency_ms=latency * 1000,
+                latency_seconds=latency,
                 success=True,
-                chunks=len(child_chunks),
+            )
+            # ✅ Count this upload against the workspace's plan limits (doc_count/storage_used_mb)
+            background_tasks.add_task(
+                log_action,
+                workspace_id=user.workspace_id,
+                action_type=ACTION_DOCUMENT_UPLOADED,
+                user_id=user.user_id,
+                resource_type="document",
+                storage_delta_mb=total_bytes / (1024 * 1024),
             )
 
             return IngestResponse(
@@ -559,6 +579,15 @@ async def _ingest_via_universal(
     del chunks_read
     gc.collect()
 
+    # ✅ Accurate plan-limit check now that the real file size is known — same reasoning
+    # as ingest_document() above (middleware's pre-check uses a coarse 0.1MB stub).
+    ok, limit_msg = await check_doc_limit(user.workspace_id)
+    if not ok:
+        raise HTTPException(status_code=429, detail=limit_msg)
+    ok, limit_msg = await check_storage_limit(user.workspace_id, incoming_mb=total_bytes / (1024 * 1024))
+    if not ok:
+        raise HTTPException(status_code=429, detail=limit_msg)
+
     start_ts = time.perf_counter()
     pipeline = UniversalIngestionPipeline()
 
@@ -608,9 +637,16 @@ async def _ingest_via_universal(
                 record_ingest_latency,
                 workspace_id=user.workspace_id,
                 correlation_id=corr_id,
-                latency_ms=latency * 1000,
+                latency_seconds=latency,
                 success=True,
-                chunks=result.chunk_count,
+            )
+            background_tasks.add_task(
+                log_action,
+                workspace_id=user.workspace_id,
+                action_type=ACTION_DOCUMENT_UPLOADED,
+                user_id=user.user_id,
+                resource_type="document",
+                storage_delta_mb=total_bytes / (1024 * 1024),
             )
 
             file_suffix = Path(file.filename or "").suffix.lstrip(".")

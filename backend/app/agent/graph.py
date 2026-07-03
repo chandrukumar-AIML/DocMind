@@ -104,11 +104,17 @@ def _wrap_router_with_validation(router: RouterFunc, expected_targets: set[str])
         result = router(state)
         valid_targets = expected_targets | {_END_KEY, str(END)}
         if str(result) not in valid_targets:
+            # FIXED: previously hardcoded a fallback of "answer_generator", which is only
+            # a registered destination for one of the seven conditional edges that use this
+            # wrapper — for every other edge it isn't in the edge's own `mapping` dict, so
+            # LangGraph raised an uncaught KeyError instead of degrading gracefully. Fall
+            # back to any target this specific edge actually registers instead.
+            fallback = next(iter(expected_targets), _END_KEY)
             logger.error(
                 f"Router returned invalid target '{result}' — expected one of {valid_targets}. "
-                f"Defaulting to 'answer_generator'."
+                f"Defaulting to '{fallback}'."
             )
-            return "answer_generator"
+            return fallback
         return result
 
     return validated_router  # type: ignore
@@ -417,7 +423,7 @@ if __name__ == "__main__":
             wrapped_bad = _wrap_router_with_validation(bad_router, {"valid_target"})
             with patch("app.agent.graph.logger") as mock_logger:
                 result = wrapped_bad({})
-                assert result == "answer_generator"  # Fallback
+                assert result == "valid_target"  # Fallback: a target this edge actually registers
                 assert mock_logger.error.called
             print("   ✅ _wrap_router_with_validation: fallback on invalid target")
 

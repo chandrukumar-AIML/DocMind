@@ -232,27 +232,71 @@ const apiImpl = {
   },
 
   // SSE streaming with safe JSON parsing + workspace_id
+  // Routes to the right backend per query mode: RAG (default) / Agent / Graph.
   queryStream: async function* (request, signal) {
     if (isDemoMode()) {
       yield* demoApi.queryStream(request, signal);
       return;
     }
-    const url = `${BASE_URL}/api/v1/query`;
+
     const correlationId = request.correlation_id || `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    
+
+    // Graph mode has no streaming endpoint — call it once and synthesize a
+    // citations -> token -> done sequence so the consumer (useStreamQuery) doesn't
+    // need mode-specific handling.
+    if (request.mode === "graph") {
+      const graphResponse = await fetch(`${BASE_URL}/api/v1/graph/query`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem(ACCESS_TOKEN_KEY) || localStorage.getItem(LEGACY_ACCESS_TOKEN_KEY) || ""}`,
+          "X-Correlation-ID": correlationId,
+        },
+        body: JSON.stringify({
+          question: request.question,
+          workspace_id: request.workspace_id,
+          top_k: request.top_k_retrieve || 5,
+        }),
+        signal,
+      });
+      if (!graphResponse.ok) {
+        const err = await graphResponse.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${graphResponse.status}`);
+      }
+      const data = await graphResponse.json();
+      yield { type: "citations", content: data.citations || [] };
+      yield { type: "token", content: data.answer || "" };
+      yield {
+        type: "done",
+        latency_seconds: data.latency_seconds,
+        retrieved_count: data.vector_chunks,
+        reranked_count: (data.citations || []).length,
+        correlation_id: data.correlation_id,
+      };
+      return;
+    }
+
+    const isAgentMode = request.mode === "agent";
+    const url = isAgentMode ? `${BASE_URL}/api/v1/agent/query` : `${BASE_URL}/api/v1/query`;
+
+    // `mode` here is the top-level RAG/Agent/Graph chat mode used to pick the endpoint
+    // above — it must NOT be forwarded as-is into AgentQueryRequest.mode, which is a
+    // different enum (the agent's internal retrieval strategy: rag/crag/self_rag/graph/
+    // hybrid) and rejects "agent" with a 422. Drop it for the agent endpoint and let the
+    // backend use its own default.
+    const { mode: _uiMode, ...requestWithoutMode } = request;
+    const body = isAgentMode
+      ? { ...requestWithoutMode, stream: true, correlation_id: correlationId, workspace_id: request.workspace_id }
+      : { ...request, stream: true, correlation_id: correlationId, workspace_id: request.workspace_id };
+
     const response = await fetch(url, {
       method: "POST",
-      headers: { 
+      headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${localStorage.getItem(ACCESS_TOKEN_KEY) || localStorage.getItem(LEGACY_ACCESS_TOKEN_KEY) || ""}`,
         "X-Correlation-ID": correlationId,
       },
-      body: JSON.stringify({ 
-        ...request, 
-        stream: true,
-        correlation_id: correlationId,
-        workspace_id: request.workspace_id
-      }),
+      body: JSON.stringify(body),
       signal,
     });
 
@@ -585,6 +629,38 @@ const apiImpl = {
     apiClient.post(`/api/v1/apikeys/${keyId}/rotate`).then(r => r.data),
   getApiKeyUsage: (keyId) =>
     apiClient.get(`/api/v1/apikeys/${keyId}/usage`).then(r => r.data),
+
+  // ── Access Management: LLM Settings (per-workspace BYOK) ───────
+  listLlmProviders: () =>
+    apiClient.get("/api/v1/llm-settings/providers").then(r => r.data),
+  getLlmSettings: () =>
+    apiClient.get("/api/v1/llm-settings").then(r => r.data),
+  updateLlmSettings: (data) =>
+    apiClient.put("/api/v1/llm-settings", data).then(r => r.data),
+  deleteLlmSettings: () =>
+    apiClient.delete("/api/v1/llm-settings").then(r => r.data),
+  testLlmSettings: () =>
+    apiClient.post("/api/v1/llm-settings/test").then(r => r.data),
+
+  // ── Access Management: Billing (Stripe) ────────────────────────
+  listPlans: () =>
+    apiClient.get("/api/v1/billing/plans").then(r => r.data),
+  getSubscription: () =>
+    apiClient.get("/api/v1/billing/subscription").then(r => r.data),
+  getUsage: () =>
+    apiClient.get("/api/v1/billing/usage").then(r => r.data),
+  startCheckout: (plan) =>
+    apiClient.post("/api/v1/billing/checkout", { plan }).then(r => r.data),
+  openBillingPortal: () =>
+    apiClient.post("/api/v1/billing/portal").then(r => r.data),
+
+  // ── Access Management: SSO (OIDC) ───────────────────────────────
+  getSsoConfig: () =>
+    apiClient.get("/api/v1/sso/config").then(r => r.data),
+  updateSsoConfig: (data) =>
+    apiClient.put("/api/v1/sso/config", data).then(r => r.data),
+  deleteSsoConfig: () =>
+    apiClient.delete("/api/v1/sso/config").then(r => r.data),
 
   // ── Access Management: Audit Log ──────────────────────────────
   getAuditLogs: (params = {}) =>

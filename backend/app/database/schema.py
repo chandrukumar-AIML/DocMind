@@ -90,6 +90,13 @@ async def ensure_auth_schema() -> None:
                 else:
                     logger.debug(f"Index '{index_name}' already exists")
 
+        # Repair: user_role_enum was created without 'workspace_admin' in some
+        # environments (the value was added to the Python enum — app.auth.models.UserRole
+        # — and used by SSO JIT-provisioning, superadmin, and self-serve registration,
+        # but the DB enum type itself was never migrated). Safe to run every startup —
+        # ADD VALUE IF NOT EXISTS is a no-op once the value exists.
+        await conn.execute(text("ALTER TYPE user_role_enum ADD VALUE IF NOT EXISTS 'workspace_admin'"))
+
     logger.info("Auth database schema verified and repaired if needed")
 
 

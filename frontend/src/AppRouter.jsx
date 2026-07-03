@@ -8,6 +8,7 @@ import { APIKeyManager } from "./components/APIKeyManager";
 import { AuditLogViewer } from "./components/AuditLogViewer";
 import { SuperAdminDashboard } from "./components/SuperAdminDashboard";
 import { UnauthorizedPage } from "./components/UnauthorizedPage";
+import { LegalPage } from "./components/LegalPage";
 import { RoleGuard } from "./components/RoleGuard";
 // [OK] FIXED: Register navigator so axios interceptor can use React Router navigation
 // instead of window.location.href (which drops React state on hard reload)
@@ -26,6 +27,7 @@ export default function AppRouter() {
       {/* Public routes — no auth required */}
       <Route path="/invite/:token" element={<InviteAccept />} />
       <Route path="/unauthorized" element={<UnauthorizedPage />} />
+      <Route path="/legal/:doc" element={<LegalPage />} />
 
       {/* Auth-required full-page routes */}
       <Route path="/onboarding" element={<OnboardingWizard />} />

@@ -89,6 +89,8 @@ ffmpeg-python>=0.2.0,<0.3.0
 # ── Auth ─────────────────────────────────────────────────────
 python-jose[cryptography]>=3.3.0,<4.0.0
 passlib[bcrypt]>=1.7.4,<2.0.0
+cryptography>=42.0.0
+Authlib>=1.3.0,<2.0.0          # OIDC/SSO — discovery, PKCE, code exchange
 
 # ── Task Queue & WebSockets ──────────────────────────────────
 celery>=5.4.0,<6.0.0
@@ -109,6 +111,9 @@ httpx>=0.27.0,<1.0.0
 aiosmtplib>=3.0.0,<4.0.0       # Async SMTP for invite emails
 docusign-esign>=3.26.0,<4.0.0  # DocuSign e-signature API (3.26.0 is last 3.x release)
 Jinja2>=3.1.0,<4.0.0           # Email/report templates
+
+# ── Payments ─────────────────────────────────────────────────
+stripe>=9.0.0,<10.0.0          # Stripe Checkout + Billing Portal + webhook verification
 
 # ── Dev Tools ────────────────────────────────────────────────
 ruff>=0.4.0,<0.5.0

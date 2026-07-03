@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
-from typing import Optional, List, TYPE_CHECKING, Any
+from typing import Optional, List, TYPE_CHECKING, Any, Union
 
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
@@ -45,16 +45,17 @@ class FAISSVectorStore:
         self,
         embeddings: Optional["CachedOpenAIEmbeddings"] = None,
         chroma_store: Optional["ChromaVectorStore"] = None,
+        index_path: Optional[Union[str, Path]] = None,
     ):
         settings = get_settings()
-        self.index_path = Path(settings.faiss_index_path)
+        self.index_path = Path(index_path) if index_path else Path(settings.faiss_index_path)
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
 
         # ✅ FIXED: Lazy import embeddings to avoid circular import
         if embeddings is None:
             from .embeddings import CachedOpenAIEmbeddings
 
-            self.embeddings = CachedOpenAIEmbeddings(api_key=settings.openai_api_key)
+            self.embeddings = CachedOpenAIEmbeddings(api_key=settings.effective_embedding_api_key)
         else:
             self.embeddings = embeddings
 

@@ -20,7 +20,7 @@ from pydantic import BaseModel, ValidationError
 
 # DVMELTSS-M: Import shared LLM pool + config instead of creating duplicates
 from app.config import get_settings
-from app.core.llm_pool import get_llm
+from app.core.llm_pool import get_llm, get_llm_for_workspace
 from app.agent.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -174,9 +174,9 @@ Return ONLY valid JSON:
 }}
 """
     try:
-        # DVMELTSS-M: Use shared LLM pool with error handling
+        # DVMELTSS-M: Use shared LLM pool with error handling (BYOK-aware)
         try:
-            llm = get_llm(streaming=False)
+            llm = await get_llm_for_workspace(state.get("workspace_id", "default"), streaming=False)
         except Exception as e:
             logger.error(f"[{corr_id}] Failed to get LLM: {e}")
             raise
@@ -245,7 +245,7 @@ async def node_vector_retriever(state: AgentState) -> dict:
     filter_dict = state.get("filter_dict")
 
     try:
-        store = VectorStoreManager()
+        store = VectorStoreManager(workspace_id=state.get("workspace_id", "default"))
         expander = HyDEExpander()
 
         # ✅ FIXED: Use named helper functions to avoid lambda capture issues
@@ -365,9 +365,9 @@ Documents:
 {doc_snippets}"""
 
         try:
-            # DVMELTSS-M: Use shared LLM pool with error handling
+            # DVMELTSS-M: Use shared LLM pool with error handling (BYOK-aware)
             try:
-                llm = get_llm(streaming=False)
+                llm = await get_llm_for_workspace(state.get("workspace_id", "default"), streaming=False)
             except Exception as e:
                 logger.error(f"[{corr_id}] Failed to get LLM: {e}")
                 raise
@@ -445,9 +445,9 @@ Original question: {original}
 Return ONLY the rewritten question — no explanation."""
 
     try:
-        # DVMELTSS-M: Use shared LLM pool with error handling
+        # DVMELTSS-M: Use shared LLM pool with error handling (BYOK-aware)
         try:
-            llm = get_llm(streaming=False)
+            llm = await get_llm_for_workspace(state.get("workspace_id", "default"), streaming=False)
         except Exception as e:
             logger.error(f"[{corr_id}] Failed to get LLM: {e}")
             raise
@@ -542,9 +542,9 @@ Context:
 {context}"""
 
     try:
-        # ✅ FIXED: Use streaming LLM with astream + accumulate
+        # ✅ FIXED: Use streaming LLM with astream + accumulate (BYOK-aware)
         try:
-            llm_stream = get_llm(streaming=True)
+            llm_stream = await get_llm_for_workspace(state.get("workspace_id", "default"), streaming=True)
         except Exception as e:
             logger.error(f"[{corr_id}] Failed to get streaming LLM: {e}")
             raise
@@ -620,9 +620,9 @@ Return JSON:
 is_grounded = true only if ALL factual claims are supported by context."""
 
     try:
-        # DVMELTSS-M: Use shared LLM pool with error handling
+        # DVMELTSS-M: Use shared LLM pool with error handling (BYOK-aware)
         try:
-            llm = get_llm(streaming=False)
+            llm = await get_llm_for_workspace(state.get("workspace_id", "default"), streaming=False)
         except Exception as e:
             logger.error(f"[{corr_id}] Failed to get LLM: {e}")
             raise

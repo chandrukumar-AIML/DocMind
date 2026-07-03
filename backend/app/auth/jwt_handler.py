@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 # DVMELTSS-S: Constants for token types — prevents magic strings
 _TOKEN_TYPE_ACCESS: Final = "access"
 _TOKEN_TYPE_REFRESH: Final = "refresh"
+_TOKEN_TYPE_SSO_STATE: Final = "sso_state"
+_SSO_STATE_TTL_MINUTES: Final = 10
 
 # bcrypt has a 72-byte limit for passwords
 _BCRYPT_MAX_BYTES: Final = 72
@@ -255,6 +257,36 @@ def verify_access_token(token: str) -> Optional[dict]:
         return decode_token(token, expected_type=_TOKEN_TYPE_ACCESS)
     except JWTError as e:
         logger.debug(f"JWT access token verification failed: {e}")
+        return None
+
+
+def create_sso_state_token(workspace_id: str, code_verifier: str, nonce: str) -> str:
+    """
+    Build a self-contained, tamper-proof OAuth2 `state` parameter for the OIDC
+    authorization-code flow (see app/api/routes/sso.py).
+
+    Carries everything the /sso/callback route needs (workspace_id, PKCE code_verifier,
+    nonce) inside a short-lived signed JWT — no server-side session/Redis entry required
+    between the authorize redirect and the IdP's callback.
+    """
+    expire = datetime.now(timezone.utc) + timedelta(minutes=_SSO_STATE_TTL_MINUTES)
+    payload = {
+        "workspace_id": workspace_id,
+        "code_verifier": code_verifier,
+        "nonce": nonce,
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
+        "type": _TOKEN_TYPE_SSO_STATE,
+    }
+    return jwt.encode(payload, _get_jwt_secret(), algorithm=_get_jwt_algorithm())
+
+
+def verify_sso_state_token(token: str) -> Optional[dict]:
+    """Verify an SSO state token and return its claims. None if invalid/expired/tampered."""
+    try:
+        return decode_token(token, expected_type=_TOKEN_TYPE_SSO_STATE)
+    except JWTError as e:
+        logger.debug(f"SSO state token verification failed: {e}")
         return None
 
 

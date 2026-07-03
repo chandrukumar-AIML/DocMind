@@ -80,17 +80,35 @@ class Settings(BaseSettings):
     def parse_cors_origins(cls, v):
         return _parse_list_value(v, default=["http://localhost:3000", "http://127.0.0.1:3000"])
 
-    # -- OpenAI -------------------------------------------------
+    # -- OpenAI (or any OpenAI-compatible chat endpoint, e.g. Groq) ----
     openai_api_key: Optional[str] = Field(default=None)
     openai_chat_model: str = Field(default="gpt-4o")
     openai_embedding_model: str = Field(default="text-embedding-3-large")
+    openai_base_url: Optional[str] = Field(
+        default=None,
+        description=(
+            "Override base URL to point ChatOpenAI at an OpenAI-compatible provider "
+            "(e.g. Groq: https://api.groq.com/openai/v1). Leave unset for real OpenAI."
+        ),
+    )
+    embedding_api_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "Separate real-OpenAI key for embeddings, used when OPENAI_API_KEY/OPENAI_BASE_URL "
+            "point chat at a non-OpenAI provider (e.g. Groq has no embeddings API). "
+            "Leave unset to use local hash-based embeddings instead of OpenAI."
+        ),
+    )
     fallback_to_openai: bool = Field(default=True)
 
     @field_validator("openai_api_key")
     @classmethod
     def validate_openai_key(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and not v.startswith("sk-"):
-            logger.warning("⚠️ OPENAI_API_KEY format looks invalid (should start with 'sk-')")
+            logger.info(
+                "OPENAI_API_KEY doesn't start with 'sk-' — assuming an OpenAI-compatible "
+                "provider (e.g. Groq) via OPENAI_BASE_URL."
+            )
         return v
 
     # -- Ollama -------------------------------------------------
@@ -218,6 +236,34 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = Field(default=60, ge=5, le=1440)
     jwt_refresh_token_expire_days: int = Field(default=30, ge=1, le=90)
 
+    encryption_key: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("ENCRYPTION_KEY", "encryption_key"),
+        description=(
+            "Fernet key (32-byte urlsafe-base64) for encrypting secrets at rest, e.g. "
+            "per-workspace BYOK LLM API keys. Generate with: "
+            "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        ),
+    )
+
+    # -- Stripe billing ------------------------------------------
+    stripe_secret_key: Optional[str] = Field(
+        default=None,
+        description="Stripe secret key (sk_test_... / sk_live_...) — from the Stripe dashboard API keys page.",
+    )
+    stripe_publishable_key: Optional[str] = Field(
+        default=None,
+        description="Stripe publishable key (pk_test_... / pk_live_...) — safe to expose to the frontend.",
+    )
+    stripe_webhook_secret: Optional[str] = Field(
+        default=None,
+        description="Stripe webhook signing secret (whsec_...) — from the webhook endpoint's settings page.",
+    )
+    stripe_price_id_business: Optional[str] = Field(
+        default=None,
+        description="Stripe Price ID for the 'business' plan's recurring subscription — from the Stripe product catalog.",
+    )
+
     default_workspace_id: str = Field(
         default="default",
         validation_alias=AliasChoices("DEFAULT_WORKSPACE_ID", "default_workspace_id"),
@@ -269,6 +315,24 @@ class Settings(BaseSettings):
     @property
     def effective_bm25_cache_path(self) -> Path:
         return Path(self.bm25_cache_path or ".cache/bm25_index.pkl").resolve()
+
+    @property
+    def effective_embedding_api_key(self) -> Optional[str]:
+        """
+        Key to use for OpenAI embeddings, independent of the chat LLM provider.
+
+        - EMBEDDING_API_KEY set → use it explicitly.
+        - No OPENAI_BASE_URL (real OpenAI for chat too) → reuse OPENAI_API_KEY (unchanged
+          behavior for existing setups).
+        - OPENAI_BASE_URL set (chat routed at Groq/etc, whose keys aren't valid for the
+          real OpenAI embeddings API) → return None so embeddings fall back to the local
+          hash-based embedder instead of failing auth against OpenAI.
+        """
+        if self.embedding_api_key:
+            return self.embedding_api_key
+        if self.openai_base_url:
+            return None
+        return self.openai_api_key
 
     @field_validator("tmp_dir", "data_dir", "chroma_persist_dir")
     @classmethod

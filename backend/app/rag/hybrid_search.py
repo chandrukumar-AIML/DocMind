@@ -45,8 +45,14 @@ class HybridSearcher:
         bm25_corpus: Optional[List[str]] = None,
         semantic_weight: float = 0.6,
         keyword_weight: float = 0.4,
+        bm25_cache_path: Optional[Path] = None,
     ):
         self.store = store_manager
+        # Per-workspace isolation: without an explicit override, this falls back to
+        # the legacy global cache path (unchanged default behavior). Callers scoped to
+        # a specific workspace should pass get_bm25_index_path(workspace_id) — otherwise
+        # BM25 keyword hits would return other workspaces' actual document content.
+        self._bm25_cache_path = bm25_cache_path
         self._bm25: Optional[BM25Okapi] = None
         self._bm25_docs: List[Document] = []
 
@@ -151,7 +157,7 @@ class HybridSearcher:
             return
         try:
             # FIXED: Use settings-based cache path
-            cache_path = _get_bm25_cache_path()
+            cache_path = self._bm25_cache_path or _get_bm25_cache_path()
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             temp_path = cache_path.with_suffix(".tmp")
             with open(temp_path, "wb") as f:
@@ -165,7 +171,7 @@ class HybridSearcher:
 
     def _load_bm25_from_cache(self) -> bool:
         """Load BM25 index from disk cache."""
-        cache_path = _get_bm25_cache_path()
+        cache_path = self._bm25_cache_path or _get_bm25_cache_path()
         if cache_path.exists():
             try:
                 with open(cache_path, "rb") as f:
@@ -182,7 +188,7 @@ class HybridSearcher:
 
     def clear_cache(self):
         """Clear BM25 cache file."""
-        cache_path = _get_bm25_cache_path()
+        cache_path = self._bm25_cache_path or _get_bm25_cache_path()
         if cache_path.exists():
             try:
                 cache_path.unlink()

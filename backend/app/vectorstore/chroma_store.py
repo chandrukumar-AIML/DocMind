@@ -64,16 +64,32 @@ class ChromaVectorStore:
     - Correlation ID tracing for distributed debugging
     """
 
-    def __init__(self, embeddings: Optional["CachedOpenAIEmbeddings"] = None):
+    def __init__(
+        self,
+        embeddings: Optional["CachedOpenAIEmbeddings"] = None,
+        collection_name: Optional[str] = None,
+        persist_directory: Optional[str] = None,
+    ):
         settings = get_settings()
-        self.persist_dir = settings.chroma_persist_dir
-        self.collection_name = settings.chroma_collection_name
+        self.persist_dir = persist_directory or settings.chroma_persist_dir
+        self.collection_name = collection_name or settings.chroma_collection_name
+
+        # Per-workspace isolation: only derive scoped registry/parents collection names
+        # when an explicit collection_name was supplied — otherwise keep today's exact
+        # legacy names so the default (no-workspace) call pattern stays byte-for-byte
+        # unchanged and doesn't orphan existing data.
+        if collection_name is None:
+            self.registry_collection_name = REGISTRY_COLLECTION
+            self.parents_collection_name = "parents"
+        else:
+            self.registry_collection_name = f"{self.collection_name}_registry"
+            self.parents_collection_name = f"{self.collection_name}_parents"
 
         # ✅ FIXED: Lazy import embeddings to avoid circular import
         if embeddings is None:
             from .embeddings import CachedOpenAIEmbeddings
 
-            self.embeddings = CachedOpenAIEmbeddings(api_key=settings.openai_api_key)
+            self.embeddings = CachedOpenAIEmbeddings(api_key=settings.effective_embedding_api_key)
         else:
             self.embeddings = embeddings
 
@@ -84,7 +100,7 @@ class ChromaVectorStore:
             embedding_function=self.embeddings,
         )
         # Pre-create registry collection to avoid warnings on fresh stores
-        self._client.get_or_create_collection(REGISTRY_COLLECTION)
+        self._client.get_or_create_collection(self.registry_collection_name)
         logger.info(
             f"ChromaDB initialized: dir={self.persist_dir}, "
             f"collection={self.collection_name}, "
@@ -190,7 +206,7 @@ class ChromaVectorStore:
         if not parents:
             return []
 
-        parent_collection = self._client.get_or_create_collection("parents")
+        parent_collection = self._client.get_or_create_collection(self.parents_collection_name)
         ids, docs, metadatas = [], [], []
 
         for parent in parents:
@@ -277,7 +293,7 @@ class ChromaVectorStore:
         safe_id = sanitize_chroma_key(parent_id)
 
         try:
-            collection = self._client.get_collection("parents")
+            collection = self._client.get_collection(self.parents_collection_name)
             result = collection.get(ids=[safe_id])
             if result["documents"]:
                 return result["documents"][0]
@@ -336,7 +352,7 @@ class ChromaVectorStore:
         """
         corr_id = correlation_id or generate_vectorstore_correlation_id("chroma_list")
         try:
-            registry = self._client.get_or_create_collection(REGISTRY_COLLECTION)
+            registry = self._client.get_or_create_collection(self.registry_collection_name)
             result = registry.get(include=["metadatas"])
             metadatas = result.get("metadatas") or []
             if metadatas:
@@ -390,7 +406,7 @@ class ChromaVectorStore:
 
     def _update_document_registry(self, chunks: list[Document], correlation_id: str):
         """Update registry with new document metadata (idempotent upsert)."""
-        registry = self._client.get_or_create_collection(REGISTRY_COLLECTION)
+        registry = self._client.get_or_create_collection(self.registry_collection_name)
         seen_files: dict[str, dict] = {}
 
         for chunk in chunks:
@@ -433,7 +449,7 @@ class ChromaVectorStore:
 
         # ✅ Also remove from registry and parent collection
         try:
-            registry = self._client.get_collection(REGISTRY_COLLECTION)
+            registry = self._client.get_collection(self.registry_collection_name)
             safe_id = sanitize_chroma_key(source_file, prefix="doc")
             registry.delete(ids=[safe_id])
         except Exception:
@@ -441,7 +457,7 @@ class ChromaVectorStore:
 
         # ✅ Delete parent chunks for this document
         try:
-            parent_collection = self._client.get_collection("parents")
+            parent_collection = self._client.get_collection(self.parents_collection_name)
             parent_results = parent_collection.get(
                 where={"source_file": safe_source},
                 include=["metadatas"],

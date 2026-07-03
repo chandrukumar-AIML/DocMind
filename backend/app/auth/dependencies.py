@@ -206,6 +206,34 @@ def _extract_token(request: Request, credentials: Optional[HTTPAuthorizationCred
     return None
 
 
+def _api_key_user_from_state(request: Request, corr_id: str) -> Optional[AuthenticatedUser]:
+    """
+    Build an AuthenticatedUser from API-key context set by ApiKeyAuthMiddleware.
+
+    Returns None when the request was not authenticated via an API key. The synthetic
+    identity carries the key's workspace and a role derived from its scopes ("write"
+    scope → editor, otherwise viewer), so existing role checks (assert_can_write, etc.)
+    work unchanged.
+    """
+    workspace_id = getattr(request.state, "api_key_workspace_id", None)
+    if not workspace_id:
+        return None
+
+    scopes = getattr(request.state, "api_key_scopes", None) or []
+    key_id = getattr(request.state, "api_key_id", "unknown")
+    role = UserRole.EDITOR.value if "write" in scopes else UserRole.VIEWER.value
+
+    api_user = AuthenticatedUser(
+        user_id=f"apikey:{key_id}",
+        email=f"apikey-{key_id}@apikey.documind.ai",
+        workspace_id=workspace_id,
+        role=role,
+        is_superuser=False,
+    )
+    logger.info(f"[{corr_id}] Auth success via API key: workspace={workspace_id} scopes={scopes}")
+    return api_user.with_correlation_id(corr_id)
+
+
 async def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
@@ -229,6 +257,13 @@ async def get_current_user(
 
     token = _extract_token(request, credentials)
     if not token:
+        # API-key auth: ApiKeyAuthMiddleware validates `Authorization: ApiKey dmk_...`
+        # up front and populates request.state. When present, build an
+        # AuthenticatedUser from that context so protected routes work for
+        # server-to-server clients without a JWT.
+        api_user = _api_key_user_from_state(request, corr_id)
+        if api_user is not None:
+            return api_user
         logger.warning(f"[{corr_id}] Auth failed: missing token (no cookie, no Bearer header)")
         raise _auth_error(
             "Authentication required. Provide Bearer token.",

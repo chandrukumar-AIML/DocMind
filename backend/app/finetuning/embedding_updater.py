@@ -304,7 +304,7 @@ class EmbeddingUpdater:
             logger.info(f"[{corr_id}] Rebuilding FAISS index...")
             from app.vectorstore.store_manager import VectorStoreManager
 
-            store = VectorStoreManager()
+            store = VectorStoreManager(workspace_id=self.workspace_id)
             store.faiss._rebuild_from_chroma()
             logger.info(f"[{corr_id}] FAISS rebuilt.")
 

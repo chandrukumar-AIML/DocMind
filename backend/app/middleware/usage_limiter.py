@@ -130,6 +130,7 @@ class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
                 )
             request.state.api_key_workspace_id = ctx["workspace_id"]
             request.state.api_key_scopes = ctx["scopes"]
+            request.state.api_key_id = ctx["key_id"]
             request.state.workspace_id = ctx["workspace_id"]
         except Exception as e:
             logger.error(f"[ApiKeyAuth] Validation error: {e}")
