@@ -49,6 +49,7 @@ RUN pip install \
     "pydantic-settings>=2.2.0,<3.0.0" \
     "sqlalchemy>=2.0.30,<3.0.0" \
     "asyncpg>=0.29.0,<0.30.0" \
+    "psycopg2-binary>=2.9.0,<3.0.0" \
     "python-jose[cryptography]>=3.3.0,<4.0.0" \
     --upgrade
 
