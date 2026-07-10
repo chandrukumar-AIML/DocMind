@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
+import { useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { Toaster, toast } from "react-hot-toast";
 import { useStreamQuery } from "./hooks/useStreamQuery";
 import { useIngest } from "./hooks/useIngest";
@@ -8,6 +8,7 @@ import { useUIPrefs } from "./hooks/useUIPrefs";
 import { useAgentSteps } from "./hooks/useAgentSteps";
 import { useDocBrief } from "./hooks/useDocBrief";
 import { useExtraction } from "./hooks/useExtraction";
+import useAppStore from "./store/useAppStore";
 import { ChatWindow } from "./components/ChatWindow";
 import { ChatInput } from "./components/ChatInput";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -31,10 +32,12 @@ export default function App() {
 
   const { documents, loadingDocs, loadError, refresh: refreshDocuments, retryRef } = useDocuments({ getCurrentWorkspace, user });
 
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [queryMode,    setQueryMode]    = useState("rag");
-  const [showCompare,  setShowCompare]  = useState(false);
-  const [showPdfViewer, setShowPdfViewer] = useState(false);
+  const {
+    selectedFile, setSelectedFile, clearSelectedFile,
+    queryMode, setQueryMode,
+    showCompare, openCompare, closeCompare,
+    showPdfViewer, togglePdfViewer, closePdfViewer,
+  } = useAppStore();
 
   const abortRef = useRef(null);
 
@@ -89,10 +92,10 @@ export default function App() {
   }, [messages, sessionId, addConvHistory]);
 
   const handleWorkspaceSwitch = useCallback((wsId) => {
-    setSelectedFile(null);
+    clearSelectedFile();
     clear();
     refreshDocuments(wsId);
-  }, [clear, refreshDocuments]);
+  }, [clear, refreshDocuments, clearSelectedFile]);
 
   const { upload, uploadBatch, uploading, progress, batchQueue } = useIngest(() => refreshDocuments());
 
@@ -118,9 +121,9 @@ export default function App() {
   }, [submit, selectedFile, getCurrentWorkspace, queryMode]);
 
   const handleDocumentDeleted = useCallback((file) => {
-    if (selectedFile === file) setSelectedFile(null);
+    if (selectedFile === file) clearSelectedFile();
     refreshDocuments();
-  }, [selectedFile, refreshDocuments]);
+  }, [selectedFile, clearSelectedFile, refreshDocuments]);
 
   const handleExportConversation = useCallback(() => downloadConversationMarkdown(messages), [messages]);
   const handleExportPDF          = useCallback(() => printConversationPdf(messages),         [messages]);
@@ -192,7 +195,7 @@ export default function App() {
         }}
         pdf={{
           show:     showPdfViewer,
-          onToggle: () => setShowPdfViewer(v => !v),
+          onToggle: togglePdfViewer,
         }}
         extract={{
           loading:   extracting,
@@ -230,7 +233,7 @@ export default function App() {
           onModeChange={setQueryMode}
           documents={documents}
           messages={messages}
-          onCompare={() => setShowCompare(true)}
+          onCompare={openCompare}
           onExportMarkdown={handleExportConversation}
           onExportPdf={handleExportPDF}
           onClear={clear}
@@ -265,7 +268,7 @@ export default function App() {
               <span style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 600 }}>
                 📄 {selectedFile.split("/").pop().split("\\").pop()}
               </span>
-              <button className="topbar-btn" onClick={() => setShowPdfViewer(false)} aria-label="Close PDF viewer">✕</button>
+              <button className="topbar-btn" onClick={closePdfViewer} aria-label="Close PDF viewer">✕</button>
             </div>
             <ErrorBoundary>
               <Suspense fallback={<div className="panel-empty" style={{ padding: 24 }}>Loading PDF viewer…</div>}>
@@ -303,7 +306,7 @@ export default function App() {
         <DocCompare
           documents={documents}
           workspaceId={currentWorkspace?.workspace_id}
-          onClose={() => setShowCompare(false)}
+          onClose={closeCompare}
         />
       )}
 
