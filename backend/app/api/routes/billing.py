@@ -1,4 +1,3 @@
-# backend/app/api/routes/billing.py
 """Stripe billing — plan listing, checkout, customer portal, and webhook sync."""
 
 from __future__ import annotations

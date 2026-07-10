@@ -1,7 +1,3 @@
-# backend/app/api/routes/ingest.py
-# DVMELTSS-FIX: V/E/M/S + OWASP-3/9 + BATMAN-A
-# ✅ FIXED: Proper RateLimiter usage + input validation + safe file streaming + timeout handling
-# ✅ ADDED: Audio (MP3/MP4/WAV), DOCX, and XLSX ingestion routes via UniversalIngestionPipeline
 
 from __future__ import annotations
 
@@ -47,10 +43,8 @@ from app.core.ocr_utils import detect_language_vectorized
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
-# ✅ FIXED: Use proper RateLimiter with workspace-scoped keys (not constructor params)
 # Rate limiting is handled per-request via check_async in the endpoint
 
-# ✅ NEW: Operation timeouts (seconds)
 _OCR_TIMEOUT: Final = 300.0
 _CHUNKING_TIMEOUT: Final = 60.0
 _VECTOR_STORE_TIMEOUT: Final = 120.0
@@ -81,7 +75,6 @@ def _validate_file_magic(content: bytes, claimed_suffix: str) -> bool:
     return claimed_suffix in ALLOWED_EXTENSIONS
 
 
-# ✅ NEW: Input validation helper
 def _validate_ingest_inputs(
     file: Optional[UploadFile],
     options: Optional[str],
@@ -126,7 +119,6 @@ async def ingest_document(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
 
-    # ✅ FIXED: Proper rate limiting using RateLimiter.check_async with workspace-scoped key
     rate_limiter = RateLimiter()
     rate_key = f"ingest:{user.workspace_id}:{user.user_id}"
 
@@ -193,10 +185,25 @@ async def ingest_document(
 
     content = b"".join(chunks_read)
 
-    # ✅ Accurate plan-limit check now that the real file size is known — the middleware
-    # already did a fast coarse pre-check before this handler ran, but with a 0.1MB stub
-    # (real size isn't known until the file is read). Reject here with the real size
-    # BEFORE the expensive OCR/embedding pipeline starts.
+    # Magic-byte content validation — prevents polyglot files and disguised uploads.
+    # The format detector inspects actual file bytes, not the Content-Type header.
+    try:
+        from app.ingestion.format_detector import FormatDetector
+        detector = FormatDetector()
+        detected = detector.detect(content, filename=file.filename or "")
+        if detected.format == "unknown":
+            raise HTTPException(
+                status_code=415,
+                detail=(
+                    f"Unsupported or unrecognised file format: '{file.filename}'. "
+                    "Supported: PDF, DOCX, XLSX, PNG, JPG, MP3, WAV, MP4, TXT."
+                ),
+            )
+    except HTTPException:
+        raise
+    except Exception as detect_err:
+        logger.warning(f"[{corr_id}] Format detection failed (non-blocking): {detect_err}")
+
     ok, limit_msg = await check_doc_limit(user.workspace_id)
     if not ok:
         raise HTTPException(status_code=429, detail=limit_msg)
@@ -886,8 +893,4 @@ def get_ingest_metadata() -> dict[str, Any]:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["router", "get_ingest_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

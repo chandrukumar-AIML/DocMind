@@ -1,8 +1,3 @@
-# backend/app/tasks/ingest_tasks.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, M - Modular
-# BATMAN-FIX: A - True async, T - Timeout guards, M - Memory safety
-# ASCALE-FIX: E - Error propagation, L - Logging
-# ✅ FIXED: Proper async handling in Celery + input validation + per-stage timeouts
 
 from __future__ import annotations
 
@@ -27,7 +22,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# ✅ NEW: Stage timeout constants (in seconds)
 _OCR_TIMEOUT: Final = 300
 _EMBEDDING_TIMEOUT: Final = 180
 _GRAPH_TIMEOUT: Final = 120
@@ -75,7 +69,6 @@ class IngestTask(Task):
         )
 
 
-# ✅ NEW: Input validation helper
 def _validate_ingest_inputs(
     file_path: str,
     filename: str,
@@ -190,7 +183,6 @@ def ingest_document(
                     correlation_id=corr_id,  # ✅ FIXED: Propagate correlation_id
                 )
 
-        # ✅ FIXED: Wrap sync pipeline.ingest() in run_async_in_task for safety
         ingest_result: IngestResult = run_async_in_task(
             lambda: pipeline.ingest(
                 file_path=str(file_path_obj),
@@ -249,7 +241,6 @@ def ingest_document(
                 details={"embedded": i, "total": total_chunks},
                 correlation_id=corr_id,
             )
-            # ✅ FIXED: Run sync store calls in thread executor to avoid blocking
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
@@ -301,7 +292,6 @@ def ingest_document(
                     workspace_id=workspace_id,
                 )
 
-                # ✅ FIXED: Use config-driven cap instead of hardcoded 50
                 max_graph_chunks = getattr(settings, "graph_max_chunks_for_extraction", 50)
                 extraction_results = extractor.extract_from_document(
                     chunks=child_chunks[:max_graph_chunks],
@@ -363,7 +353,6 @@ def ingest_document(
 
             registry = VersionRegistry()
 
-            # ✅ FIXED: Use run_async_in_task helper instead of asyncio.run()
             async def _register():
                 return await registry.register_version(
                     source_file=filename,
@@ -394,7 +383,6 @@ def ingest_document(
             from app.retrieval import get_bm25_index
 
             bm25 = get_bm25_index(workspace_id)
-            # ✅ FIXED: Run sync BM25 call in thread executor
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
@@ -448,7 +436,6 @@ def ingest_document(
             error=str(exc),
             correlation_id=corr_id,
         )
-        # ✅ FIXED: Proper cleanup on failure
         try:
             Path(file_path).unlink(missing_ok=True)
         except OSError:
@@ -481,8 +468,4 @@ def get_ingest_task_metadata() -> dict[str, Any]:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["ingest_document", "IngestTask", "get_ingest_task_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

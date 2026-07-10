@@ -1,4 +1,3 @@
-# backend/app/api/routes/templates.py
 """Extraction template builder API: create, list, extract, and view results."""
 
 from __future__ import annotations
@@ -226,22 +225,3 @@ async def get_extraction_results(
         "correlation_id": corr_id,
     }
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke():
-        print("Template routes smoke test")
-        field = TemplateField(
-            name="invoice_number",
-            type="string",
-            description="Invoice number",
-            required=True,
-        )
-        assert field.type in _VALID_FIELD_TYPES
-        req = TemplateCreateRequest(name="My Invoice", fields=[field])
-        assert len(req.fields) == 1
-        print("TemplateCreateRequest validation OK")
-        print("Template routes checks passed")
-
-    asyncio.run(smoke())

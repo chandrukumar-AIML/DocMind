@@ -1,11 +1,3 @@
-# backend/app/retrieval/dense_retriever.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async
-# BATMAN-FIX: A - True async, M - Memory safety
-# ✅ FIXED: Safe sync wrapper (no deadlock in FastAPI)
-# ✅ FIXED: VectorStoreManager initialized in __init__ (not lazy in async path)
-# ✅ FIXED: Query embedding dimension validation
-# ✅ FIXED: Memory guard on embedding size
-# ✅ FIXED: Safe import fallback for safe_vector_search
 
 from __future__ import annotations
 import asyncio
@@ -89,7 +81,6 @@ class DenseRetriever:
     def __init__(self, workspace_id: str = "default"):
         self.workspace_id = workspace_id
         self.settings = get_settings()
-        # ✅ FIXED: Initialize store manager in __init__ (not lazy in async path)
         # This ensures blocking init happens before any async calls
         try:
             self._store_manager = VectorStoreManager(workspace_id=workspace_id)
@@ -118,17 +109,14 @@ class DenseRetriever:
         # DVMELTSS-V: Validate top_k
         k = validate_top_k(k, max_k=_MAX_TOP_K)
 
-        # ✅ NEW: Validate query embedding
         if not query_embedding:
             logger.warning(f"[{corr_id}] Empty query embedding")
             return []
 
-        # ✅ NEW: Memory safety — reject huge embeddings
         if len(query_embedding) > _MAX_EMBEDDING_DIM:
             logger.error(f"[{corr_id}] Query embedding too large: {len(query_embedding)} > {_MAX_EMBEDDING_DIM}")
             return []
 
-        # ✅ NEW: Validate dimension matches expected (if known)
         expected_dim = getattr(self.settings, "embedding_dimension", None)
         if expected_dim and len(query_embedding) != expected_dim:
             logger.warning(
@@ -204,8 +192,4 @@ class DenseRetriever:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["DenseRetriever", "DenseRetrievalResult"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

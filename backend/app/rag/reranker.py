@@ -1,6 +1,3 @@
-# backend/app/rag/reranker.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Security
-# BATMAN-FIX: M - Memory safety, A - Async-ready
 from __future__ import annotations
 import logging
 from typing import Optional, List, Tuple
@@ -84,7 +81,6 @@ class CrossEncoderReranker:
         # Create query-document pairs for scoring
         pairs = [(query, doc.page_content) for doc in documents]
 
-        # FIXED: Score with memory-safe batching
         scores = self._score_in_batches(pairs, corr_id)
 
         # Pair documents with scores
@@ -110,7 +106,6 @@ class CrossEncoderReranker:
 
         for i in range(0, len(pairs), self.batch_size):
             batch = pairs[i : i + self.batch_size]
-            # FIXED: Check token count to prevent OOM
             total_tokens = sum(len(q) + len(d) for q, d in batch)
             if total_tokens > self.max_batch_tokens * len(batch):
                 logger.warning(f"[{corr_id}] Batch too large, reducing size")
@@ -118,7 +113,6 @@ class CrossEncoderReranker:
 
             try:
                 raw_scores = self.model.predict(batch, convert_to_numpy=True)
-                # FIXED: Use centralized normalization
                 normalized = [normalize_rerank_score(float(s)) for s in raw_scores]
                 all_scores.extend(normalized)
             except Exception as e:
@@ -163,8 +157,4 @@ def get_reranker(
 
 __all__ = ["CrossEncoderReranker", "get_reranker"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

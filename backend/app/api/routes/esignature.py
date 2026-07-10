@@ -1,4 +1,3 @@
-# backend/app/api/routes/esignature.py
 """E-signature API: request signatures, status, DocuSign callbacks, in-app signing."""
 
 from __future__ import annotations
@@ -170,20 +169,3 @@ async def docusign_webhook(request: Request) -> dict[str, Any]:
         logger.error(f"DocuSign callback error: {e}")
     return {"received": True}
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke():
-        print("E-signature routes smoke test")
-        signer = SignerInfo(name="Alice Sharma", email="alice@example.com", order=1)
-        req = ESignRequest(
-            source_file="contracts/agreement.pdf",
-            signers=[signer],
-        )
-        assert len(req.signers) == 1
-        assert req.signers[0].email == "alice@example.com"
-        print("ESignRequest validation OK")
-        print("E-signature routes checks passed")
-
-    asyncio.run(smoke())

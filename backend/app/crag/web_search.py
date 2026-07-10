@@ -1,7 +1,3 @@
-# backend/app/crag/web_search.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, M - Modular
-# BATMAN-FIX: A - Async (to_thread), T - Time complexity (retry backoff)
-# OWASP-FIX: 1 - Search injection prevention, 9 - Safe ID generation
 
 from __future__ import annotations
 
@@ -109,7 +105,6 @@ class WebSearcher:
         last_error = None
         for attempt in range(self.retry_attempts + 1):
             try:
-                # FIXED: Lazy import with clear error message
                 from duckduckgo_search import DDGS
 
                 # Context manager ensures proper connection cleanup
@@ -124,7 +119,6 @@ class WebSearcher:
                 if attempt < self.retry_attempts:
                     wait = _RETRY_DELAY_BASE * (2**attempt)
                     logger.warning(f"[{corr_id}] Web search attempt {attempt+1} failed: {e}. Retrying in {wait}s...")
-                    # FIXED: Use time.sleep only in sync method (acceptable here)
                     import time
 
                     time.sleep(wait)
@@ -150,7 +144,6 @@ class WebSearcher:
                 metadata={
                     "source_file": f"web:{href}",
                     "page_number": 0,
-                    # FIXED: Use centralized ID generator
                     "chunk_id": generate_web_result_id(href, safe_query),
                     "parent_id": "",
                     "block_type": "web_result",
@@ -192,11 +185,9 @@ class WebSearcher:
             logger.warning(f"[{corr_id}] Web search skipped: empty query after sanitization")
             return WebSearchResult(query=query, documents=[], result_count=0)
 
-        # FIXED: Retry logic with asyncio.sleep (non-blocking)
         last_error = None
         for attempt in range(self.retry_attempts + 1):
             try:
-                # FIXED: Lazy import with clear error message
                 from duckduckgo_search import DDGS
 
                 # Run blocking DDGS call in thread pool
@@ -210,7 +201,6 @@ class WebSearcher:
                 if attempt < self.retry_attempts:
                     wait = _RETRY_DELAY_BASE * (2**attempt)
                     logger.warning(f"[{corr_id}] Web search attempt {attempt+1} failed: {e}. Retrying in {wait}s...")
-                    # FIXED: Non-blocking sleep for async context
                     await asyncio.sleep(wait)
                 else:
                     logger.error(f"[{corr_id}] Web search failed after {self.retry_attempts+1} attempts: {e}")
@@ -260,8 +250,4 @@ class WebSearcher:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["WebSearcher", "WebSearchResult"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

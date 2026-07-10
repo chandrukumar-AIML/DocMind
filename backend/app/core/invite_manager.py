@@ -1,4 +1,3 @@
-# backend/app/core/invite_manager.py
 """
 Invite manager — creates invite records, sends emails, validates tokens,
 accepts invites (creates user + marks invite accepted).
@@ -564,19 +563,3 @@ async def get_onboarding_progress(workspace_id: str) -> dict[str, bool]:
         "api_key_created": key_count >= 1,
     }
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def _test():
-        print("Testing invite_manager…")
-        await ensure_invite_schema()
-        print("  Schema ensured.")
-        # Test token generation
-        raw, token_hash, prefix = _make_token()
-        assert len(raw) > 20
-        assert _hash_token(raw) == token_hash
-        print(f"  Token OK: prefix={prefix}")
-        print("Done.")
-
-    asyncio.run(_test())

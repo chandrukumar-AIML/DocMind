@@ -1,8 +1,3 @@
-# backend/app/evaluation/langsmith_dataset.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
-# OWASP-FIX: 7 - PII protection for ground truth storage
-# ✅ FIXED: Proper sync retry + safe arg passing + input validation
 
 from __future__ import annotations
 
@@ -31,7 +26,6 @@ _LANGSMITH_RETRY_CONFIG: Final = RetryConfig(
     exceptions=(Exception,),
 )
 
-# ✅ NEW: Timeout for LangSmith API calls (seconds)
 _LANGSMITH_TIMEOUT: Final = 60.0
 
 
@@ -58,7 +52,6 @@ class EvalRunResult:
         }
 
 
-# ✅ NEW: Input validation helper
 def _validate_dataset_inputs(
     examples: Optional[List[Dict[str, Any]]],
     batch_size: int,
@@ -126,14 +119,12 @@ class LangSmithEvalDataset:
             return False
 
         try:
-            # ✅ FIXED: Safe list conversion for generator
             datasets = list(self._client.list_datasets(dataset_name=self.dataset_name))
 
             if datasets:
                 self._dataset = datasets[0]
                 logger.info(f"[{corr_id}] Using existing dataset: {self.dataset_name} (id={self._dataset.id})")
             else:
-                # FIXED: Use centralized metadata helper
                 from app.observability.langsmith_config import get_dataset_metadata
 
                 metadata = get_dataset_metadata(self.dataset_name, correlation_id=corr_id)
@@ -207,7 +198,6 @@ class LangSmithEvalDataset:
                     "filter_dict": ex.get("filter_dict", {}),
                 }
             )
-            # FIXED: Use centralized PII scrubbing
             outputs.append(
                 {
                     "answer": scrub_pii_for_evaluation(ex["ground_truth"], domain="general"),
@@ -222,7 +212,6 @@ class LangSmithEvalDataset:
             batch_inputs = inputs[i : i + batch_size]
             batch_outputs = outputs[i : i + batch_size]
             try:
-                # ✅ FIXED: Use sync retry wrapper (not async decorator)
                 def _do_upload():
                     return self._client.create_examples(
                         inputs=batch_inputs,
@@ -278,7 +267,6 @@ class LangSmithEvalDataset:
         Returns:
             Number of examples added
         """
-        # ✅ FIXED: Use functools.partial for safe arg passing to run_in_executor
         func = functools.partial(
             self.add_examples,
             examples=examples,
@@ -326,7 +314,6 @@ class LangSmithEvalDataset:
 
             settings = get_settings()
 
-            # FIXED: Merge correlation_id into metadata
             eval_metadata = {**(metadata or {}), "version": settings.app_version}
             if correlation_id:
                 eval_metadata["correlation_id"] = correlation_id
@@ -340,7 +327,6 @@ class LangSmithEvalDataset:
                 metadata=eval_metadata,
             )
 
-            # ✅ FIXED: Safe attribute access for different result types
             experiment_url = None
             if results:
                 exp_id = getattr(results, "experiment_id", None)
@@ -351,7 +337,6 @@ class LangSmithEvalDataset:
                         f"{self._dataset.id}/compare?selectedSessions={exp_id}"
                     )
 
-            # ✅ FIXED: Safe results extraction
             n_examples = 0
             if hasattr(results, "results") and results.results:
                 n_examples = len(results.results)
@@ -413,8 +398,4 @@ __all__ = [
     "get_langsmith_dataset_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

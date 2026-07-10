@@ -1,4 +1,3 @@
-# backend/app/api/routes/annotations.py
 """Collaborative annotation API with WebSocket real-time broadcast."""
 
 from __future__ import annotations
@@ -223,22 +222,3 @@ async def annotation_ws(
     except WebSocketDisconnect:
         _manager.disconnect(websocket, workspace_id, source_file)
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke():
-        print("Annotation routes smoke test")
-        mgr = _ConnectionManager()
-        assert mgr._rooms == {}
-        req = AnnotationCreateRequest(
-            source_file="test.pdf",
-            type="comment",
-            content="This clause looks risky",
-            page_number=3,
-        )
-        assert req.type == "comment"
-        print("AnnotationCreateRequest validation OK")
-        print("Annotation routes checks passed")
-
-    asyncio.run(smoke())

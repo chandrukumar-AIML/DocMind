@@ -1,7 +1,3 @@
-# backend/app/core/monitoring_utils.py
-# DVMELTSS-FIX: M - Modular, A - Async, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - True async for monitoring operations
 """
 Shared utilities for monitoring modules.
 
@@ -172,8 +168,4 @@ __all__ = [
     "generate_monitoring_correlation_id",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

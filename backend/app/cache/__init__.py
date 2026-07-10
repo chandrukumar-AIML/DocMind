@@ -1,8 +1,3 @@
-# backend/app/cache/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Logging/Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - Async-safe initialization
-# ✅ FINAL FIX: Correct singleton management + clean lazy imports + test-safe reset
 
 """
 DocuMind AI - Query Cache Module
@@ -101,7 +96,6 @@ async def init_cache() -> "QueryCache":
     Returns:
         QueryCache: The initialized cache instance.
     """
-    # ✅ FIXED: Just call get_cache() and return the global instance
     await get_cache()
     return _cache_instance  # type: ignore[return-value]
 

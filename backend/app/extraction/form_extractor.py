@@ -1,10 +1,3 @@
-# backend/app/extraction/form_extractor.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, T - Exponential backoff
-# OWASP-FIX: 1 - Prompt escaping, 7 - Safe field handling
-# ✅ FIXED: Safe sync wrapper (no deadlock in FastAPI)
-# ✅ FIXED: Retry logic moved to class method for testability
-# ✅ FIXED: Input validation + safe field_dict building + prompt escaping
 
 from __future__ import annotations
 
@@ -191,7 +184,6 @@ class FormExtractor:
     - Async-safe interface for FastAPI integration
     """
 
-    # FIXED: Expanded heuristic keywords for form detection
     _FORM_KEYWORDS: Final = frozenset(
         {
             "invoice",
@@ -225,14 +217,12 @@ class FormExtractor:
     )
 
     def __init__(self, model: str = "gpt-4o", max_retries: int = _MAX_RETRIES):
-        # FIXED: Use centralized vision LLM pool
         self.client = get_vision_llm(model_override=model, timeout=30.0)
         self.model = model
         self.max_retries = max_retries
 
         logger.info(f"FormExtractor initialized: model={model}, async=True")
 
-    # ✅ NEW: Input validation helper
     def _validate_form_text(self, text: str, corr_id: str) -> tuple[bool, str]:
         """Validate form text before processing."""
         if not text:
@@ -245,7 +235,6 @@ class FormExtractor:
             logger.warning(f"[{corr_id}] Text too large ({len(text)} chars) — truncating to {_MAX_TEXT_LENGTH}")
         return True, ""
 
-    # ✅ FIXED: Moved retry logic to dedicated method for testability
     @retry_async(
         config=RetryConfig(
             max_attempts=_MAX_RETRIES,
@@ -256,7 +245,6 @@ class FormExtractor:
     )
     async def _call_vision_api(self, prompt: str, corr_id: str):
         """Call vision LLM with retry logic."""
-        # ✅ FIXED: Run sync OpenAI call in thread to avoid blocking event loop
         if sys.version_info >= (3, 9):
             return await asyncio.to_thread(
                 self.client.chat.completions.create,
@@ -324,7 +312,6 @@ class FormExtractor:
         """DVMELTSS-E: Async LLM call with centralized retry + structured validation."""
         corr_id = correlation_id or "form_unknown"
 
-        # FIXED: Use centralized prompt escaping
         safe_prompt = escape_prompt_content(prompt)
 
         # Token safety
@@ -380,7 +367,6 @@ class FormExtractor:
             logger.debug(f"[{corr_id}] Text doesn't appear to be a form")
             return None
 
-        # FIXED: Use centralized prompt escaping + truncate text
         safe_text = escape_prompt_content(text[:_MAX_TEXT_LENGTH])
         prompt = f"{FORM_EXTRACTION_PROMPT}\n\nText:\n{safe_text}"
 
@@ -390,7 +376,6 @@ class FormExtractor:
                 return None
 
             fields_raw = data.get("fields", [])
-            # ✅ FIXED: Slice BEFORE model_dump to limit to 50 fields
             if fields_raw and hasattr(fields_raw[0], "model_dump"):
                 fields = [f.model_dump() for f in fields_raw[:_MAX_FIELDS]]
             else:
@@ -454,8 +439,4 @@ class FormExtractor:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["FormExtractor", "ExtractedForm"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

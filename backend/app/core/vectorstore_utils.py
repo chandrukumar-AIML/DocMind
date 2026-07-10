@@ -1,7 +1,3 @@
-# backend/app/core/vectorstore_utils.py
-# DVMELTSS-FIX: M - Modular, S - Security, V - Validate
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - True async for I/O operations
 """
 Shared utilities for vector store modules.
 
@@ -232,8 +228,4 @@ __all__ = [
     "ALLOWED_FILTER_OPERATORS",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

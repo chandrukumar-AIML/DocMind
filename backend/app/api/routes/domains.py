@@ -1,6 +1,3 @@
-# backend/app/api/routes/domains.py
-# DVMELTSS-FIX: V/E/M/S + HIPAA/GDPR compliance + ASCALE-L
-# ✅ FIXED: Proper Depends usage + input validation + safe executor handling + timeout
 
 from __future__ import annotations
 
@@ -21,11 +18,9 @@ from app.vectorstore.store_manager import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/domains", tags=["domains"])
 
-# ✅ NEW: Executor timeout (seconds)
 _EXECUTOR_TIMEOUT: Final = 30.0
 
 
-# ✅ NEW: Input validation helper
 def _validate_domain_inputs(
     source_file: Optional[str],
     workspace_id: Optional[str],
@@ -51,7 +46,6 @@ async def _get_doc_chunks(
 ):
     """Retrieve chunks for a specific document (workspace-scoped)."""
     try:
-        # ✅ FIXED: Use async method if available, fallback to executor
         if hasattr(store, "get_document_chunks_async"):
             docs = await asyncio.wait_for(
                 store.get_document_chunks_async(
@@ -84,7 +78,6 @@ async def _get_doc_chunks(
         return []
 
 
-# ✅ NEW: Proper factory function for VectorStoreManager dependency
 def get_vector_store_manager(workspace_id: str = None):
     """Factory function for VectorStoreManager dependency injection."""
 
@@ -127,12 +120,10 @@ async def analyze_legal_document(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
 
-    # ✅ FIXED: Workspace-scoped retrieval
     chunks = await _get_doc_chunks(request.source_file, user.workspace_id, store, correlation_id=corr_id)
     if not chunks:
         raise HTTPException(status_code=404, detail=f"Document not found: {request.source_file}")
 
-    # ✅ FIXED: Lazy import to avoid circular deps
     try:
         from app.domains.legal.clause_extractor import ClauseExtractor
         from app.domains.legal.risk_scorer import RiskScorer
@@ -269,7 +260,6 @@ async def analyze_medical_document(
     try:
         loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in Python 3.10+
 
-        # ✅ FIXED: Redact PII FIRST (HIPAA compliance) with safe error handling
         redactor = PIIRedactor()
         redacted_chunks = []
         for chunk in chunks:
@@ -730,8 +720,4 @@ def get_domains_metadata() -> dict[str, Any]:
 
 __all__ = ["router", "get_domains_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

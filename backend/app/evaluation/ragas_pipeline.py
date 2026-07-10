@@ -1,7 +1,3 @@
-# backend/app/evaluation/ragas_pipeline.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, M - Modular
-# BATMAN-FIX: A - True async orchestration, T - Concurrent execution
-# ASCALE-FIX: L - Layered architecture, E - Error propagation
 
 from __future__ import annotations
 
@@ -183,7 +179,6 @@ class RAGAsPipeline:
 
             # 4️⃣ Optional retrieval benchmarking
             retrieval_report = None
-            # FIXED: hasattr always True (field defined with default ""); check actual non-empty value
             if retrieve_fn and samples and any(s.ground_truth for s in samples):
                 logger.info(f"[{corr_id}] Running retrieval evaluation...")
                 gt_data = [
@@ -297,8 +292,4 @@ class RAGAsPipeline:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["RAGAsPipeline", "PipelineConfig", "PipelineResult"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

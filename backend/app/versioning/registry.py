@@ -1,8 +1,4 @@
-# backend/app/versioning/registry.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, M - Modular
-# BATMAN-FIX: A - True async, M - Memory safety
 # ACID-INDEX: C - Constraints, E - Error handling
-# ✅ FIXED: Proper async/sync bridge + input validation + safe storage handling
 
 from __future__ import annotations
 
@@ -26,11 +22,9 @@ logger = logging.getLogger(__name__)
 # DVMELTSS-S: Registry configuration
 _MAX_VERSIONS_PER_DOC: Final = 50  # Limit to prevent unbounded growth
 
-# ✅ NEW: Timeout for storage operations (seconds)
 _STORAGE_TIMEOUT: Final = 30
 
 
-# ✅ NEW: Input validation helper
 def _validate_version_inputs(
     document_id: Optional[str],
     content: Optional[str],
@@ -173,7 +167,6 @@ class DiffEngine:
                 timeout=_STORAGE_TIMEOUT,
             )
 
-            # ✅ FIXED: Safe iteration with type checks
             result = []
             for v in versions or []:
                 if isinstance(v, dict):
@@ -443,8 +436,4 @@ __all__ = [
     "get_versioning_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

@@ -1,8 +1,3 @@
-# backend/app/ingest/docx_extractor.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, M - Memory safety
-# OWASP-FIX: 7 - PII redaction, 9 - File handling
-# ✅ FIXED: Proper async/sync bridge + input validation + safe file cleanup
 
 from __future__ import annotations
 
@@ -26,7 +21,6 @@ _MAX_DOC_SIZE_MB: Final = 50
 _MAX_PARAGRAPHS: Final = 50000
 _MAX_TABLE_CELLS: Final = 100000
 
-# ✅ NEW: Timeout for python-docx operations (seconds)
 _DOCX_TIMEOUT: Final = 120
 
 
@@ -46,7 +40,6 @@ class DocxContent:
 
     def to_dict(self) -> dict:
         """Serialize for API responses / logging (with metadata safety)."""
-        # ✅ FIXED: Safe serialization with None handling
         safe_meta = {k: redact_pii(v) if isinstance(v, str) else v for k, v in (self.metadata or {}).items()}
         return {
             "source_file": self.source_file,
@@ -60,7 +53,6 @@ class DocxContent:
         }
 
 
-# ✅ NEW: Input validation helper
 def _validate_docx_inputs(
     file_path: Optional[str | Path],
     content: Optional[DocxContent],
@@ -157,7 +149,6 @@ class DocxExtractor:
         try:
             loop = asyncio.get_running_loop()
 
-            # ✅ FIXED: Use wait_for with timeout for docx operations
             doc = await asyncio.wait_for(
                 loop.run_in_executor(None, lambda: docx.Document(str(file_path_obj))),
                 timeout=_DOCX_TIMEOUT,
@@ -258,7 +249,6 @@ class DocxExtractor:
                 correlation_id=corr_id,
             )
         finally:
-            # ✅ FIXED: Proper cleanup of docx document
             if doc is not None:
                 try:
                     # python-docx doesn't have explicit close, but ensure no references held
@@ -284,7 +274,6 @@ class DocxExtractor:
         current = []
         word_count = 0
 
-        # ✅ FIXED: Safe iteration over paragraphs
         for para in content.paragraphs or []:
             if not isinstance(para, str) or not para.strip():
                 continue
@@ -303,7 +292,6 @@ class DocxExtractor:
             if chunk_text.strip():
                 chunks.append(chunk_text)
 
-        # ✅ FIXED: Safe iteration over tables
         for i, table in enumerate(content.tables or []):
             if not isinstance(table, list):
                 continue
@@ -403,8 +391,4 @@ __all__ = [
     "get_docx_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

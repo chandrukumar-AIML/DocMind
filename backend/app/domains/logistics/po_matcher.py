@@ -1,5 +1,3 @@
-# backend/app/domains/logistics/po_matcher.py
-# DVMELTSS-FIX: V - Validate, M - Modular, S - Scalability
 
 from __future__ import annotations
 
@@ -130,8 +128,4 @@ class POMatcher:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["POMatcher", "MatchResult"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

@@ -1,4 +1,3 @@
-# backend/app/api/routes/sso.py
 """
 SSO login via OIDC — per-workspace identity provider config, authorization-code flow with
 PKCE, and JIT (just-in-time) user provisioning on first login.

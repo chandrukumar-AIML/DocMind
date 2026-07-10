@@ -1,7 +1,3 @@
-# backend/app/crag/self_rag.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
-# BATMAN-FIX: A - API efficiency (token counting), E - Error recovery (retries)
-# OWASP-FIX: 1 - Prompt injection prevention
 
 from __future__ import annotations
 
@@ -16,7 +12,6 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, ConfigDict, ValidationError, Field
 
 # DVMELTSS-M: Import centralized utilities
-# FIXED: Use centralized LLM pool instead of direct ChatOpenAI instantiation
 from app.core.llm_pool import get_llm
 from app.core.prompts import (
     escape_prompt_content,
@@ -53,7 +48,6 @@ _REFLECTION_CIRCUIT_BREAKER: Final = {
 
 # DVMELTSS-V: Pydantic schema for structured LLM output
 class SelfRAGResponseSchema(BaseModel):
-    # FIXED: Pydantic v2 — use model_config = ConfigDict() instead of class Config
     model_config = ConfigDict(extra="forbid")
 
     is_supported: bool
@@ -83,10 +77,8 @@ class SelfRAGAssessment:
         # DVMELTSS-V: Validate confidence range
         if not (_MIN_CONFIDENCE <= self.confidence <= _MAX_CONFIDENCE):
             raise ValueError(f"Confidence out of range: {self.confidence}")
-        # FIXED: Truncate reflection notes safely without object.__setattr__
         if len(self.reflection_notes) > _MAX_REFLECTION_NOTES_LENGTH:
             self.reflection_notes = self.reflection_notes[:_MAX_REFLECTION_NOTES_LENGTH] + "..."
-        # FIXED: Limit additional queries safely
         if len(self.additional_queries) > _MAX_ADDITIONAL_QUERIES:
             self.additional_queries = self.additional_queries[:_MAX_ADDITIONAL_QUERIES]
 
@@ -190,7 +182,6 @@ Field definitions:
 """
 
     def __init__(self, model: str = "gpt-4o"):
-        # FIXED: Use centralized LLM pool — respects rate limits, retry config, and circuit breaker
         self.llm = get_llm(streaming=False, model_override=model, temperature_override=0.0)
         # Pre-check if structured output is supported
         self._use_structured_output = hasattr(self.llm, "with_structured_output")
@@ -265,7 +256,6 @@ Field definitions:
         # Build context summary with token-aware truncation
         context_summary = self._build_context_summary(context_docs, max_context_chars)
 
-        # FIXED: Use centralized token estimation
         prompt_template_tokens = estimate_tokens_approx(self.REFLECTION_PROMPT_TEMPLATE)
         question_tokens = estimate_tokens_approx(question)
         answer_tokens = estimate_tokens_approx(answer)
@@ -280,7 +270,6 @@ Field definitions:
             answer = answer[:600]
             context_summary = context_summary[:400]
 
-        # FIXED: Use centralized prompt builder with escaping
         prompt = build_safe_prompt(
             self.REFLECTION_PROMPT_TEMPLATE,
             question=question,
@@ -331,11 +320,9 @@ Field definitions:
             # DVMELTSS-V: Use structured output if available (more reliable than JSON parsing)
             if self._use_structured_output:
                 structured_llm = self.llm.with_structured_output(SelfRAGResponseSchema)
-                # FIXED: Apply retry decorator to LLM call
                 response = await self._llm_retry(lambda: structured_llm.ainvoke([HumanMessage(content=prompt)]))
                 data = response.model_dump()
             else:
-                # FIXED: Apply retry decorator to LLM call
                 response = await self._llm_retry(lambda: self.llm.ainvoke([HumanMessage(content=prompt)]))
                 raw = response.content.strip()
                 # Strip markdown fences if present
@@ -381,375 +368,3 @@ __all__ = ["SelfRAGReflector", "SelfRAGAssessment", "CRAGDecision"]
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.crag.self_rag) -------
 # ========================================================================
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
-    from pathlib import Path
-    from unittest.mock import patch, MagicMock, AsyncMock
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    async def run_tests():
-        print("🔍 Testing Self-RAG Reflector module (app/crag/self_rag.py)")
-        print("=" * 70)
-
-        try:
-            from app.crag.self_rag import (
-                SelfRAGResponseSchema,
-                SelfRAGAssessment,
-                CRAGDecision,
-                SelfRAGReflector,
-                _MIN_CONFIDENCE,
-                _MAX_CONFIDENCE,
-                _MAX_ADDITIONAL_QUERIES,
-                _MAX_REFLECTION_NOTES_LENGTH,
-            )
-            from langchain_core.documents import Document
-
-            # -- Test 1: Pydantic Schema --------------------------------
-            print("\n📌 Test 1: SelfRAGResponseSchema validation")
-
-            # Valid schema
-            valid = SelfRAGResponseSchema(
-                is_supported=True,
-                is_complete=True,
-                retrieve_more=False,
-                confidence=0.9,
-                reflection_notes="Answer is well-grounded",
-                additional_queries=[],
-            )
-            assert valid.confidence == 0.9
-            assert "well-grounded" in valid.reflection_notes
-            print("   ✅ Schema: validates correct input")
-
-            # Confidence out of range -> Pydantic error
-            try:
-                SelfRAGResponseSchema(
-                    is_supported=True,
-                    is_complete=True,
-                    retrieve_more=False,
-                    confidence=1.5,  # > 1.0
-                    reflection_notes="test",
-                )
-                print("   ❌ Should reject confidence > 1.0")
-            except Exception:
-                print(f"   ✅ Schema: rejects confidence > {_MAX_CONFIDENCE}")
-
-            # Too many additional queries -> Pydantic error
-            try:
-                SelfRAGResponseSchema(
-                    is_supported=True,
-                    is_complete=True,
-                    retrieve_more=False,
-                    confidence=0.8,
-                    reflection_notes="test",
-                    additional_queries=["Q1", "Q2", "Q3", "Q4", "Q5"],  # 5 > max 3
-                )
-                print("   ❌ Should reject >3 additional queries")
-            except Exception:
-                print(f"   ✅ Schema: rejects >{_MAX_ADDITIONAL_QUERIES} additional queries")
-
-            # -- Test 2: SelfRAGAssessment dataclass -------------------
-            print("\n📌 Test 2: SelfRAGAssessment properties & validation")
-
-            # Valid assessment
-            assessment = SelfRAGAssessment(
-                answer="Test answer",
-                retrieve_more=False,
-                is_supported=True,
-                is_complete=True,
-                confidence=0.85,
-                reflection_notes="Looks good",
-                additional_queries=[],
-            )
-            assert assessment.needs_improvement is False
-            assert assessment.to_dict()["confidence"] == 0.85
-            print("   ✅ SelfRAGAssessment: properties computed correctly")
-
-            # Needs improvement cases
-            assert (
-                SelfRAGAssessment(
-                    answer="Test",
-                    retrieve_more=True,
-                    is_supported=True,
-                    is_complete=True,
-                    confidence=0.9,
-                    reflection_notes="test",
-                ).needs_improvement
-                is True
-            )
-            assert (
-                SelfRAGAssessment(
-                    answer="Test",
-                    retrieve_more=False,
-                    is_supported=False,
-                    is_complete=True,
-                    confidence=0.9,
-                    reflection_notes="test",
-                ).needs_improvement
-                is True
-            )
-            print("   ✅ SelfRAGAssessment: needs_improvement logic correct")
-
-            # Confidence validation
-            try:
-                SelfRAGAssessment(
-                    answer="Test",
-                    retrieve_more=False,
-                    is_supported=True,
-                    is_complete=True,
-                    confidence=1.5,  # Invalid
-                    reflection_notes="test",
-                )
-                print("   ❌ Should reject confidence out of range")
-            except ValueError:
-                print(f"   ✅ SelfRAGAssessment: rejects confidence outside [{_MIN_CONFIDENCE}, {_MAX_CONFIDENCE}]")
-
-            # Truncation: long reflection notes
-            long_notes = "A" * 500
-            assessed = SelfRAGAssessment(
-                answer="Test",
-                retrieve_more=False,
-                is_supported=True,
-                is_complete=True,
-                confidence=0.9,
-                reflection_notes=long_notes,
-            )
-            assert len(assessed.reflection_notes) <= _MAX_REFLECTION_NOTES_LENGTH + 3  # +3 for "..."
-            assert assessed.reflection_notes.endswith("...")
-            print(f"   ✅ SelfRAGAssessment: truncates reflection_notes to {_MAX_REFLECTION_NOTES_LENGTH}")
-
-            # Truncation: too many additional queries
-            many_queries = [f"Q{i}" for i in range(10)]
-            assessed2 = SelfRAGAssessment(
-                answer="Test",
-                retrieve_more=True,
-                is_supported=True,
-                is_complete=True,
-                confidence=0.9,
-                reflection_notes="test",
-                additional_queries=many_queries,
-            )
-            assert len(assessed2.additional_queries) <= _MAX_ADDITIONAL_QUERIES
-            print(f"   ✅ SelfRAGAssessment: limits additional_queries to {_MAX_ADDITIONAL_QUERIES}")
-
-            # -- Test 3: CRAGDecision routing logic --------------------
-            print("\n📌 Test 3: CRAGDecision immutable routing")
-
-            # Should proceed: grading=generate + self-RAG supported & complete
-            decision1 = CRAGDecision(
-                grading_action="generate",
-                relevant_docs=[],
-                relevant_ratio=0.8,
-                missing_info="",
-                self_rag_assessment=SelfRAGAssessment(
-                    answer="Test",
-                    retrieve_more=False,
-                    is_supported=True,
-                    is_complete=True,
-                    confidence=0.9,
-                    reflection_notes="good",
-                ),
-            )
-            assert decision1.should_proceed_to_generation is True
-            print("   ✅ CRAGDecision: proceeds when grading=generate + self-RAG OK")
-
-            # Should NOT proceed: self-RAG says not supported
-            decision2 = CRAGDecision(
-                grading_action="generate",
-                relevant_docs=[],
-                relevant_ratio=0.8,
-                missing_info="",
-                self_rag_assessment=SelfRAGAssessment(
-                    answer="Test",
-                    retrieve_more=False,
-                    is_supported=False,
-                    is_complete=True,
-                    confidence=0.5,
-                    reflection_notes="ungrounded",
-                ),
-            )
-            assert decision2.should_proceed_to_generation is False
-            print("   ✅ CRAGDecision: blocks when self-RAG says not supported")
-
-            # Should proceed: grading=filter_and_supplement (no self-RAG needed)
-            decision3 = CRAGDecision(
-                grading_action="filter_and_supplement",
-                relevant_docs=[],
-                relevant_ratio=0.4,
-                missing_info="needs web search",
-            )
-            assert decision3.should_proceed_to_generation is True
-            print("   ✅ CRAGDecision: proceeds for filter_and_supplement action")
-
-            # Should NOT proceed: grading=rewrite
-            decision4 = CRAGDecision(
-                grading_action="rewrite",
-                relevant_docs=[],
-                relevant_ratio=0.1,
-                missing_info="query unclear",
-            )
-            assert decision4.should_proceed_to_generation is False
-            print("   ✅ CRAGDecision: blocks for rewrite action")
-
-            # -- Test 4: SelfRAGReflector initialization ---------------
-            print("\n📌 Test 4: SelfRAGReflector initialization")
-
-            with patch("app.crag.self_rag.get_settings") as mock_settings:
-                mock_settings.return_value.openai_api_key = "test-key"
-                with patch("app.crag.self_rag.ChatOpenAI") as MockLLM:
-                    mock_llm = MagicMock()
-                    MockLLM.return_value = mock_llm
-
-                    reflector = SelfRAGReflector(model="gpt-4o-mini")
-                    assert reflector.llm is mock_llm
-                    assert hasattr(reflector, "_use_structured_output")
-                    assert hasattr(reflector, "_llm_retry")
-                    assert hasattr(reflector, "_circuit_breaker")
-                    print("   ✅ SelfRAGReflector: initializes with LLM, retry & circuit breaker")
-
-            # -- Test 5: reflect() with mocked LLM success -------------
-            print("\n📌 Test 5: reflect() (mocked LLM success)")
-
-            with patch("app.crag.self_rag.get_settings") as mock_settings, patch(
-                "app.crag.self_rag.ChatOpenAI"
-            ) as MockLLM:
-                mock_settings.return_value.openai_api_key = "test-key"
-                mock_llm = MagicMock()
-                MockLLM.return_value = mock_llm
-
-                reflector = SelfRAGReflector()
-
-                # ✅ FIX: Mock _do_reflect directly to bypass circuit breaker complexity
-                async def mock_do_reflect(prompt, question, answer, corr_id):
-                    return SelfRAGAssessment(
-                        answer=answer,
-                        retrieve_more=False,
-                        is_supported=True,
-                        is_complete=True,
-                        confidence=0.9,
-                        reflection_notes="Answer is well-grounded and complete",
-                        additional_queries=[],
-                    )
-
-                reflector._do_reflect = mock_do_reflect
-
-                docs = [
-                    Document(
-                        page_content="Test context",
-                        metadata={"source_file": "t.pdf", "page_number": 1},
-                    )
-                ]
-
-                result = await reflector.reflect(
-                    question="What is X?",
-                    answer="X is a thing that does Y.",
-                    context_docs=docs,
-                    correlation_id="test-corr",
-                )
-
-                assert isinstance(result, SelfRAGAssessment)
-                assert result.is_supported is True
-                assert result.is_complete is True
-                assert result.retrieve_more is False
-                assert result.confidence == 0.9
-                print("   ✅ reflect(): returns SelfRAGAssessment with correct values")
-
-            # -- Test 6: reflect() fallback on circuit breaker open ----
-            print("\n📌 Test 6: reflect() fallback on circuit breaker open")
-
-            with patch("app.crag.self_rag.get_settings") as mock_settings, patch(
-                "app.crag.self_rag.ChatOpenAI"
-            ) as MockLLM, patch("app.crag.self_rag.logger") as mock_logger:
-                mock_settings.return_value.openai_api_key = "test-key"
-                mock_llm = MagicMock()
-                MockLLM.return_value = mock_llm
-
-                reflector = SelfRAGReflector()
-
-                # ✅ FIX: Mock circuit breaker to raise RuntimeError (OPEN state)
-                async def mock_circuit_context():
-                    raise RuntimeError("Circuit breaker OPEN")
-
-                # Replace the circuit breaker's __aenter__ to raise
-                reflector._circuit_breaker.__aenter__ = AsyncMock(side_effect=RuntimeError("Circuit breaker OPEN"))
-
-                result = await reflector.reflect(
-                    question="Test?",
-                    answer="Test answer",
-                    context_docs=[],
-                    correlation_id="test-cb",
-                )
-
-                # Should return safe fallback assessment
-                assert result.is_supported is True  # Conservative fallback
-                assert result.is_complete is True
-                assert result.retrieve_more is False
-                assert "circuit breaker" in result.reflection_notes.lower()
-                assert mock_logger.warning.called
-                print("   ✅ reflect(): safe fallback when circuit breaker OPEN")
-
-            # -- Test 7: Context summary building & token safety -------
-            print("\n📌 Test 7: _build_context_summary & token safety")
-
-            reflector = SelfRAGReflector.__new__(SelfRAGReflector)  # Bypass __init__
-
-            # Empty docs
-            assert reflector._build_context_summary([], 800) == "No context retrieved."
-            print("   ✅ _build_context_summary: handles empty docs")
-
-            # Single doc
-            doc = Document(
-                page_content="Test content",
-                metadata={"source_file": "test.pdf", "page_number": 1},
-            )
-            summary = reflector._build_context_summary([doc], 800)
-            assert "test.pdf" in summary and "p.1" in summary
-            assert "Test content" in summary
-            print("   ✅ _build_context_summary: formats single doc correctly")
-
-            # Multiple docs with truncation
-            docs = [
-                Document(
-                    page_content=f"Content {i}" * 100,
-                    metadata={"source_file": f"f{i}.pdf", "page_number": i},
-                )
-                for i in range(5)
-            ]
-            summary = reflector._build_context_summary(docs, max_chars=200)
-            # Should truncate to fit char limit
-            assert len(summary) <= 200 + 50  # Small buffer for formatting
-            print("   ✅ _build_context_summary: respects max_chars limit")
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! Self-RAG Reflector module verified.")
-            print("\n💡 What we verified:")
-            print("   • Schema: SelfRAGResponseSchema validates input/output ✅")
-            print("   • Assessment: SelfRAGAssessment properties, validation, truncation ✅")
-            print("   • Decision: CRAGDecision immutable routing logic ✅")
-            print("   • Initialization: SelfRAGReflector sets up LLM, retry & circuit breaker ✅")
-            print("   • reflect(): success path with mocked LLM ✅")
-            print("   • reflect(): safe fallback when circuit breaker OPEN ✅")
-            print("   • Safety: context summary building & token-aware truncation ✅")
-            print("\n🔐 Production: Self-RAG reflection with resilience & validation ready")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    success = asyncio.run(run_tests())
-    sys.exit(0 if success else 1)

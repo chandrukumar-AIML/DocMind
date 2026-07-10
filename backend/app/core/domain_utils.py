@@ -1,7 +1,3 @@
-# backend/app/core/domain_utils.py
-# DVMELTSS-FIX: M - Modular, S - Security, V - Validate
-# ASCALE-FIX: S - Separation, C - Coupling
-# OWASP-FIX: 1 - Prompt injection prevention
 """
 Shared utilities for domain-specific modules (legal, logistics, medical).
 
@@ -161,8 +157,4 @@ __all__ = [
     "validate_logistics_output",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

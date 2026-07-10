@@ -1,8 +1,3 @@
-# backend/app/rate_limiter/rate_limiter.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, T - Atomic operations, M - Memory safety
-# OWASP-FIX: 3 - Credential safety, 9 - Input sanitization
-# ✅ FIXED: Proper async/sync bridge + input validation + safe Redis handling
 
 from __future__ import annotations
 
@@ -13,11 +8,9 @@ import uuid
 from dataclasses import dataclass
 from typing import Final, Optional, Any
 
-# ✅ FIXED: Added missing aioredis import
 import redis.asyncio as redis
 from redis.exceptions import RedisError
 
-# ✅ FIXED: Added missing FastAPI imports for middleware
 from fastapi import Request, HTTPException, status, Depends
 
 # DVMELTSS-M: Import centralized Redis utilities
@@ -50,7 +43,6 @@ _REDIS_KEY_PREFIX: Final = "rate"
 # DVMELTSS-E: Fail-safe behavior
 _FAIL_OPEN: Final = True  # If Redis fails, allow requests (don't block legitimate traffic)
 
-# ✅ NEW: Timeout for Redis operations (seconds)
 _REDIS_TIMEOUT: Final = 10.0
 
 # BATMAN-T: Lua script for atomic sliding window rate limiting
@@ -96,7 +88,6 @@ class RateLimitResult:
 
     def to_headers(self) -> dict:
         """Convert to HTTP headers for response."""
-        # ✅ FIXED: Safe defaults for all values
         return {
             "X-RateLimit-Limit": str(self.limit),
             "X-RateLimit-Remaining": str(max(0, self.remaining)),
@@ -105,7 +96,6 @@ class RateLimitResult:
         }
 
 
-# ✅ NEW: Input validation helper
 def _validate_rate_limit_inputs(
     workspace_id: Optional[str],
     endpoint_group: Optional[str],
@@ -161,12 +151,10 @@ class RateLimiter:
         """Lazy-load async Redis connection with centralized utility."""
         if self._redis is None:
             try:
-                # FIXED: Use centralized Redis client getter
                 self._redis = await asyncio.wait_for(
                     get_async_redis(self.redis_url, db=2),
                     timeout=_REDIS_TIMEOUT,
                 )
-                # FIXED: Load Lua script via centralized utility
                 self._script_sha = await load_lua_script(self._redis, _SLIDING_WINDOW_SCRIPT)
                 logger.debug("Redis connection established + script loaded")
             except asyncio.TimeoutError:
@@ -216,18 +204,15 @@ class RateLimiter:
         limit = config["requests"]
         window = config["window_seconds"]
 
-        # FIXED: Use centralized key sanitization
         safe_id = sanitize_redis_key(identifier or workspace_id)
         key = sanitize_redis_key(f"{safe_id}:{endpoint_group}", prefix=_REDIS_KEY_PREFIX)
 
         now = time.time()
-        # FIXED: Use UUID for unique request ID (more reliable than id(object()))
         request_id = f"{now}:{uuid.uuid4().hex[:8]}"
 
         try:
             redis = await self._get_redis()
 
-            # FIXED: Execute atomic Lua script via centralized safe_evalsha with timeout
             result = await asyncio.wait_for(
                 safe_evalsha(
                     redis,
@@ -340,7 +325,6 @@ class RateLimiter:
         limit = config["requests"]
         window = config["window_seconds"]
 
-        # FIXED: Use centralized key sanitization
         safe_id = sanitize_redis_key(workspace_id)
         key = sanitize_redis_key(f"{safe_id}:{endpoint_group}", prefix=_REDIS_KEY_PREFIX)
         now = time.time()
@@ -438,7 +422,6 @@ def rate_limit_middleware(endpoint_group: str = "default"):
         ):
             # Your handler code here
     """
-    # ✅ FIXED: Import at module level (already done at top)
 
     async def _check(request: Request):
         corr_id = request.headers.get("X-Correlation-ID") or "rate_middleware"
@@ -446,7 +429,6 @@ def rate_limit_middleware(endpoint_group: str = "default"):
         # DVMELTSS-V: Get workspace_id from JWT or fallback to IP
         workspace_id = "anonymous"
         try:
-            # ✅ FIXED: Lazy import to avoid circular deps
             from app.auth.jwt_handler import verify_access_token
 
             auth_header = request.headers.get("Authorization", "")
@@ -505,8 +487,4 @@ __all__ = [
     "get_rate_limiter_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

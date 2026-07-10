@@ -1,6 +1,3 @@
-# backend/app/api/routes/documents.py
-# DVMELTSS-FIX: M/E/S + OWASP-3/9 + ASCALE-L
-# ✅ FIXED: Proper RateLimiter usage + input validation + safe VectorStore handling + timeout handling
 
 from __future__ import annotations
 
@@ -49,10 +46,8 @@ from app.middleware.rate_limiter import RateLimiter  # FIXED: actual module path
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-# ✅ FIXED: Use proper RateLimiter with workspace-scoped keys (not constructor params)
 # Rate limiting is handled per-request via check_async in the endpoint
 
-# ✅ NEW: Cache operation timeout (seconds)
 _CACHE_TIMEOUT: Final = 10.0
 
 
@@ -77,7 +72,6 @@ class DocumentQueryParams(BaseModel):
         return v
 
 
-# ✅ NEW: Input validation helper
 def _validate_document_inputs(
     document_id: Optional[str],
     source_file: Optional[str],
@@ -105,12 +99,10 @@ async def _list_documents(
 ) -> DocumentListResponse:
     """List documents with filtering and pagination."""
     try:
-        # ✅ FIXED: Use correct method signature
         vector_store = VectorStoreManager(workspace_id=workspace_id)
 
         filters = {k: v for k, v in params.model_dump().items() if v is not None and k != "search"}
 
-        # ✅ FIXED: VectorStoreManager.search_documents_async() is the correct method
         docs, total = await asyncio.wait_for(
             vector_store.search_documents_async(
                 query=params.search or "",
@@ -166,7 +158,6 @@ async def _delete_document(
 ) -> bool:
     """Delete document and all associated vectors."""
     try:
-        # ✅ FIXED: Use correct method signature
         vector_store = VectorStoreManager(workspace_id=workspace_id)
         # VectorStoreManager.delete_by_metadata_async() is the correct method for source_file deletion
         result = await asyncio.wait_for(
@@ -197,7 +188,6 @@ async def _delete_document(
 async def list_document_workspaces_static(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ):
-    # FIXED: Registered before /{document_id}; otherwise "workspaces" is
     # captured as a document_id by FastAPI route ordering.
     return [
         {
@@ -278,7 +268,6 @@ async def list_documents(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
 
-    # ✅ FIXED: Proper rate limiting using RateLimiter.check_async with workspace-scoped key
     rate_limiter = RateLimiter()
     rate_key = f"docs_list:{user.workspace_id}:{user.user_id}"
 
@@ -337,7 +326,6 @@ async def get_document(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
 
-    # ✅ FIXED: Proper rate limiting using RateLimiter.check_async
     rate_limiter = RateLimiter()
     rate_key = f"docs_get:{user.workspace_id}:{user.user_id}"
 
@@ -361,7 +349,6 @@ async def get_document(
     except Exception as e:
         logger.warning(f"[{corr_id}] Rate limit check failed: {e} — allowing request (fail-open)")
 
-    # ✅ FIXED: Use correct method signature
     vector_store = VectorStoreManager(workspace_id=user.workspace_id)
 
     try:
@@ -416,7 +403,6 @@ async def delete_document(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
 
-    # ✅ FIXED: Proper rate limiting for write operations
     rate_limiter = RateLimiter()
     rate_key = f"docs_delete:{user.workspace_id}:{user.user_id}"
 
@@ -488,7 +474,6 @@ async def serve_document_file(
     if safe_name != source_file:
         raise HTTPException(status_code=400, detail="Invalid file path")
 
-    # ✅ FIXED: Safe upload_dir access with fallback
     import tempfile as _tf
 
     upload_dir = getattr(settings, "upload_dir", None) or str(Path(_tf.gettempdir()) / "docmind_uploads")
@@ -501,7 +486,6 @@ async def serve_document_file(
         logger.warning(f"[{corr_id}] Path escape attempt: {file_path}")
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # ✅ FIXED: Safe file existence check + read permission
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {safe_name}")
 
@@ -596,7 +580,6 @@ async def reindex_document(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
 
-    # ✅ FIXED: Proper rate limiting for write operations
     rate_limiter = RateLimiter()
     rate_key = f"docs_reindex:{user.workspace_id}:{user.user_id}"
 
@@ -624,7 +607,6 @@ async def reindex_document(
 
     async def _do_reindex():
         try:
-            # ✅ FIXED: Use correct method signature
             vector_store = VectorStoreManager(workspace_id=user.workspace_id)
             # VectorStoreManager.reindex_by_metadata_async() is the correct method
             await asyncio.wait_for(
@@ -710,7 +692,6 @@ async def create_workspace(
             detail="Workspace name must contain only lowercase letters, numbers, and underscores",
         )
 
-    # ✅ FIXED: Proper rate limiting for admin operations
     rate_limiter = RateLimiter()
     rate_key = f"ws_create:{user.workspace_id}:{user.user_id}"
 
@@ -734,7 +715,6 @@ async def create_workspace(
     except Exception as e:
         logger.warning(f"[{corr_id}] Rate limit check failed: {e} — allowing request (fail-open)")
 
-    # ✅ FIXED: Use correct import + method signature
     manager = WorkspaceManager()
 
     try:
@@ -802,239 +782,3 @@ __all__ = ["router", "get_document_metadata"]
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.api.routes.documents) -
 # ========================================================================
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
-    import os
-    from pathlib import Path
-    from fastapi import Request, HTTPException
-    from fastapi.responses import FileResponse
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    # Set test JWT secret for auth dependencies
-    if not os.getenv("JWT_SECRET_KEY"):
-        os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-local-testing-only-do-not-use-in-prod-1234567890"
-
-    async def run_tests():
-        print("🔍 Testing Documents Routes module (app/api/routes/documents.py)")
-        print("=" * 70)
-
-        try:
-            from app.api.routes.documents import (
-                DocumentQueryParams,
-                _validate_document_inputs,
-                get_document_metadata,
-                router,
-            )
-            from app.models import DocumentMetaResponse, DocumentMetadata
-
-            # -- Test 1: Pydantic model validation -------------------------
-            print("\n📌 Test 1: DocumentQueryParams (validation)")
-
-            params = DocumentQueryParams(
-                workspace_id="ws-123",
-                source_file="test.pdf",
-                page_min=1,
-                page_max=10,
-                language="en",
-                search="invoice",
-            )
-            assert params.workspace_id == "ws-123"
-            print("   ✅ DocumentQueryParams: valid inputs accepted")
-
-            try:
-                DocumentQueryParams(page_min=10, page_max=5)
-                print("   ❌ Should reject page_max < page_min")
-            except ValueError as e:
-                if "page_max must be >=" in str(e):
-                    print("   ✅ DocumentQueryParams: rejected invalid page range")
-
-            try:
-                DocumentQueryParams(language="ENGLISH")
-                print("   ❌ Should reject invalid language format")
-            except Exception:
-                print("   ✅ DocumentQueryParams: rejected invalid language format")
-
-            # -- Test 2: Helper function validation -----------------------
-            print("\n📌 Test 2: _validate_document_inputs (pure logic)")
-
-            is_valid, error = _validate_document_inputs("doc-123", "test.pdf", "ws-456", "test-corr")
-            assert is_valid is True
-            print("   ✅ _validate_document_inputs: valid inputs accepted")
-
-            is_valid, error = _validate_document_inputs(123, None, None, "test-corr")  # type: ignore
-            assert is_valid is False
-            print("   ✅ _validate_document_inputs: rejected non-string document_id")
-
-            # -- Test 3: Response models (serialization) ------------------
-            print("\n📌 Test 3: Response models (Pydantic serialization)")
-
-            # DocumentMetaResponse
-            meta_resp = DocumentMetaResponse(
-                source_file="test.pdf",
-                document_type="pdf",
-                language="en",
-                page_count=5,
-                chunk_count=20,
-                mean_ocr_confidence=0.95,
-                ingest_timestamp="2026-05-10T12:00:00Z",
-                tags=["invoice", "test"],
-                correlation_id="test-corr",
-            )
-            meta_dict = meta_resp.model_dump()
-            assert "source_file" in meta_dict
-            print("   ✅ DocumentMetaResponse: serializes to dict")
-
-            # ✅ FIXED: DocumentMetadata with ALL required fields
-            doc_meta = DocumentMetadata(
-                id="doc-123",
-                filename="test.pdf",
-                file_size=102400,
-                mime_type="application/pdf",
-                workspace_id="ws-456",
-                document_id="doc-123",
-                source_file="test.pdf",
-                page_number=1,
-                chunk_type="paragraph",
-                language="en",
-                created_at="2026-05-10T12:00:00Z",
-                word_count=150,
-                preview="This is a preview...",
-                correlation_id="test-corr",
-            )
-            assert doc_meta.id == "doc-123"
-            assert doc_meta.filename == "test.pdf"
-            print("   ✅ DocumentMetadata: created with all required fields")
-
-            # -- Test 4: Endpoint signatures (async/await ready) ---------
-            print("\n📌 Test 4: Endpoint signatures (FastAPI compatible)")
-            import inspect
-
-            from app.api.routes.documents import (
-                list_documents,
-                get_document,
-                delete_document,
-                serve_document_file,
-                reindex_document,
-                create_workspace,
-            )
-
-            endpoints = [
-                ("list_documents", list_documents),
-                ("get_document", get_document),
-                ("delete_document", delete_document),
-                ("serve_document_file", serve_document_file),
-                ("reindex_document", reindex_document),
-                ("create_workspace", create_workspace),
-            ]
-
-            for name, func in endpoints:
-                assert inspect.iscoroutinefunction(func), f"{name} should be async"
-            print(f"   ✅ All {len(endpoints)} document endpoints are async coroutines")
-
-            # -- Test 5: Router configuration & routes --------------------
-            print("\n📌 Test 5: Router configuration & routes")
-
-            # Get route paths correctly
-            route_paths = [r.path for r in router.routes if hasattr(r, "path")]
-
-            # Verify expected paths exist
-            expected_paths = [
-                "/documents/workspaces",
-                "/documents",
-                "/documents/{document_id}",
-                "/documents/{source_file:path}",
-                "/documents/{source_file:path}/file",
-                "/documents/{document_id}/reindex",
-            ]
-
-            found_count = sum(1 for exp in expected_paths if any(exp in p for p in route_paths))
-            print(f"   ✅ Router has {found_count}/{len(expected_paths)} expected document endpoints")
-
-            # Verify tags
-            assert "documents" in router.tags
-            print(f"   ✅ Router tagged: {router.tags}")
-
-            # -- Test 6: Metadata helper ---------------------------------
-            print("\n📌 Test 6: get_document_metadata (debugging helper)")
-
-            metadata = get_document_metadata()
-            assert "allowed_extensions" in metadata
-            assert ".pdf" in metadata["allowed_extensions"]
-            assert metadata["path_traversal_protection"] is True
-            print("   ✅ get_document_metadata returns config")
-
-            # -- Test 7: Error handling patterns -------------------------
-            print("\n📌 Test 7: Error handling (HTTPException vs ValueError)")
-
-            try:
-                _validate_document_inputs(123, None, None, "test")  # type: ignore
-            except ValueError:
-                print("   ✅ Validation errors: raise ValueError (FastAPI -> 400)")
-
-            try:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Access denied",
-                    headers={"X-Correlation-ID": "test"},
-                )
-            except HTTPException as e:
-                assert e.status_code == 403
-                assert "X-Correlation-ID" in e.headers
-                print("   ✅ Auth errors: raise HTTPException with correlation_id header")
-
-            # -- Test 8: File serving security (path traversal) ----------
-            print("\n📌 Test 8: File serving security (path traversal protection)")
-
-            from pathlib import Path as PyPath
-
-            safe = PyPath("test.pdf").name
-            assert safe == "test.pdf"
-            malicious = PyPath("../../etc/passwd").name
-            assert malicious == "passwd"
-            print("   ✅ Path traversal protection: Path().name sanitizes input")
-
-            # -- Test 9: Module exports ---------------------------------
-            print("\n📌 Test 9: Module imports & exports")
-
-            from app.api.routes import documents
-
-            assert hasattr(documents, "router")
-            assert "router" in documents.__all__
-            print("   ✅ Module exports: router in __all__")
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! Documents routes module verified.")
-            print("\n💡 What we verified:")
-            print("   • Request models: DocumentQueryParams validation ✅")
-            print("   • Response models: DocumentMetaResponse, DocumentMetadata ✅")
-            print("   • Helper functions: _validate_document_inputs ✅")
-            print("   • Endpoint signatures: All async, return types annotated ✅")
-            print("   • Router configuration: document endpoints registered ✅")
-            print("   • Security: Path traversal protection ✅")
-            print("   • Error handling: ValueError/HTTPException patterns ✅")
-            print("\n🔧 Next: Move to app/api/routes/query.py for RAG queries")
-            print("\n🔐 Security: Path sanitization, workspace scoping, rate limiting")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    # Run async tests
-    success = asyncio.run(run_tests())
-    sys.exit(0 if success else 1)

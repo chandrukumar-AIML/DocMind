@@ -1,4 +1,3 @@
-# backend/app/core/billing_manager.py
 """
 Stripe billing state — schema repair for the 3 billing columns on `workspaces`, plus
 plain CRUD helpers used by app/api/routes/billing.py.

@@ -1,4 +1,3 @@
-# ADDED: GitHub Actions discovers workflows only under .github/workflows.
 name: CI/CD - DocuMind AI
 
 on:
@@ -13,8 +12,9 @@ env:
   FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/documind-frontend
 
 jobs:
+  # ── 1. Backend: lint + test + coverage ──────────────────────────────────
   test:
-    name: Lint & Test
+    name: Backend — Lint & Test
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -34,25 +34,43 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements-ci.txt
 
-      - name: Lint
+      - name: Lint (ruff)
         run: ruff check app/ --output-format=github
 
-      - name: Format check
+      - name: Format check (ruff)
         run: ruff format app/ --check
 
-      - name: Run unit tests
+      - name: Run unit tests with coverage
         env:
           OPENAI_API_KEY: sk-test-fake-key-for-unit-tests
           LANGCHAIN_API_KEY: ls-test-fake-key-for-unit-tests
           LANGCHAIN_PROJECT: documind-ai-ci
-          API_RELOAD: "false"
+          API_RELOAD: "true"
           APP_API_KEYS: ci-test-api-key
           JWT_SECRET_KEY: ci-test-secret-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+          REDIS_URL: ""
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
         run: |
-          pytest app/tests/ -v --tb=short --asyncio-mode=auto -m "not integration"
+          pytest app/tests/ \
+            -v \
+            --tb=short \
+            --asyncio-mode=auto \
+            -m "not integration" \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=20
 
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: backend/coverage.xml
+
+  # ── 2. Frontend: lint + test + build ────────────────────────────────────
   frontend:
-    name: Frontend Build
+    name: Frontend — Lint, Test & Build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -70,20 +88,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
+      - name: Lint (ESLint)
         run: npm run lint
 
-      - name: Test
+      - name: Test (Vitest)
         run: npm test
 
-      - name: Build
+      - name: Build (Vite)
         run: npm run build
 
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 7
+
+  # ── 3. Docker images — build and push on main ───────────────────────────
   build:
-    name: Build Images
+    name: Build & Push Docker Images
     runs-on: ubuntu-latest
     needs: [test, frontend]
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
       packages: write
@@ -125,3 +151,53 @@ jobs:
             ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
           cache-from: type=gha,scope=frontend-${{ github.ref_name }}
           cache-to: type=gha,scope=frontend-${{ github.ref_name }},mode=max
+
+  # ── 4. Deploy to Render (backend) + Vercel (frontend) ───────────────────
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Deploy backend to Render via deploy hook
+      - name: Trigger Render backend deploy
+        if: vars.RENDER_DEPLOY_HOOK_URL != ''
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ vars.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          curl -s -X POST "$RENDER_DEPLOY_HOOK_URL" \
+            -H "Accept: application/json" \
+            --fail-with-body
+          echo "Backend deploy triggered on Render"
+
+      # Deploy frontend to Vercel via CLI
+      - name: Deploy frontend to Vercel
+        if: secrets.VERCEL_TOKEN != ''
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: ./frontend
+          vercel-args: '--prod'
+
+      - name: Post-deploy smoke test (backend health)
+        if: vars.BACKEND_URL != ''
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+        run: |
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Backend healthy after deploy (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i: got $STATUS — retrying in 15s"
+            sleep 15
+          done
+          echo "Backend failed health check after deploy"
+          exit 1

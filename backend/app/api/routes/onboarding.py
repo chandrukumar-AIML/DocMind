@@ -1,4 +1,3 @@
-# backend/app/api/routes/onboarding.py
 """Client onboarding API — invite flow, token acceptance, wizard progress."""
 
 from __future__ import annotations
@@ -250,6 +249,3 @@ async def revoke_workspace_api_key(
     await revoke_api_key(key_id, user.workspace_id)
     return {"key_id": key_id, "revoked": True}
 
-
-if __name__ == "__main__":
-    print("Onboarding routes:", [r.path for r in router.routes])

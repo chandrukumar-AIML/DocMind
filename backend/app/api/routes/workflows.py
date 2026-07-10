@@ -1,4 +1,3 @@
-# backend/app/api/routes/workflows.py
 """Workflow automation API: create, list, update, delete, and view run history."""
 
 from __future__ import annotations
@@ -284,23 +283,3 @@ async def get_workflow_runs(
         "correlation_id": corr_id,
     }
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke():
-        print("Workflow routes smoke test")
-        cond = WorkflowCondition(field="doc_type", operator="eq", value="invoice")
-        act = WorkflowAction(type="tag", tag_value="auto-invoiced")
-        req = WorkflowCreateRequest(
-            name="Invoice tagger",
-            trigger_event="document_ingested",
-            conditions=[cond],
-            actions=[act],
-        )
-        assert req.name == "Invoice tagger"
-        assert req.trigger_event == "document_ingested"
-        print("WorkflowCreateRequest validation OK")
-        print("Workflow routes checks passed")
-
-    asyncio.run(smoke())

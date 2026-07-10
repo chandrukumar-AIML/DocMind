@@ -1,7 +1,3 @@
-# backend/app/provenance/highlight.py
-# DVMELTSS-FIX: V - Validate, M - Modular, S - Security
-# ASCALE-FIX: S - Separation
-# ✅ FIXED: Boundary checks + consistent length handling + input validation
 
 from __future__ import annotations
 
@@ -19,11 +15,9 @@ _MAX_MAP_ITERATIONS: Final = 100000  # ✅ NEW: Prevent infinite loop on huge te
 _CONFIDENCE_HIGH: Final = 0.85
 _CONFIDENCE_MEDIUM: Final = 0.60
 
-# ✅ NEW: Import enum for type-safe color validation
 from .models import HighlightColor
 
 
-# ✅ NEW: Input validation helper
 def _validate_text_inputs(page_text: Optional[str], chunk_text: Optional[str], corr_id: str) -> tuple[bool, str]:
     """Validate text inputs before processing."""
     if page_text is None or not isinstance(page_text, str):
@@ -44,7 +38,6 @@ def compute_highlight_color(confidence_score: float) -> str:
     - yellow: score >= 0.60 -> medium confidence, plausible citation
     - red:    score <  0.60 -> low confidence, verify manually
     """
-    # ✅ FIXED: Clamp confidence to [0.0, 1.0] for safety
     confidence = max(0.0, min(1.0, confidence_score))
 
     if confidence >= _CONFIDENCE_HIGH:
@@ -98,12 +91,10 @@ def find_text_offset(
     if len(short_needle) >= _MIN_MATCH_LEN:
         idx = search_in.find(short_needle)
         if idx != -1:
-            # ✅ FIXED: Use consistent length for end calculation
             end = min(idx + len(needle), len(search_in))
             return idx, end
 
     # Strategy 3: normalized match — MUST map back to original offsets
-    # ✅ FIXED: Use same length for normalization as for offset calculation
     normalized_len = min(_NORMALIZED_CHUNK_LEN, len(needle))
     normalized_page = re.sub(r"\s+", " ", search_in)
     normalized_chunk = re.sub(r"\s+", " ", needle[:normalized_len]).strip()
@@ -114,7 +105,6 @@ def find_text_offset(
             # Map normalized offset back to original text
             orig_idx = _map_normalized_to_original(search_in, normalized_page, idx_norm)
             if orig_idx is not None:
-                # ✅ FIXED: Use consistent needle length for end calculation
                 end = min(orig_idx + len(needle), len(search_in))
                 return orig_idx, end
 
@@ -135,14 +125,12 @@ def _map_normalized_to_original(
     if not original or not normalized:
         return None
 
-    # ✅ FIXED: Boundary check for normalized_idx
     if normalized_idx < 0 or normalized_idx > len(normalized):
         return None
 
     # Count non-whitespace chars up to normalized_idx
     target_char_count = sum(1 for c in normalized[:normalized_idx] if not c.isspace())
 
-    # ✅ FIXED: Add max iteration guard to prevent infinite loop
     char_count = 0
     iterations = 0
     for i, c in enumerate(original):
@@ -184,7 +172,6 @@ def compute_citation_offsets(
         else:
             start, end = find_text_offset(page_text, chunk_text)
 
-        # ✅ FIXED: Safe confidence score access with fallback
         confidence = cit.get("confidence_score") or cit.get("rerank_score", 0.0)
         confidence = float(confidence) if confidence is not None else 0.0
 
@@ -229,8 +216,4 @@ __all__ = [
     "HighlightColor",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

@@ -1,7 +1,3 @@
-# backend/app/workspace/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
-# ✅ FIXED: Direct return in __getattr__ + error handling + idempotent logging
 
 """
 DocuMind AI - Workspace Management Module
@@ -87,7 +83,6 @@ def _reset_caches_for_tests() -> None:
         except Exception:
             pass
 
-    # ✅ FIXED: Reset module-level singletons if loaded
     try:
         from . import manager
 
@@ -120,7 +115,6 @@ def _log_module_init() -> None:
 _log_module_init()
 
 
-# ✅ NEW: Metadata helper for monitoring
 def get_workspace_metadata() -> dict[str, Any]:
     """Return workspace module metadata for debugging."""
     from .manager import get_workspace_metadata as _get_manager_meta

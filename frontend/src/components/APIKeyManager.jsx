@@ -36,7 +36,7 @@ function CreateKeyModal({ onClose, onCreated }) {
         <form onSubmit={submit}>
           <div className="form-group">
             <label>Key Name</label>
-            <input className="input" required value={name} onChange={e => setName(e.target.value)}
+            <input aria-label="API key name" className="input" required value={name} onChange={e => setName(e.target.value)}
               placeholder="CI/CD Pipeline, Mobile App…" autoFocus />
           </div>
           <div className="form-group">
@@ -53,7 +53,7 @@ function CreateKeyModal({ onClose, onCreated }) {
           </div>
           <div className="form-group">
             <label>Expires in (days) <span style={{ color: "var(--text-4)" }}>optional</span></label>
-            <input className="input" type="number" min={1} max={365} value={expireDays}
+            <input aria-label="Expiry days" className="input" type="number" min={1} max={365} value={expireDays}
               onChange={e => setExpireDays(e.target.value)} placeholder="Never" />
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -192,8 +192,8 @@ export function APIKeyManager() {
                   </span>
                   {k.is_active && (
                     <>
-                      <button className="btn-sm" onClick={() => rotate(k.key_id)}>Rotate</button>
-                      <button className="btn-sm danger" onClick={() => revoke(k.key_id)}>Revoke</button>
+                      <button aria-label={`Rotate key ${k.name}`} className="btn-sm" onClick={() => rotate(k.key_id)}>Rotate</button>
+                      <button aria-label={`Revoke key ${k.name}`} className="btn-sm danger" onClick={() => revoke(k.key_id)}>Revoke</button>
                     </>
                   )}
                 </div>

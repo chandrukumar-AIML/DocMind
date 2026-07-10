@@ -1,6 +1,3 @@
-# backend/app/evaluation/rag_metrics.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
-# ✅ FIXED: Proper async embedding handling + input validation + safe division
 
 from __future__ import annotations
 
@@ -24,10 +21,8 @@ from app.vectorstore.embeddings import CachedOpenAIEmbeddings
 
 logger = logging.getLogger(__name__)
 
-# FIXED: Use centralized PII patterns from pii_utils instead of duplicating
 COMPOSITE_METRICS: Final = ["faithfulness", "answer_relevance", "context_precision"]
 
-# ✅ NEW: Per-metric timeout (seconds)
 _METRIC_TIMEOUT: Final = 60.0
 
 
@@ -94,7 +89,6 @@ class RAGEvalSuite:
         }
 
 
-# ✅ NEW: Input validation helper
 def _validate_eval_inputs(
     query: Optional[str],
     answer: Optional[str],
@@ -141,7 +135,6 @@ class RAGMetricsCalculator:
         self.max_retries = max_retries
         self.timeout_seconds = timeout_seconds
 
-        # FIXED: Use centralized LLM pool instead of creating new client
         self.llm = get_llm(
             streaming=False,
             temperature_override=0.0,  # Evaluation needs deterministic output
@@ -160,7 +153,6 @@ class RAGMetricsCalculator:
         self._rouge_stemmed = rouge_scorer.RougeScorer(["rouge1", "rougeL"], use_stemmer=True)
         self._rouge_unstemmed = rouge_scorer.RougeScorer(["rouge1", "rougeL"], use_stemmer=False)
 
-        # FIXED: Retry config for LLM calls
         self._llm_retry = retry_async(
             config=RetryConfig(
                 max_attempts=max_retries,
@@ -267,7 +259,6 @@ class RAGMetricsCalculator:
         for i, item in enumerate(dataset):
             logger.info(f"[{corr_id}] Evaluating [{i+1}/{len(dataset)}]: {item.get('query', '')[:60]}")
             try:
-                # ✅ FIXED: Handle rag_fn exceptions per sample
                 answer, contexts = rag_fn(item["query"])
                 result = await self.evaluate_sample(
                     query=item["query"],
@@ -293,7 +284,6 @@ class RAGMetricsCalculator:
 
     async def _eval_faithfulness(self, answer: str, contexts: List[str], corr_id: str) -> float:
         """Evaluate if answer claims are supported by retrieved contexts."""
-        # FIXED: Use centralized PII scrubbing
         context_str = "\n\n".join(scrub_pii_for_evaluation(c, domain="all") for c in contexts[:3])
         scrubbed_answer = scrub_pii_for_evaluation(answer, domain="all")
 
@@ -312,7 +302,6 @@ Return JSON only:
   "faithfulness_score": 0.67
 }}"""
 
-        # FIXED: Use centralized retry + JSON parsing
         data = await call_llm_with_retry(
             prompt=prompt,
             model=self.model,
@@ -324,7 +313,6 @@ Return JSON only:
             correlation_id=corr_id,
         )
 
-        # ✅ FIXED: Safe float conversion + clamping
         if isinstance(data, (int, float)):
             return max(0.0, min(1.0, float(data)))
         # Handle dict response with faithfulness_score key
@@ -359,7 +347,6 @@ Return only the 3 questions, one per line."""
             if not generated_questions:
                 return 0.5
 
-            # ✅ FIXED: Check if embed methods are async and handle accordingly
             async def _get_embeddings():
                 if inspect.iscoroutinefunction(self._embedder.embed_query):
                     query_vec = await self._embedder.embed_query(query)
@@ -430,7 +417,6 @@ Return JSON only:
             correlation_id=corr_id,
         )
 
-        # ✅ FIXED: Safe float conversion + clamping
         if isinstance(data, (int, float)):
             return max(0.0, min(1.0, float(data)))
         # Handle dict response with precision_score key
@@ -491,8 +477,4 @@ __all__ = [
     "get_rag_metrics_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

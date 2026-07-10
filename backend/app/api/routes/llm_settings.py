@@ -1,4 +1,3 @@
-# backend/app/api/routes/llm_settings.py
 """Per-workspace LLM provider (BYOK) settings — configure, test, and clear."""
 
 from __future__ import annotations

@@ -1,4 +1,3 @@
-# backend/app/api/routes/razorpay.py
 """
 Razorpay billing routes for Indian clients — INR, UPI, NetBanking.
 

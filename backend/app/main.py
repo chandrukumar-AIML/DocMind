@@ -1,7 +1,3 @@
-# backend/app/main.py
-# DVMELTSS-FIX: M - Modular, E - Error handling, S - Security
-# ASCALE-FIX: L - Layered, S - Separation, E - Error propagation
-# OWASP-FIX: 1 - Prompt safety, 3 - Credential safety
 from __future__ import annotations
 
 import asyncio
@@ -43,7 +39,6 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         log_level = logging.DEBUG if settings.api_reload else logging.INFO
         if request.url.path in ["/health", "/ready", "/live"]:
-            # FIXED: Keep request logs ASCII-safe for Windows consoles.
             logger.log(log_level, f"[{corr_id}] HEALTH -> {request.method} {request.url.path}")
         else:
             logger.info(f"[{corr_id}] -> {request.method} {request.url.path}")
@@ -105,54 +100,28 @@ async def lifespan(app: FastAPI):
     try:
         loop = asyncio.get_running_loop()
 
-        from app.database.schema import ensure_auth_schema, ensure_provenance_schema
-        from app.core.webhook_dispatcher import ensure_webhook_schema
-        from app.core.comparison_engine import ensure_comparison_schema
-        from app.core.workflow_engine import ensure_workflow_schema
-        from app.core.annotation_store import ensure_annotation_schema
-        from app.core.template_extractor import ensure_template_schema
-        from app.core.esign_handler import ensure_esign_schema
-        from app.core.compliance_checker import ensure_compliance_schema
-        from app.core.workspace_llm_config import ensure_workspace_llm_schema
-        from app.core.billing_manager import ensure_billing_schema
-        from app.core.workspace_sso_config import ensure_workspace_sso_schema
-        from app.core.usage_tracker import ensure_usage_schema
-        from app.core.invite_manager import ensure_invite_schema
-        from app.core.superadmin_utils import ensure_superadmin_schema
+        # Configure OTel distributed tracing early so all subsequent spans are captured.
+        from app.observability.tracing import configure_tracing
+        configure_tracing(service_name=settings.app_name)
+
+        from app.database.migrations import apply_pending_repairs
 
         try:
-            # Create base tables first (idempotent — only creates missing tables,
-            # never drops). Required on fresh DBs (e.g. Supabase) so the
-            # ensure_*_schema repair helpers below have tables to alter.
+            # Ensure base ORM tables exist on fresh databases (idempotent create_all).
             async def _create_base_tables() -> None:
                 from app.database.base import Base
                 from app.database.engine import async_engine
 
-                # Import model modules so they register on Base.metadata
                 import app.auth.models  # noqa: F401
                 import app.provenance.models  # noqa: F401
 
                 async with async_engine.begin() as conn:
                     await conn.run_sync(Base.metadata.create_all)
-                logger.info("Base tables ensured (create_all)")
+                logger.info("Base tables ensured")
 
             await asyncio.wait_for(_create_base_tables(), timeout=_STARTUP_TIMEOUT)
-
-            await asyncio.wait_for(ensure_auth_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_provenance_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_webhook_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_comparison_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_workflow_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_annotation_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_template_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_esign_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_compliance_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_workspace_llm_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_billing_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_workspace_sso_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_usage_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_invite_schema(), timeout=_STARTUP_TIMEOUT)
-            await asyncio.wait_for(ensure_superadmin_schema(), timeout=_STARTUP_TIMEOUT)
+            # Single consolidated repair pass replacing the previous 15 ensure_*_schema calls.
+            await asyncio.wait_for(apply_pending_repairs(), timeout=_STARTUP_TIMEOUT)
         except asyncio.TimeoutError:
             logger.error(f"Database schema setup timed out after {_STARTUP_TIMEOUT}s")
             app.state.startup_errors.append("Database schema setup timeout")
@@ -346,7 +315,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
         expose_headers=["X-Correlation-ID"],
     )
@@ -516,49 +485,4 @@ app = create_app()
 
 
 # -- CLI Entry Point ------------------------------------------
-if __name__ == "__main__":
-    import uvicorn
 
-    settings = get_settings()
-
-    is_valid, errors = _validate_startup_config()
-    if not is_valid:
-        logger.error(f"Cannot start server: {errors}")
-        sys.exit(1)
-
-    uvicorn.run(
-        "app.main:app",
-        host=settings.api_host,
-        port=settings.api_port,
-        reload=settings.api_reload,
-        reload_dirs=["backend/app"] if settings.api_reload else [],
-        timeout_keep_alive=300,
-        log_level="debug" if settings.api_reload else "info",
-    )
-
-
-def get_main_metadata() -> dict[str, Any]:
-    """Return main app metadata for monitoring."""
-    return {
-        "app_name": settings.app_name,
-        "app_version": settings.app_version,
-        "api_prefix": "/api/v1",
-        "startup_timeout_seconds": _STARTUP_TIMEOUT,
-        "cors_enabled": bool(settings.cors_origins) if settings.api_reload else False,
-        "docs_enabled": settings.api_reload,
-        "middleware_stack": [
-            "CORSMiddleware",
-            "add_correlation_id",
-            "add_security_headers",
-            "RequestLoggingMiddleware",
-        ],
-        "exception_handlers": [
-            "DocuMindError",
-            "ValidationError",
-            "NotFoundError",
-            "Exception",
-        ],
-    }
-
-
-__all__ = ["app", "create_app", "lifespan", "get_main_metadata"]

@@ -1,4 +1,3 @@
-# backend/app/core/apikey_manager.py
 """
 API key management — create, validate, revoke, rotate workspace API keys.
 Key format: dmk_{workspace_prefix}_{random_32chars}
@@ -305,17 +304,3 @@ async def get_key_usage(key_id: str, days: int = 30) -> list[dict[str, Any]]:
         )
         return [dict(r) for r in rows]
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def _test():
-        print("Testing apikey_manager…")
-        full, hsh, prefix = _make_key("lawfirm")
-        assert full.startswith("dmk_lawfirm")
-        assert len(full) > 30
-        assert _hash_key(full) == hsh
-        print(f"  Key: {full[:25]}… prefix={prefix} ✓")
-        print("Done.")
-
-    asyncio.run(_test())

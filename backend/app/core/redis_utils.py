@@ -17,7 +17,6 @@ _SAFE_KEY_RE = re.compile(r"[^a-zA-Z0-9:._-]+")
 
 def sanitize_redis_key(value: str, prefix: str | None = None, max_length: int = 256) -> str:
     """Return a Redis-safe key segment with optional namespace prefix."""
-    # FIXED: Normalize untrusted identifiers before using them as Redis keys.
     cleaned = _SAFE_KEY_RE.sub("_", str(value).strip())
     cleaned = cleaned.strip(":._-") or "anonymous"
     key = f"{prefix}:{cleaned}" if prefix else cleaned
@@ -71,8 +70,4 @@ __all__ = [
     "safe_evalsha",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

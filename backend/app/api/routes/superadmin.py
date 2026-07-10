@@ -1,4 +1,3 @@
-# backend/app/api/routes/superadmin.py
 """Superadmin API — all routes require is_superuser=True."""
 
 from __future__ import annotations
@@ -251,6 +250,3 @@ async def flush_cache(user: AuthenticatedUser = Depends(require_superadmin)):
 async def stats_alias(user: AuthenticatedUser = Depends(require_superadmin)):
     return await sa.get_system_stats()
 
-
-if __name__ == "__main__":
-    print("Superadmin routes:", [r.path for r in router.routes])

@@ -1,5 +1,3 @@
-# backend/app/domains/logistics/logistics_rag.py
-# DVMELTSS-FIX: M - Modular, S - Security, L - Logging
 
 from __future__ import annotations
 
@@ -37,8 +35,4 @@ class LogisticsRAGChain(AdvancedRAGChain):
 
 
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

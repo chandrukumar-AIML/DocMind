@@ -1,8 +1,4 @@
-# backend/app/graph/neo4j_store.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, S - Security
-# BATMAN-FIX: A - True async, M - Connection pooling, T - Query optimization
 # ACID-INDEX: C - Constraints (Indexes), E - Error handling
-# ✅ FIXED: Singleton with version key + proper async/sync bridge + Cypher validation
 
 from __future__ import annotations
 
@@ -44,7 +40,6 @@ _MAX_POOL_SIZE: Final = 50
 _CONNECTION_TIMEOUT: Final = 30.0
 _NEO4J_QUERY_TIMEOUT: Final = 60.0  # ✅ NEW: Per-query timeout
 
-# ✅ NEW: Singleton cache with version key
 _neo4j_instances: Dict[str, Neo4jStore] = {}
 
 
@@ -147,7 +142,6 @@ class Neo4jStore:
                 except Exception as e:
                     logger.debug(f"Index creation skipped: {e}")
 
-    # ✅ NEW: Cypher query validation helper
     def _validate_cypher_query(self, query: str, corr_id: str) -> tuple[bool, str]:
         """Validate that query is a safe Cypher string."""
         if not isinstance(query, str) or not query.strip():
@@ -173,7 +167,6 @@ class Neo4jStore:
         while attempt <= _MAX_RETRIES:
             try:
                 async with self._driver.session(database=self.database) as session:
-                    # ✅ FIXED: Add timeout to session.run
                     result = await asyncio.wait_for(
                         session.run(query, params),
                         timeout=_NEO4J_QUERY_TIMEOUT,
@@ -184,7 +177,6 @@ class Neo4jStore:
                 logger.error(f"[{corr_id}] Neo4j query timed out after {_NEO4J_QUERY_TIMEOUT}s")
                 return []
             except (ServiceUnavailable, SessionExpired, TransientError) as e:
-                # ✅ FIXED: Narrow exception handling to specific transient errors
                 attempt += 1
                 if attempt > _MAX_RETRIES:
                     logger.error(f"[{corr_id}] Neo4j query failed after retries: {e}")
@@ -292,10 +284,8 @@ class Neo4jStore:
     ) -> str:
         """Upsert Entity node."""
         corr_id = correlation_id or generate_graph_correlation_id("upsert_entity")
-        # FIXED: Use centralized validation
         entity_type = validate_entity_type(entity_type)
 
-        # ✅ FIXED: Use parameterized label handling to prevent Cypher injection
         # Neo4j doesn't support parameterized labels, so we validate and whitelist
         safe_type = re.sub(r"[^a-zA-Z0-9_]", "", entity_type)  # Remove special chars
         if not safe_type:
@@ -329,7 +319,6 @@ class Neo4jStore:
     ):
         """Upsert Relationship."""
         corr_id = correlation_id or generate_graph_correlation_id("upsert_rel")
-        # FIXED: Use centralized validation
         safe_type = validate_relationship_type(rel_type)
 
         query = f"""
@@ -346,7 +335,6 @@ class Neo4jStore:
             correlation_id=corr_id,
         )
 
-    # ✅ FIXED: Proper async/sync bridge for sync wrappers
     def _run_async_task(self, coro):
         """Helper for sync wrappers with proper event loop handling."""
         try:
@@ -487,8 +475,4 @@ def get_neo4j_metadata() -> dict[str, Any]:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["Neo4jStore", "get_neo4j_store", "Neo4jQueryResult", "get_neo4j_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

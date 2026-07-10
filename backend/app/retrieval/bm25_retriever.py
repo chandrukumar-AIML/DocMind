@@ -1,13 +1,3 @@
-# backend/app/retrieval/bm25_retriever.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular
-# BATMAN-FIX: M - Memory safety, T - Batch processing
-# ✅ FIXED: Numpy import + pure-Python argsort fallback
-# ✅ FIXED: O(1) doc_id lookup via _id_map (not text comparison)
-# ✅ FIXED: Index versioning + timestamp for stale detection
-# ✅ FIXED: Robust _matches_filter for lists/nested/nulls
-# ✅ FIXED: Memory-safe index rebuild with clear_index()
-# ✅ FIXED: Unicode-aware tokenization option
-# ✅ FIXED: Dataclass field name typo (meta -> metadata)
 
 from __future__ import annotations
 import logging
@@ -90,7 +80,6 @@ class BM25Retriever:
             return []
 
         if self.use_unicode:
-            # FIXED: Removed redundant re.sub after re.findall(\w+) — \w already excludes
             # non-word chars, so the sub() call was a no-op that wasted CPU per token
             tokens = re.findall(
                 r"\b[\w]{" + str(_MIN_TOKEN_LENGTH) + r",}\b",
@@ -303,8 +292,4 @@ class BM25Retriever:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["BM25Retriever", "BM25RetrievalResult"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

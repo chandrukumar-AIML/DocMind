@@ -1,6 +1,3 @@
-# backend/app/api/routes/query.py
-# DVMELTSS-FIX: B/E/A/C/K/E/N/D + ASCALE-S/E/A
-# ✅ FIXED: Proper RateLimiter usage + input validation + safe async handling + timeout
 
 from __future__ import annotations
 
@@ -38,12 +35,9 @@ from app.provenance.store import ProvenanceStore
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/query", tags=["query"])
 
-# ✅ FIXED: Use proper RateLimiter with workspace-scoped keys (not constructor params)
 # Rate limiting is handled per-request via check_async in the endpoint
 
-# ✅ NEW: Cache operation timeout (seconds)
 _CACHE_TIMEOUT: Final = 10.0
-# ✅ NEW: Query timeout (seconds)
 _QUERY_TIMEOUT: Final = 120.0
 
 
@@ -119,7 +113,6 @@ async def _execute_rag_query(
     """Execute RAG query with caching, error handling, and streaming support."""
     corr_id = correlation_id or generate_correlation_id("query")
 
-    # ✅ FIXED: Serialize filter_dict for cache key (avoid wrong hits)
     filter_key = json.dumps(filter_dict, sort_keys=True) if filter_dict else ""
 
     # DVMELTSS-C: Cache check for non-streaming
@@ -142,7 +135,6 @@ async def _execute_rag_query(
         except Exception as e:
             logger.warning(f"[{corr_id}] Cache check failed: {e} — proceeding with query")
 
-    # ✅ FIXED: Use singleton from app.state (set in main.py lifespan)
     agent = getattr(request.app.state, "rag_chain", None) if request else None
     if agent is None:
         logger.warning(f"[{corr_id}] RAG chain not initialized — creating new instance (dev mode)")
@@ -150,7 +142,6 @@ async def _execute_rag_query(
         if hasattr(agent, "initialize"):
             await agent.initialize()
 
-    # ✅ FIXED: Safe chat history conversion
     lc_history = []
     for msg in chat_history or []:
         if isinstance(msg, dict):
@@ -172,7 +163,6 @@ async def _execute_rag_query(
 
             async def stream_generator():
                 try:
-                    # ✅ FIXED: Proper async handling with timeout
                     stream_task = agent.stream(
                         question=question,
                         chat_history=lc_history,
@@ -182,11 +172,9 @@ async def _execute_rag_query(
                         workspace_id=user.workspace_id,
                     )
                     async for event in stream_task:
-                        # ✅ FIXED: Check if client disconnected
                         if request and await request.is_disconnected():
                             logger.info(f"[{corr_id}] Client disconnected — stopping stream")
                             break
-                        # ✅ FIXED: Safe serialization
                         if hasattr(event, "model_dump_json"):
                             yield f"data: {event.model_dump_json()}\n\n"
                         elif isinstance(event, dict):
@@ -248,7 +236,6 @@ async def _execute_rag_query(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-# ✅ NEW: Input validation helper
 def _validate_query_inputs(
     question: Optional[str],
     chat_history: Optional[list],
@@ -307,7 +294,6 @@ async def query_documents(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
 
-    # ✅ FIXED: Proper rate limiting using RateLimiter.check_async
     rate_limiter = RateLimiter()
     rate_key = f"query:{user.workspace_id}:{user.user_id}"
 
@@ -333,7 +319,6 @@ async def query_documents(
 
     logger.info(f"[{corr_id}] Query: user={user.user_id[:8]}... workspace={user.workspace_id} stream={body.stream}")
 
-    # ✅ FIXED: Safe filter_dict extraction
     filter_dict = None
     if hasattr(body, "build_filter_dict") and callable(body.build_filter_dict):
         try:
@@ -533,235 +518,3 @@ __all__ = ["router", "get_query_metadata"]
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.api.routes.query) -----
 # ========================================================================
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
-    import os
-    from pathlib import Path
-    from fastapi import Request, HTTPException
-    from fastapi.responses import StreamingResponse
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    # Set test JWT secret for auth dependencies
-    if not os.getenv("JWT_SECRET_KEY"):
-        os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-local-testing-only-do-not-use-in-prod-1234567890"
-
-    async def run_tests():
-        print("🔍 Testing Query Routes module (app/api/routes/query.py)")
-        print("=" * 70)
-
-        try:
-            from app.api.routes.query import (
-                _validate_query_inputs,
-                get_query_metadata,
-                router,
-                QueryRequest,
-                _CACHE_TIMEOUT,
-                _QUERY_TIMEOUT,
-            )
-            from app.models import QueryResponse
-
-            # -- Test 1: Pydantic model validation -------------------------
-            print("\n📌 Test 1: QueryRequest (validation)")
-
-            # Valid request
-            query_req = QueryRequest(question="What is DocuMind AI?", workspace_id="ws-123", stream=False)
-            assert query_req.question == "What is DocuMind AI?"
-            assert query_req.stream is False
-            print("   ✅ QueryRequest: valid inputs accepted")
-
-            # Empty question should fail (if validated in model)
-            # Note: Validation may happen in endpoint, not model
-            print("   ✅ QueryRequest: model structure verified")
-
-            # -- Test 2: Helper function validation -----------------------
-            print("\n📌 Test 2: _validate_query_inputs (pure logic)")
-
-            # Valid inputs
-            is_valid, error = _validate_query_inputs("test question", None, None, "query-123", 5, "test-corr")
-            assert is_valid is True
-            print("   ✅ _validate_query_inputs: valid inputs accepted")
-
-            # Invalid: question not string
-            is_valid, error = _validate_query_inputs(123, None, None, None, None, "test")  # type: ignore
-            assert is_valid is False
-            assert "question must be a string" in error
-            print("   ✅ _validate_query_inputs: rejected non-string question")
-
-            # Invalid: rating out of range
-            is_valid, error = _validate_query_inputs(None, None, None, None, 10, "test")  # type: ignore
-            assert is_valid is False
-            assert "rating must be between 1 and 5" in error
-            print("   ✅ _validate_query_inputs: rejected invalid rating")
-
-            # -- Test 3: Response model (serialization) -------------------
-            print("\n📌 Test 3: QueryResponse (Pydantic serialization)")
-
-            try:
-                # ✅ Create QueryResponse with minimal required fields
-                # (We don't know exact schema, so use **kwargs to avoid validation errors)
-                response = QueryResponse(
-                    answer="DocuMind AI is a document intelligence platform...",
-                    question="What is DocuMind AI?",
-                    hyde_hypothesis="Hypothesis: DocuMind AI is a platform...",
-                    retrieved_count=20,
-                    reranked_count=3,
-                    latency_seconds=0.1505,
-                    citations=[],
-                    correlation_id="test-corr",
-                )
-
-                # ✅ Just verify it serializes without error
-                resp_dict = response.model_dump()
-                assert "answer" in resp_dict or len(resp_dict) > 0
-                print(f"   ✅ QueryResponse: created and serializes to dict ({len(resp_dict)} fields)")
-
-            except Exception:
-                # If exact fields are unknown, just verify the class exists and is a Pydantic model
-                from pydantic import BaseModel
-
-                assert issubclass(QueryResponse, BaseModel), "QueryResponse should be a Pydantic model"
-                print("   ✅ QueryResponse: is a valid Pydantic model (fields may vary)")
-
-            # -- Test 4: Endpoint signatures (async/await ready) ---------
-            print("\n📌 Test 4: Endpoint signatures (FastAPI compatible)")
-            import inspect
-
-            from app.api.routes.query import (
-                query_documents,
-                submit_feedback,
-                get_query_history,
-            )
-
-            endpoints = [
-                ("query_documents", query_documents),
-                ("submit_feedback", submit_feedback),
-                ("get_query_history", get_query_history),
-            ]
-
-            for name, func in endpoints:
-                assert inspect.iscoroutinefunction(func), f"{name} should be async"
-            print(f"   ✅ All {len(endpoints)} query endpoints are async coroutines")
-
-            # -- Test 5: Router configuration & routes --------------------
-            print("\n📌 Test 5: Router configuration & routes")
-
-            # Get route paths correctly
-            route_paths = [r.path for r in router.routes if hasattr(r, "path")]
-
-            # Verify expected paths exist
-            expected_paths = [
-                "/query",  # POST query
-                "/query/feedback",  # POST feedback
-                "/query/history",  # GET history
-            ]
-
-            found_count = sum(1 for exp in expected_paths if any(exp in p for p in route_paths))
-            print(f"   ✅ Router has {found_count}/{len(expected_paths)} expected query endpoints")
-
-            # Verify tags
-            assert "query" in router.tags
-            print(f"   ✅ Router tagged: {router.tags}")
-
-            # -- Test 6: Metadata helper ---------------------------------
-            print("\n📌 Test 6: get_query_metadata (debugging helper)")
-
-            metadata = get_query_metadata()
-            assert "endpoints" in metadata
-            assert "/query" in metadata["endpoints"]
-            assert metadata["streaming_supported"] is True
-            assert metadata["workspace_scoped"] is True
-            print("   ✅ get_query_metadata returns config for debugging")
-
-            # -- Test 7: Error handling patterns -------------------------
-            print("\n📌 Test 7: Error handling (HTTPException vs ValueError)")
-
-            # Validation errors should be ValueError
-            try:
-                _validate_query_inputs(123, None, None, None, None, "test")  # type: ignore
-            except ValueError:
-                print("   ✅ Validation errors: raise ValueError (FastAPI -> 400)")
-
-            # Auth/query errors should be HTTPException
-            try:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Bad request",
-                    headers={"X-Correlation-ID": "test"},
-                )
-            except HTTPException as e:
-                assert e.status_code == 400
-                assert "X-Correlation-ID" in e.headers
-                print("   ✅ Query errors: raise HTTPException with correlation_id header")
-
-            # -- Test 8: Streaming response handling (mocked) -------------
-            print("\n📌 Test 8: Streaming response handling (mocked)")
-
-            # Mock async generator for streaming
-            async def mock_stream_gen():
-                yield 'data: {"token": "Hello"}\n\n'
-                yield 'data: {"token": " World"}\n\n'
-                yield "data: [DONE]\n\n"
-
-            # Verify StreamingResponse can wrap async generator
-            from fastapi.responses import StreamingResponse
-
-            stream_resp = StreamingResponse(mock_stream_gen(), media_type="text/event-stream")
-            assert stream_resp.media_type == "text/event-stream"
-            print("   ✅ StreamingResponse: wraps async generator correctly")
-
-            # -- Test 9: Cache timeout constants -------------------------
-            print("\n📌 Test 9: Cache & query timeout constants")
-
-            assert _CACHE_TIMEOUT > 0, "Cache timeout should be positive"
-            assert _QUERY_TIMEOUT > _CACHE_TIMEOUT, "Query timeout should be longer than cache timeout"
-            print(f"   ✅ Timeouts: cache={_CACHE_TIMEOUT}s, query={_QUERY_TIMEOUT}s")
-
-            # -- Test 10: Module exports ---------------------------------
-            print("\n📌 Test 10: Module imports & exports")
-
-            from app.api.routes import query
-
-            assert hasattr(query, "router"), "Should export FastAPI router"
-            assert hasattr(query, "get_query_metadata"), "Should export metadata helper"
-            assert "router" in query.__all__, "router should be in __all__"
-            print("   ✅ Module exports: router, get_query_metadata in __all__")
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! Query routes module verified.")
-            print("\n💡 What we verified:")
-            print("   • Request models: QueryRequest validation ✅")
-            print("   • Response models: QueryResponse serialization ✅")
-            print("   • Helper functions: _validate_query_inputs ✅")
-            print("   • Endpoint signatures: All async, return types annotated ✅")
-            print("   • Router configuration: query endpoints registered ✅")
-            print("   • Streaming: StreamingResponse with async generator ✅")
-            print("   • Error handling: ValueError/HTTPException patterns ✅")
-            print("   • Timeouts: cache and query timeout constants ✅")
-            print("\n🔧 For full integration tests:")
-            print("   • Use pytest with mocked RAG chain + vectorstore")
-            print("   • Run: pytest tests/api/test_query.py -v")
-            print("\n🔐 Security: Rate limiting, workspace scoping, correlation IDs")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    # Run async tests
-    success = asyncio.run(run_tests())
-    sys.exit(0 if success else 1)

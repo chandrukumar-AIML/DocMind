@@ -1,7 +1,3 @@
-# backend/app/graph/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
-# ✅ FIXED: Direct return in __getattr__ + error handling + idempotent logging
 
 """
 DocuMind AI - Knowledge Graph Module
@@ -115,7 +111,6 @@ def _reset_caches_for_tests() -> None:
         except Exception:
             pass
 
-    # ✅ FIXED: Use getattr to safely access lazy-imported function
     if hasattr(sys.modules[__name__], "get_neo4j_store"):
         try:
             # Import locally to get the actual function with cache_clear method
@@ -149,7 +144,6 @@ def _log_module_init() -> None:
 _log_module_init()
 
 
-# ✅ NEW: Metadata helper for monitoring
 def get_graph_metadata() -> dict[str, Any]:
     """Return graph module metadata for monitoring/debugging."""
     from .neo4j_store import get_neo4j_metadata as _get_meta

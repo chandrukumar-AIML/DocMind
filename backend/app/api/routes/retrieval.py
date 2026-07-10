@@ -1,6 +1,3 @@
-# backend/app/api/routes/retrieval.py
-# DVMELTSS-FIX: V/E/M/S + ASCALE-A/E + BATMAN-A
-# ✅ FIXED: Pydantic v2 config + input validation + proper sync wrappers + timeout handling
 
 from __future__ import annotations
 
@@ -21,7 +18,6 @@ from app.dependencies import get_store_manager
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/retrieval", tags=["retrieval"])
 
-# ✅ NEW: Operation timeouts (seconds)
 _SEARCH_TIMEOUT: Final = 60.0
 _BENCHMARK_TIMEOUT: Final = 300.0
 
@@ -44,7 +40,6 @@ class HybridSearchRequest(BaseModel):
     workspace_id: Optional[str] = Field(default=None, max_length=64)
     correlation_id: Optional[str] = Field(default=None, max_length=100)
 
-    # ✅ FIXED: Pydantic v2 style config
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
@@ -93,7 +88,6 @@ class BenchmarkRequest(BaseModel):
     )
 
 
-# ✅ NEW: Input validation helper
 def _validate_retrieval_inputs(
     query: Optional[str],
     k: Optional[int],
@@ -165,10 +159,8 @@ async def hybrid_search(
     )
 
     try:
-        # FIXED: HybridRetriever owns its workspace-scoped stores.
         retriever = HybridRetriever(workspace_id=workspace_id)
 
-        # ✅ FIXED: Use proper sync wrapper for thread execution
         def _run_search_sync():
             return retriever.search(
                 query=request.query,
@@ -276,7 +268,6 @@ async def run_retrieval_benchmark(
             workspace_id=workspace_id,
         )
 
-        # ✅ FIXED: Use proper sync wrapper for thread execution
         def _run_benchmark_sync():
             return benchmark.run(
                 ground_truth=[item.model_dump() for item in request.ground_truth],
@@ -373,8 +364,4 @@ def get_retrieval_metadata() -> dict[str, Any]:
 
 __all__ = ["router", "get_retrieval_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

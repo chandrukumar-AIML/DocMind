@@ -1,8 +1,4 @@
-# backend/app/monitoring/metrics_collector.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, S - Security
-# BATMAN-FIX: A - True async, M - Memory safety
 # ACID-INDEX: E - Error handling (graceful degradation)
-# ✅ FIXED: Proper async/sync bridge + input validation + safe Prometheus formatting
 
 from __future__ import annotations
 
@@ -77,7 +73,6 @@ class QueryMetrics:
 
     @classmethod
     def from_dict(cls, d: dict) -> "QueryMetrics":
-        # ✅ FIXED: Safe dict access with defaults
         cleaned = {k: (v if v != -1.0 else None) for k, v in d.items()}
         # Ensure required fields have defaults
         return cls(
@@ -104,7 +99,6 @@ class QueryMetrics:
         )
 
 
-# ✅ NEW: Input validation helper
 def _validate_metrics_inputs(
     metrics: Optional[QueryMetrics],
     workspace_id: Optional[str],
@@ -141,7 +135,6 @@ class MetricsCollector:
     async def _get_redis(self) -> Any:
         """Lazy-load async Redis connection."""
         if self._redis is None:
-            # FIXED: Use centralized async Redis getter
             self._redis = await get_monitoring_redis(self.redis_url)
             logger.debug("Monitoring Redis connection established")
         return self._redis
@@ -285,7 +278,6 @@ class MetricsCollector:
         web_search_pct = sum(1 for m in metrics if m.web_search_used) / len(metrics)
         human_review_pct = sum(1 for m in metrics if m.needs_human_review) / len(metrics)
 
-        # ✅ FIXED: Safe aggregation with fallbacks
         stats = {
             "window_hours": hours,
             "query_count": len(metrics),
@@ -578,7 +570,6 @@ def get_prometheus_metrics(
 
         # Try to collect advanced metrics from Redis
         try:
-            # ✅ FIXED: Use run_async_in_task for safe async execution
             collector = MetricsCollector()
 
             async def _collect_stats():
@@ -586,14 +577,12 @@ def get_prometheus_metrics(
 
             stats = run_async_in_task(_collect_stats, timeout=5.0)
             if not isinstance(stats, dict):
-                # FIXED: Prometheus formatting expects a mapping; degrade
                 # cleanly if an integration returns an unexpected payload.
                 raise TypeError(f"metrics stats must be dict, got {type(stats).__name__}")
 
             return _format_advanced_prometheus_metrics(settings, stats, correlation_id, redis_configured=True)
 
         except Exception as e:
-            # FIXED: TimeoutError can stringify to an empty string; keep the
             # failure observable for Prometheus and logs.
             error_message = str(e) or e.__class__.__name__
             logger.warning(f"Advanced metrics collection failed: {error_message}. Returning basic metrics.")
@@ -674,7 +663,6 @@ def _get_basic_prometheus_metrics(
         )
 
     if error:
-        # ✅ FIXED: Escape quotes and newlines for Prometheus label format
         safe_error = error[:200].replace('"', '\\"').replace("\n", "\\n").replace("\r", "")
         lines.extend(
             [
@@ -750,7 +738,6 @@ def _format_advanced_prometheus_metrics(
     # Add CRAG action distribution as separate metrics
     crag_dist = stats.get("crag_action_distribution", {})
     for action, count in crag_dist.items():
-        # ✅ FIXED: Escape special chars in metric labels for Prometheus
         safe_action = action.replace("-", "_").replace(" ", "_").replace('"', "_")
         lines.extend(
             [
@@ -807,290 +794,3 @@ __all__ = [
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.monitoring.metrics_collector) -
 # ========================================================================
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
-    from pathlib import Path
-    from unittest.mock import AsyncMock, MagicMock, patch
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    async def run_tests():
-        print("🔍 Testing Metrics Collector module (app/monitoring/metrics_collector.py)")
-        print("=" * 70)
-
-        try:
-            from app.monitoring.metrics_collector import (
-                QueryMetrics,
-                MetricsCollector,
-                _validate_metrics_inputs,
-                get_prometheus_metrics,
-                get_monitoring_metadata,
-                METRICS_KEY,
-                DAILY_STATS_KEY,
-                WINDOW_SECONDS,
-                record_query_latency,
-                record_auth_attempt,
-                record_document_operation,
-            )
-            import time
-
-            # -- Test 1: Module constants & metadata ---------------------
-            print("\n📌 Test 1: Module constants & metadata")
-
-            assert METRICS_KEY == "rag:metrics:queries"
-            assert DAILY_STATS_KEY == "rag:metrics:daily"
-            assert WINDOW_SECONDS == 86400  # 24 hours
-            print(f"   ✅ Constants: METRICS_KEY='{METRICS_KEY}', WINDOW={WINDOW_SECONDS}s")
-
-            metadata = get_monitoring_metadata()
-            assert "redis_keys" in metadata
-            assert "prometheus_endpoint" in metadata
-            print("   ✅ Meta returns config dict")
-
-            # -- Test 2: QueryMetrics dataclass -------------------------
-            print("\n📌 Test 2: QueryMetrics dataclass")
-
-            metrics = QueryMetrics(
-                query_id="q-123",
-                workspace_id="ws-456",
-                timestamp=time.time(),
-                latency_ms=250.5,
-                retrieval_count=10,
-                reranked_count=5,
-                confidence_score=0.92,
-                relevance_score=0.88,
-                is_grounded=True,
-                needs_human_review=False,
-                crag_action="generate",
-                retrieval_mode="hybrid",
-                retry_count=0,
-                web_search_used=False,
-                answer_length=500,
-                citation_count=3,
-            )
-
-            assert metrics.query_id == "q-123"
-            print("   ✅ QueryMetrics: created with required fields")
-
-            d = metrics.to_dict()
-            assert d["faithfulness"] == -1.0
-            print("   ✅ to_dict: None values converted to -1.0 sentinel")
-
-            restored = QueryMetrics.from_dict(d)
-            assert restored.faithfulness is None
-            print("   ✅ from_dict: -1.0 sentinel converted back to None")
-
-            # -- Test 3: Input validation helper ------------------------
-            print("\n📌 Test 3: _validate_metrics_inputs")
-
-            is_valid, error = _validate_metrics_inputs(metrics, "ws-456", "corr-123", "test")
-            assert is_valid is True
-            print("   ✅ Valid inputs: accepted")
-
-            is_valid, error = _validate_metrics_inputs("not-a-metrics", "ws", "corr", "test")
-            assert is_valid is False and "QueryMetrics" in error
-            print("   ✅ Invalid metrics type: rejected")
-
-            is_valid, error = _validate_metrics_inputs(metrics, 123, "corr", "test")
-            assert is_valid is False and "string" in error
-            print("   ✅ Invalid workspace_id type: rejected")
-
-            # -- Test 4: MetricsCollector initialization ----------------
-            print("\n📌 Test 4: MetricsCollector initialization")
-            collector = MetricsCollector(redis_url="redis://test:6379/0")
-            assert collector.redis_url == "redis://test:6379/0"
-            print("   ✅ MetricsCollector: initialized with custom Redis URL")
-
-            # -- Test 5: Async record with mocked Redis -----------------
-            print("\n📌 Test 5: record_async (mocked Redis)")
-            collector._redis = None
-            with patch("app.monitoring.metrics_collector.get_monitoring_redis") as mock_get_redis:
-                mock_redis = AsyncMock()
-                mock_pipe = MagicMock()
-                mock_pipe.execute = AsyncMock(return_value=[True, True, True])
-                mock_redis.pipeline = MagicMock(return_value=mock_pipe)
-
-                async def mock_async_redis(*args, **kwargs):
-                    return mock_redis
-
-                mock_get_redis.side_effect = mock_async_redis
-
-                await collector.record_async(metrics)
-                assert mock_redis.pipeline.called
-                assert mock_pipe.zadd.called
-                print("   ✅ record_async: Redis pipeline executed correctly")
-
-            # -- Test 6: Graceful degradation on Redis failure ----------
-            print("\n📌 Test 6: record_async graceful degradation")
-            collector._redis = None
-            with patch("app.monitoring.metrics_collector.get_monitoring_redis") as mock_get_redis:
-
-                async def mock_async_redis_fail(*args, **kwargs):
-                    raise Exception("Redis connection failed")
-
-                mock_get_redis.side_effect = mock_async_redis_fail
-
-                result = await collector.record_async(metrics)
-                assert result is False
-                print("   ✅ record_async: returns False on Redis failure (graceful degradation)")
-
-            # -- Test 7: get_recent_async with mocked Redis -------------
-            print("\n📌 Test 7: get_recent_async (mocked Redis)")
-            collector._redis = None
-            with patch("app.monitoring.metrics_collector.get_monitoring_redis") as mock_get_redis:
-                mock_redis = AsyncMock()
-                mock_metrics_json = [
-                    '{"query_id": "q1", "workspace_id": "ws1", "timestamp": %s, "latency_ms": 100, "retrieval_count": 5, "reranked_count": 3, "confidence_score": 0.9, "relevance_score": 0.85, "is_grounded": true, "needs_human_review": false, "crag_action": "generate", "retrieval_mode": "vector", "retry_count": 0, "web_search_used": false, "answer_length": 200, "citation_count": 2}'
-                    % time.time()
-                ]
-                mock_redis.zrangebyscore = AsyncMock(return_value=mock_metrics_json)
-
-                async def mock_async_redis2(*args, **kwargs):
-                    return mock_redis
-
-                mock_get_redis.side_effect = mock_async_redis2
-
-                results = await collector.get_recent_async(hours=1.0)
-                assert len(results) == 1
-                assert results[0].query_id == "q1"
-                print("   ✅ get_recent_async: fetched and parsed metrics")
-
-            # -- Test 8: compute_window_stats_async ---------------------
-            print("\n📌 Test 8: compute_window_stats_async")
-            with patch.object(collector, "get_recent_async") as mock_get_recent:
-                mock_get_recent.return_value = [
-                    QueryMetrics(
-                        query_id=f"q{i}",
-                        workspace_id="ws1",
-                        timestamp=time.time(),
-                        latency_ms=100.0 + i * 10,
-                        retrieval_count=5,
-                        reranked_count=3,
-                        confidence_score=0.9,
-                        relevance_score=0.85,
-                        is_grounded=True,
-                        needs_human_review=False,
-                        crag_action="generate",
-                        retrieval_mode="vector",
-                        retry_count=0,
-                        web_search_used=(i % 2 == 0),
-                        answer_length=200,
-                        citation_count=2,
-                    )
-                    for i in range(10)
-                ]
-
-                stats = await collector.compute_window_stats_async(hours=24.0)
-                assert stats["query_count"] == 10
-                assert "latency_ms_mean" in stats
-                assert "crag_action_distribution" in stats
-                print(f"   ✅ compute_window_stats: aggregated {stats['query_count']} queries")
-
-            # -- Test 9: Prometheus metrics (basic fallback) ---------------------
-            print("\n📌 Test 9: Prometheus metrics (basic fallback)")
-
-            # ✅ FIX: Patch 'app.config.get_settings' because get_prometheus_metrics
-            # imports it locally inside the function.
-            with patch("app.config.get_settings") as mock_settings:
-                mock_settings.return_value.app_version = "1.0.0"
-                mock_settings.return_value.redis_url = None  # No Redis
-
-                prom_output = get_prometheus_metrics(correlation_id="test-prom")
-
-                assert "# HELP documind_ai_up" in prom_output
-                assert "documind_ai_up 1" in prom_output
-                assert 'version="1.0.0"' in prom_output
-                print("   ✅ Basic Prometheus: valid format with version & correlation_id")
-
-            # -- Test 10: Prometheus metrics (advanced) -----------------
-            print("\n📌 Test 10: Prometheus metrics (advanced with stats)")
-
-            with patch("app.config.get_settings") as mock_settings, patch(
-                "app.monitoring.metrics_collector.MetricsCollector"
-            ) as MockCollector, patch("app.monitoring.metrics_collector.run_async_in_task") as mock_run:
-                mock_settings.return_value.app_version = "1.0.0"
-                mock_settings.return_value.redis_url = "redis://localhost:6379"
-
-                mock_stats = {
-                    "query_count": 100,
-                    "latency_ms_mean": 250.5,
-                    "latency_ms_p95": 800.0,
-                    "latency_ms_p99": 1200.0,
-                    "confidence_mean": 0.92,
-                    "relevance_mean": 0.88,
-                    "web_search_rate": 0.15,
-                    "human_review_rate": 0.05,
-                    "crag_action_distribution": {
-                        "generate": 80,
-                        "rewrite": 15,
-                        "web_search": 5,
-                    },
-                }
-                mock_run.return_value = mock_stats
-
-                prom_output = get_prometheus_metrics(correlation_id="test-adv")
-                assert "documind_ai_query_count_total 100" in prom_output
-                assert "documind_ai_crag_action_generate 80" in prom_output
-                print("   ✅ Advanced Prometheus: includes query stats & CRAG distribution")
-
-            # -- Test 11: Prometheus metrics (error fallback) ---------------------
-            print("\n📌 Test 11: Prometheus metrics (error fallback)")
-
-            with patch("app.config.get_settings") as mock_settings, patch(
-                "app.monitoring.metrics_collector.MetricsCollector"
-            ) as MockCollector:
-                mock_settings.return_value.app_version = "1.0.0"
-                mock_settings.return_value.redis_url = "redis://localhost:6379"
-
-                MockCollector.return_value.compute_window_stats_async = AsyncMock(side_effect=Exception("Test error"))
-
-                prom_output = get_prometheus_metrics(correlation_id="test-err")
-                assert "documind_ai_up 1" in prom_output
-                assert "documind_ai_metrics_error" in prom_output
-                print("   ✅ Error fallback: returns valid basic metrics with error label")
-
-            # -- Test 12: Convenience recording functions ---------------
-            print("\n📌 Test 12: Convenience recording functions (logging)")
-            try:
-                record_query_latency("ws1", "corr1", 1.5, True)
-                record_auth_attempt("ws1", "corr2", True, user_id="u1", auth_method="jwt")
-                record_document_operation("ws1", "corr3", "upload", "doc.pdf", True)
-                print("   ✅ Convenience functions: execute without errors")
-            except Exception as e:
-                print(f"   ❌ Convenience functions failed: {e}")
-                raise
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! Metrics Collector module verified.")
-            print("\n💡 What we verified:")
-            print("   • Constants: Redis keys, window config ✅")
-            print("   • Dataclass: QueryMetrics to_dict/from_dict with sentinel handling ✅")
-            print("   • Validation: _validate_metrics_inputs type checks ✅")
-            print("   • Async ops: record_async, get_recent_async with properly mocked Redis ✅")
-            print("   • Aggregation: compute_window_stats with percentiles & distributions ✅")
-            print("   • Prometheus: basic & advanced format with graceful degradation ✅")
-            print("   • Error handling: fallback to basic metrics on any failure ✅")
-            print("   • Convenience: logging wrappers execute safely ✅")
-            print("\n🔐 Production: Metrics collection with graceful degradation ready")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    success = asyncio.run(run_tests())
-    sys.exit(0 if success else 1)

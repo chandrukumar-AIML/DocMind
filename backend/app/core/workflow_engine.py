@@ -1,4 +1,3 @@
-# backend/app/core/workflow_engine.py
 """No-code workflow automation engine: IF/THEN rule evaluation and actions."""
 
 from __future__ import annotations
@@ -257,25 +256,3 @@ async def trigger_workflows(
             except Exception:
                 pass
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke():
-        print("Workflow engine smoke test")
-        ctx = {"doc_type": "invoice", "risk_score": 0.8, "source_file": "test.pdf"}
-
-        c1 = {"field": "doc_type", "operator": "eq", "value": "invoice"}
-        assert _evaluate_condition(c1, ctx) is True
-
-        c2 = {"field": "risk_score", "operator": "gt", "value": 0.5}
-        assert _evaluate_condition(c2, ctx) is True
-
-        c3 = {"field": "risk_score", "operator": "lt", "value": 0.3}
-        assert _evaluate_condition(c3, ctx) is False
-
-        assert evaluate_conditions([c1, c2], ctx) is True
-        assert evaluate_conditions([c1, c3], ctx) is False
-        print("All workflow engine checks passed")
-
-    asyncio.run(smoke())

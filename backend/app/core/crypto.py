@@ -1,4 +1,3 @@
-# backend/app/core/crypto.py
 """
 Reversible encryption for secrets that must be read back in plaintext later
 (e.g. per-workspace BYOK LLM provider API keys sent to Groq/OpenAI/etc on every call).

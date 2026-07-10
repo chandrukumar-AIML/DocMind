@@ -1,4 +1,3 @@
-# backend/app/api/routes/gst_invoice.py
 """
 GST invoice generation for Indian B2B clients.
 

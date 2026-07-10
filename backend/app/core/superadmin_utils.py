@@ -1,4 +1,3 @@
-# backend/app/core/superadmin_utils.py
 """
 Superadmin utilities — cross-workspace analytics, workspace CRUD,
 impersonation tokens, system health, billing aggregation.
@@ -613,16 +612,3 @@ async def flush_redis_cache() -> dict[str, Any]:
     except Exception as e:
         return {"flushed": False, "error": str(e)}
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def _test():
-        print("Testing superadmin_utils…")
-        stats = await get_system_stats()
-        print(f"  Stats keys: {list(stats.keys())}")
-        health = await get_system_health()
-        print(f"  Health: {health['status']}")
-        print("Done.")
-
-    asyncio.run(_test())

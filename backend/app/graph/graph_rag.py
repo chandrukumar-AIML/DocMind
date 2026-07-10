@@ -1,8 +1,3 @@
-# backend/app/graph/graph_rag.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, L - Logging
-# BATMAN-FIX: A - True async, T - Concurrent retrieval, M - Memory safety
-# OWASP-FIX: 1 - Prompt safety, 9 - Input sanitization
-# ✅ FIXED: Proper async/sync bridge + input validation + safe empty handling
 
 from __future__ import annotations
 
@@ -115,7 +110,6 @@ class GraphRAGRetriever:
         self.cypher = cypher_retriever or CypherRetriever()
         logger.info("GraphRAGRetriever initialized with hybrid retrieval")
 
-    # ✅ NEW: Input validation helper
     def _validate_inputs(
         self,
         query: str,
@@ -147,7 +141,6 @@ class GraphRAGRetriever:
         else:
             return "vector"
 
-    # ✅ FIXED: Proper async/sync bridge for vector retrieval
     async def _retrieve_vector_async(
         self,
         query: str,
@@ -191,7 +184,6 @@ class GraphRAGRetriever:
             logger.error(f"[{correlation_id}] Vector retrieval failed: {e}")
             return [], 0.0
 
-    # ✅ FIXED: Proper async/sync bridge for graph retrieval
     async def _retrieve_graph_async(
         self,
         query: str,
@@ -387,8 +379,4 @@ def get_graphrag_metadata() -> dict[str, Any]:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["GraphRAGRetriever", "GraphRAGResult", "get_graphrag_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

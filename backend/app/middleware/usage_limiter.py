@@ -1,4 +1,3 @@
-# backend/app/middleware/usage_limiter.py
 """
 Usage limiter middleware — checks workspace limits before uploads/queries.
 Also supports API key authentication in Authorization header.

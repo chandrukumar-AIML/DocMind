@@ -1,0 +1,109 @@
+{
+  "title": "DocMind AI — Overview",
+  "uid": "documind-overview",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Request Rate (req/s)",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "targets": [{
+        "expr": "rate(http_requests_total{job=\"documind-backend\"}[1m])",
+        "legendFormat": "req/s"
+      }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Error Rate (%)",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "targets": [{
+        "expr": "100 * rate(http_requests_total{job=\"documind-backend\",status=~\"5..\"}[1m]) / rate(http_requests_total{job=\"documind-backend\"}[1m])",
+        "legendFormat": "error %"
+      }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "P95 Latency (ms)",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "targets": [{
+        "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"documind-backend\"}[5m])) * 1000",
+        "legendFormat": "p95 ms"
+      }]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Active Celery Tasks",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "targets": [{
+        "expr": "celery_tasks_active",
+        "legendFormat": "active"
+      }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "RAG Query Latency (p50 / p95 / p99)",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(rag_query_duration_seconds_bucket[5m])) * 1000",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(rag_query_duration_seconds_bucket[5m])) * 1000",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(rag_query_duration_seconds_bucket[5m])) * 1000",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Document Ingestion Rate",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "rate(documents_ingested_total[5m])",
+        "legendFormat": "docs/s"
+      }]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Redis Memory Usage",
+      "gridPos": {"x": 0, "y": 12, "w": 8, "h": 6},
+      "targets": [{
+        "expr": "redis_memory_used_bytes / 1024 / 1024",
+        "legendFormat": "MB used"
+      }]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "PostgreSQL Connections",
+      "gridPos": {"x": 8, "y": 12, "w": 8, "h": 6},
+      "targets": [{
+        "expr": "pg_stat_activity_count",
+        "legendFormat": "connections"
+      }]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "LLM Token Usage (tokens/min)",
+      "gridPos": {"x": 16, "y": 12, "w": 8, "h": 6},
+      "targets": [{
+        "expr": "rate(llm_tokens_total[1m])",
+        "legendFormat": "tokens/min"
+      }]
+    }
+  ]
+}

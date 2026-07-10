@@ -1,4 +1,3 @@
-# backend/app/api/routes/compliance.py
 """Regulatory compliance checking API."""
 
 from __future__ import annotations
@@ -161,20 +160,3 @@ async def get_compliance_result(
         "correlation_id": corr_id,
     }
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke():
-        print("Compliance routes smoke test")
-        req = ComplianceCheckRequest(
-            source_file="contracts/agreement.pdf",
-            regulations=["GDPR", "INDIAN_CONTRACT"],
-        )
-        assert "GDPR" in req.regulations
-        invalid = set(req.regulations) - set(SUPPORTED_REGULATIONS.keys())
-        assert not invalid, f"Unexpected invalid: {invalid}"
-        print("ComplianceCheckRequest validation OK")
-        print("Compliance routes checks passed")
-
-    asyncio.run(smoke())

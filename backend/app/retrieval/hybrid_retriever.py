@@ -1,11 +1,3 @@
-# backend/app/retrieval/hybrid_retriever.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async orchestration
-# BATMAN-FIX: A - True async, T - Concurrent execution + timeout guards
-# ✅ FIXED: Safe sync wrapper (no deadlock in FastAPI)
-# ✅ FIXED: Added timeout protection on concurrent retriever tasks
-# ✅ FIXED: Python 3.8 fallback for asyncio.to_thread()
-# ✅ FIXED: Fallback scoring for chunks missing from RRF output
-# ✅ FIXED: Safe import fallbacks for utility functions
 
 from __future__ import annotations
 import asyncio
@@ -14,7 +6,6 @@ import sys
 from dataclasses import dataclass
 from typing import Final, Optional
 
-# FIXED: Removed duplicate 'import logging' and logging.basicConfig() — never configure
 # root logger in library code (it pollutes the entire application's log output)
 logger = logging.getLogger(__name__)
 
@@ -112,7 +103,6 @@ class HybridRetriever:
         self.bm25_retriever = BM25Retriever(workspace_id)
         logger.info(f"HybridRetriever initialized: workspace={workspace_id}, " f"alpha={alpha}, rrf_k={rrf_k}")
 
-    # ✅ NEW: Helper for Python 3.8 compatibility
     async def _run_in_thread(self, func, *args, **kwargs):
         """Run blocking function in thread pool — compatible with Python 3.8+."""
         if sys.version_info >= (3, 9):
@@ -224,7 +214,6 @@ class HybridRetriever:
                         "metadata": r.metadata,
                     }
 
-            # ✅ FIXED: Handle chunks in results_map but missing from fused_scores
             hybrid_results = []
             for chunk_id, data in results_map.items():
                 if chunk_id in fused_scores:
@@ -285,8 +274,4 @@ class HybridRetriever:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["HybridRetriever", "HybridRetrievalResult"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

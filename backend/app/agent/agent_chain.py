@@ -1,9 +1,3 @@
-# backend/app/agent/agent_chain.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, L - Logging
-# ASCALE-FIX: A - Async, E - Error propagation, S - Separation of concerns
-# ✅ FIXED: asyncio.shield for timeout safety + LangGraph version compatibility
-# ✅ FIXED: Thread ID validation + safe defaults for Pydantic alignment
-# ✅ FIXED: Correlation_id propagation in streaming errors
 
 from __future__ import annotations
 
@@ -50,7 +44,6 @@ class AgentRAGChain:
         self.graph = get_agent_graph()
         logger.info("AgentRAGChain initialized with LangGraph.")
 
-    # ✅ NEW: Thread ID validation helper
     def _validate_thread_id(self, thread_id: str) -> bool:
         """Validate thread_id format to prevent checkpoint key collisions."""
         # Allow UUID or simple alphanumeric (max 64 chars)
@@ -78,7 +71,6 @@ class AgentRAGChain:
         thread_id: str,
     ) -> AgentState:
         """DVMELTSS-M: DRY state initialization for query() and stream()."""
-        # ✅ FIXED: Use safe defaults aligned with Pydantic schema
         return {
             "correlation_id": thread_id,  # ✅ Propagate for tracing
             "question": question.strip(),
@@ -147,7 +139,6 @@ class AgentRAGChain:
         config = self._build_graph_config(thread_id, mode="query")
 
         try:
-            # ✅ FIXED: Use asyncio.shield to ensure timeout propagates correctly
             final_state = await asyncio.wait_for(
                 asyncio.shield(self.graph.ainvoke(initial_state, config=config)),
                 timeout=timeout,
@@ -235,7 +226,6 @@ class AgentRAGChain:
         config = self._build_graph_config(thread_id, mode="stream")
 
         try:
-            # ✅ FIXED: Safe version parameter for LangGraph compatibility
             stream_kwargs = {"config": config}
             try:
                 import langgraph
@@ -247,7 +237,6 @@ class AgentRAGChain:
             except Exception:
                 pass  # Use default if version check fails
 
-            # ✅ FIXED: Wrap streaming in timeout-protected task with shield
             stream_task = asyncio.create_task(asyncio.shield(self.graph.astream_events(initial_state, **stream_kwargs)))
 
             async for event in asyncio.wait_for(stream_task, timeout=timeout):
@@ -362,7 +351,6 @@ class AgentRAGChain:
 
     def get_conversation_history(self, thread_id: str) -> list[BaseMessage]:
         """Retrieve conversation history for a thread from MemorySaver."""
-        # ✅ FIXED: Version-safe checkpoint access
         try:
             config = {"configurable": {"thread_id": thread_id}}
             # Check if get_state exists (LangGraph 0.0.x) or use get_state_history (0.1+)
@@ -393,359 +381,3 @@ class AgentRAGChain:
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.agent.agent_chain) ---
 # ========================================================================
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
-    from pathlib import Path
-    from unittest.mock import AsyncMock, MagicMock, patch
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    async def run_tests():
-        print("🔍 Testing Agent Chain module (app/agent/agent_chain.py)")
-        print("=" * 70)
-
-        try:
-            from app.agent.agent_chain import AgentRAGChain
-            from langchain_core.messages import HumanMessage, AIMessage
-
-            # -- Test 1: Initialization ---------------------------------
-            print("\n📌 Test 1: AgentRAGChain initialization")
-            with patch("app.agent.agent_chain.get_agent_graph") as mock_get_graph:
-                mock_graph = MagicMock()
-                mock_get_graph.return_value = mock_graph
-                chain = AgentRAGChain()
-                assert chain.graph is mock_graph
-                print("   ✅ Initialization: graph instance injected correctly")
-
-            # -- Test 2: Thread ID validation ---------------------------
-            print("\n📌 Test 2: _validate_thread_id")
-            chain = AgentRAGChain.__new__(AgentRAGChain)
-            assert chain._validate_thread_id("uuid-1234-5678") is True
-            assert chain._validate_thread_id("simple123") is True
-            assert chain._validate_thread_id("invalid@id!") is False
-            print("   ✅ Thread ID validation: accepts valid, rejects invalid")
-
-            # -- Test 3: Input validation -------------------------------
-            print("\n📌 Test 3: _validate_inputs")
-            chain._validate_inputs("What is AI?", "ws-123")
-            print("   ✅ Valid inputs: accepted")
-            try:
-                chain._validate_inputs("Hi", "ws-123")
-            except ValueError:
-                print("   ✅ Short question: rejected")
-            try:
-                chain._validate_inputs("A" * 3000, "ws-123")
-            except ValueError:
-                print("   ✅ Long question: rejected")
-            try:
-                chain._validate_inputs("Valid?", "")
-            except ValueError:
-                print("   ✅ Empty workspace_id: rejected")
-
-            # -- Test 4: State building helpers -------------------------
-            print("\n📌 Test 4: _build_initial_state & _build_graph_config")
-            state = AgentRAGChain._build_initial_state(
-                question="Test?",
-                chat_history=[],
-                filter_dict={},
-                workspace_id="ws-456",
-                thread_id="test-123",
-            )
-            assert state["question"] == "Test?" and state["correlation_id"] == "test-123"
-            assert state["query_type"] == "factual"
-            print("   ✅ State building: safe defaults applied")
-
-            config = AgentRAGChain._build_graph_config("test-123", mode="query")
-            assert config["configurable"]["thread_id"] == "test-123"
-            print("   ✅ Graph config: thread_id set correctly")
-
-            # -- Test 5: query() success --------------------------------
-            print("\n📌 Test 5: query() method (mocked graph)")
-            with patch("app.agent.agent_chain.get_agent_graph") as mock_get_graph:
-                mock_graph = MagicMock()
-                mock_get_graph.return_value = mock_graph
-                mock_graph.ainvoke = AsyncMock(
-                    return_value={
-                        "answer": "AI is artificial intelligence.",
-                        "citations": [],
-                        "agent_steps": ["Analyzed", "Retrieved", "Generated"],
-                        "retrieval_route": "hybrid",
-                        "query_type": "factual",
-                        "confidence_score": 0.92,
-                        "relevance_score": 0.88,
-                        "is_grounded": True,
-                        "needs_human_review": False,
-                        "hallucination_flags": [],
-                        "graph_records": [],
-                        "retry_count": 0,
-                    }
-                )
-                chain = AgentRAGChain()
-                result = await chain.query(
-                    question="What is AI?",
-                    workspace_id="ws-123",
-                    thread_id="test-q",
-                    timeout_seconds=30,
-                )
-                assert result["success"] is True and "AI is" in result["answer"]
-                print("   ✅ query(): returns structured success response")
-
-            # -- Test 6: query() validation error -----------------------
-            print("\n📌 Test 6: query() with validation error")
-            with patch("app.agent.agent_chain.get_agent_graph"):
-                chain = AgentRAGChain()
-                result = await chain.query(question="Hi", workspace_id="ws-123")
-                assert result["success"] is False and result["error_code"] == "VALIDATION_ERROR"
-                print("   ✅ query(): validation error returns structured response")
-
-            # -- Test 7: query() timeout --------------------------------
-            print("\n📌 Test 7: query() with timeout")
-            with patch("app.agent.agent_chain.get_agent_graph") as mock_get_graph:
-                mock_graph = MagicMock()
-                mock_get_graph.return_value = mock_graph
-
-                async def _slow_invoke(*args, **kwargs):
-                    await asyncio.sleep(10)
-                    return {}
-
-                mock_graph.ainvoke = AsyncMock(side_effect=_slow_invoke)
-                chain = AgentRAGChain()
-                result = await chain.query(
-                    question="What is AI?",
-                    workspace_id="ws-123",
-                    thread_id="test-t",
-                    timeout_seconds=0.5,
-                )
-                assert result["success"] is False and result["error_code"] == "TIMEOUT"
-                print("   ✅ query(): timeout returns structured error response")
-
-            # -- Test 8: stream() event parsing & correlation_id --------
-            print("\n📌 Test 8: stream() event parsing & correlation_id")
-
-            chain = AgentRAGChain.__new__(AgentRAGChain)
-            thread_id = "test-stream-direct"
-
-            mock_events = [
-                {
-                    "event": "on_chain_end",
-                    "name": "query_analyzer",
-                    "data": {"output": {"agent_steps": ["Analyzed query"]}},
-                },
-                {
-                    "event": "on_chain_end",
-                    "name": "vector_retriever",
-                    "data": {"output": {"agent_steps": ["Retrieved 5 docs"]}},
-                },
-                {
-                    "event": "on_chat_model_stream",
-                    "name": "answer_generator",
-                    "data": {"chunk": MagicMock(content="AI is ")},
-                },
-                {
-                    "event": "on_chat_model_stream",
-                    "name": "answer_generator",
-                    "data": {"chunk": MagicMock(content="intelligence.")},
-                },
-                {
-                    "event": "on_chain_end",
-                    "name": "__end__",
-                    "data": {
-                        "output": {
-                            "citations": [{"source": "doc.pdf", "page": 1}],
-                            "retrieval_route": "vector",
-                            "confidence_score": 0.9,
-                            "is_grounded": True,
-                            "retry_count": 0,
-                            "agent_steps": ["Done"],
-                        }
-                    },
-                },
-            ]
-
-            parsed_events = []
-            for event in mock_events:
-                event_name = event.get("name", "")
-                event_type = event.get("event", "")
-
-                if event_type == "on_chain_end" and event_name in {
-                    "query_analyzer",
-                    "vector_retriever",
-                    "graph_retriever",
-                    "relevance_grader",
-                    "crag_grader",
-                    "query_rewriter",
-                    "web_search",
-                    "query_decomposer",
-                    "answer_generator",
-                    "self_rag_reflector",
-                    "hallucination_checker",
-                    "human_review",
-                }:
-                    output = event.get("data", {}).get("output", {})
-                    steps = output.get("agent_steps", [])
-                    step_msg = steps[-1] if steps else event_name
-                    parsed_events.append(
-                        {
-                            "type": "step",
-                            "node": event_name,
-                            "content": step_msg,
-                            "correlation_id": thread_id,
-                        }
-                    )
-
-                elif event_type == "on_chat_model_stream" and event_name == "answer_generator":
-                    chunk = event.get("data", {}).get("chunk")
-                    if chunk and hasattr(chunk, "content") and chunk.content:
-                        parsed_events.append(
-                            {
-                                "type": "token",
-                                "content": chunk.content,
-                                "correlation_id": thread_id,
-                            }
-                        )
-
-                elif event_type == "on_chain_end" and event_name == "__end__":
-                    output = event.get("data", {}).get("output", {})
-                    parsed_events.append(
-                        {
-                            "type": "citations",
-                            "content": output.get("citations", []),
-                            "correlation_id": thread_id,
-                        }
-                    )
-                    parsed_events.append(
-                        {
-                            "type": "agent_summary",
-                            "retrieval_route": output.get("retrieval_route", "vector"),
-                            "confidence_score": output.get("confidence_score", 0.0),
-                            "is_grounded": output.get("is_grounded", True),
-                            "retry_count": output.get("retry_count", 0),
-                            "agent_steps": output.get("agent_steps", []),
-                            "correlation_id": thread_id,
-                        }
-                    )
-                    parsed_events.append(
-                        {
-                            "type": "done",
-                            "latency_seconds": 0.123,
-                            "correlation_id": thread_id,
-                        }
-                    )
-
-            event_types = [e["type"] for e in parsed_events]
-            assert "step" in event_types and "token" in event_types and "done" in event_types
-            print(f"   ✅ Event parsing: yields expected types: {event_types}")
-
-            for event in parsed_events:
-                assert event["correlation_id"] == thread_id
-            print("   ✅ Correlation ID: propagated to all parsed events")
-
-            # -- Test 9: stream() error handling ------------------------
-            print("\n📌 Test 9: stream() error yields structured event")
-
-            error_event = None
-            try:
-                raise Exception("Graph execution failed")
-            except Exception as e:
-                latency = 0.456
-                error_event = {
-                    "type": "error",
-                    "message": str(e),
-                    "reference_id": thread_id[:8],
-                    "latency_seconds": round(latency, 3),
-                    "error_code": "STREAM_ERROR",
-                    "correlation_id": thread_id,
-                }
-
-            assert error_event["type"] == "error"
-            assert error_event["error_code"] == "STREAM_ERROR"
-            assert error_event["correlation_id"] == thread_id
-            print("   ✅ Error handling: yields structured error with correlation_id")
-
-            # -- Test 10: _format_query_error ---------------------------
-            print("\n📌 Test 10: _format_query_error helper")
-            err = AgentRAGChain._format_query_error("Test", "tid-1", 1.5, "TEST")
-            assert err["success"] is False and err["error_code"] == "TEST"
-            print("   ✅ _format_query_error: consistent structure")
-
-            # -- Test 11: get_conversation_history (✅ SIMPLIFIED) ------
-            print("\n📌 Test 11: get_conversation_history (simplified mock)")
-
-            # ✅ Just verify the method returns a list and handles errors gracefully
-            with patch("app.agent.agent_chain.get_agent_graph") as mock_get_graph:
-                mock_graph = MagicMock()
-                mock_get_graph.return_value = mock_graph
-                chain = AgentRAGChain()
-
-                # Mock the entire method flow to return a simple list
-                expected_history = [
-                    HumanMessage(content="Hello"),
-                    AIMessage(content="Hi there"),
-                ]
-
-                # Mock get_state to return a state with chat_history
-                mock_state = MagicMock()
-                mock_state.values = {"chat_history": expected_history}
-                mock_graph.get_state = MagicMock(return_value=mock_state)
-
-                # Call the method
-                history = chain.get_conversation_history("test-thread")
-
-                # Verify it returns a list of messages
-                assert isinstance(history, list), f"Expected list, got {type(history)}"
-                assert len(history) == 2, f"Expected 2 messages, got {len(history)}"
-                assert all(isinstance(msg, (HumanMessage, AIMessage)) for msg in history)
-                print("   ✅ get_conversation_history: returns list of BaseMessage objects")
-
-                # Verify error handling: returns empty list on exception
-                mock_graph.get_state = MagicMock(side_effect=Exception("DB error"))
-                history = chain.get_conversation_history("error-thread")
-                assert history == [], f"Expected empty list on error, got {history}"
-                print("   ✅ get_conversation_history: returns [] on exception (graceful degradation)")
-
-            # -- Test 12: get_agent_metadata ----------------------------
-            print("\n📌 Test 12: get_agent_metadata")
-            with patch("app.agent.agent_chain.get_agent_graph") as mock_get_graph:
-                mock_graph = MagicMock()
-                mock_graph.version = "1.2.3"
-                mock_graph.nodes = {"n1": MagicMock(), "n2": MagicMock()}
-                mock_graph.checkpointer = True
-                mock_get_graph.return_value = mock_graph
-                chain = AgentRAGChain()
-                meta = chain.get_agent_metadata()
-                assert meta["graph_version"] == "1.2.3" and meta["node_count"] == 2
-                print("   ✅ get_agent_meta returns graph introspection data")
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! Agent Chain module verified.")
-            print("\n💡 What we verified:")
-            print("   • Initialization & Validation ✅")
-            print("   • State building & config ✅")
-            print("   • query(): success, validation error, timeout ✅")
-            print("   • stream(): event parsing logic & correlation_id propagation ✅")
-            print("   • stream(): error handling yields structured event ✅")
-            print("   • Error formatting & conversation history (simplified mock) ✅")
-            print("   • Metadata introspection ✅")
-            print("\n🔐 Production: LangGraph agent with async safety & tracing ready")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    success = asyncio.run(run_tests())
-    sys.exit(0 if success else 1)

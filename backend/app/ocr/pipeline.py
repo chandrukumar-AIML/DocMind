@@ -1,15 +1,3 @@
-# backend/app/ocr/pipeline.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async orchestration
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - True async, M - Memory safety, T - Concurrency control
-# ✅ FIXED: Async wrappers with thread executor + timeout guards
-# ✅ FIXED: Safe page loading with subprocess timeout + max_pages guard
-# ✅ FIXED: Cache-safe get_ocr_pipeline with immutable params
-# ✅ FIXED: Singleton VisionAnalyzer reuse
-# ✅ FIXED: Block-level fusion in _merge_results (not just table injection)
-# ✅ FIXED: Retry logic for transient OCR failures
-# ✅ FIXED: Module-level imports + lazy fallbacks
-# ✅ FINAL FIX: Signature-agnostic MockBlock for merge testing
 
 from __future__ import annotations
 import asyncio
@@ -22,7 +10,6 @@ from typing import Final, Iterator, Optional, Union, TYPE_CHECKING, Callable, Aw
 import numpy as np
 from PIL import Image
 
-# ✅ FIXED: Module-level imports (lazy fallback for optional deps)
 try:
     import cv2
 except ImportError:
@@ -88,7 +75,6 @@ class OCRPipeline:
         settings = get_settings()
         self.confidence_threshold = confidence_threshold or settings.ocr_confidence_threshold
         self.use_gpu = use_gpu or settings.ocr_use_gpu
-        # ✅ FIXED: Convert to tuple for hashable cache key
         self.ocr_languages = tuple(ocr_languages) if ocr_languages else tuple(settings.ocr_language_list)
 
         self.preprocessor = DocumentPreprocessor()
@@ -109,7 +95,6 @@ class OCRPipeline:
             except ValueError as e:
                 logger.warning(f"Vision OCR disabled: {e}")
 
-        # ✅ NEW: Cache for VisionAnalyzer singleton (per pipeline instance)
         self._vision_analyzer_cache: Optional["VisionAnalyzer"] = None
 
         logger.info(
@@ -128,7 +113,6 @@ class OCRPipeline:
                 _ = self.paddle_engine.ocr(dummy_img, cls=False)
                 logger.debug("✅ OCR models loaded successfully via warmup")
 
-                # ✅ NEW: GPU memory cleanup hint
                 if self.use_gpu:
                     try:
                         import torch
@@ -147,7 +131,6 @@ class OCRPipeline:
             logger.debug(f"⚠️ OCR warmup failed (non-critical, expected on first run): {e}")
             return False
 
-    # ✅ NEW: Async wrapper for FastAPI integration
     async def process_file_async(
         self,
         file_path: Union[str, Path],
@@ -201,13 +184,11 @@ class OCRPipeline:
         corr_id = correlation_id or generate_ocr_correlation_id("ocr_pipeline")
         file_path = Path(file_path)
 
-        # ✅ FIXED: Centralized validation
         self._validate_file_input(file_path)
 
         logger.info(f"[{corr_id}] Processing file: {file_path.name}")
         total_pages = self._count_pages(file_path)
 
-        # ✅ NEW: Guard against huge PDFs
         if total_pages > _MAX_PAGES:
             raise ValueError(f"Document too large: {total_pages} pages (max {_MAX_PAGES})")
 
@@ -217,7 +198,6 @@ class OCRPipeline:
         for page_num, page_image in enumerate(self._load_pages(file_path)):
             try:
                 if progress_callback:
-                    # ✅ FIXED: Handle async progress callbacks
                     cb = progress_callback(page_num, total_pages)
                     if asyncio.iscoroutine(cb):
                         asyncio.run(cb)  # Safe because we're in sync context; for pure async, use process_file_async
@@ -245,7 +225,6 @@ class OCRPipeline:
                         vision_result = self.vision_engine.process_page(
                             preprocessed_img, page_num=page_num, correlation_id=corr_id
                         )
-                        # ✅ FIXED: Use improved block-level merge
                         final_result = self._merge_results_blockwise(paddle_result, vision_result)
                         vision_fallback_count += 1
                     except VisionOCRError as e:
@@ -271,7 +250,6 @@ class OCRPipeline:
         )
         return doc_result
 
-    # ✅ NEW: Input validation helper
     def _validate_file_input(self, file_path: Path) -> None:
         """Validate file input before processing."""
         if not file_path.exists():
@@ -400,7 +378,6 @@ class OCRPipeline:
             logger.info(f"[{corr_id}] Vision enrichment disabled or unavailable.")
             return EnrichedDocument(ocr_result=doc_result, correlation_id=corr_id)
 
-        # ✅ FIXED: Reuse VisionAnalyzer singleton (not new instance per call)
         if self._vision_analyzer_cache is None:
             self._vision_analyzer_cache = VisionAnalyzer(
                 api_key=settings.openai_api_key,
@@ -512,7 +489,6 @@ class OCRPipeline:
         primary.blocks.sort(key=lambda b: b.line_num)
         return primary
 
-    # ✅ FIXED: Block-level fusion instead of simple primary selection
     @staticmethod
     def _merge_results_blockwise(paddle: PageOCRResult, vision: PageOCRResult) -> PageOCRResult:
         """
@@ -590,7 +566,6 @@ class OCRPipeline:
                     **{k: v for k, v in getattr(vb, "metadata", {}).items() if v is not None},
                 }
 
-                # ✅ FINAL FIX: Create merged block safely — handle classes with/without metadata param
                 try:
                     merged_block = type(pb)(
                         text=merged_text,
@@ -652,7 +627,6 @@ class OCRPipeline:
         return OCRPipeline._inject_table_html(primary, secondary)
 
 
-# ✅ FIXED: Cache-safe singleton with immutable params
 @lru_cache(maxsize=1)
 def get_ocr_pipeline(
     confidence_threshold: float = _DEFAULT_CONFIDENCE_THRESHOLD,
@@ -674,7 +648,6 @@ def get_ocr_pipeline(
     )
 
 
-# ✅ NEW: Clear cache for testing/reload scenarios
 def reset_ocr_pipeline_cache() -> None:
     """Clear the get_ocr_pipeline LRU cache — useful for tests or config reloads."""
     get_ocr_pipeline.cache_clear()
@@ -688,202 +661,3 @@ __all__ = ["OCRPipeline", "get_ocr_pipeline", "reset_ocr_pipeline_cache"]
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.ocr.pipeline) ---------
 # ========================================================================
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
-    import tempfile
-    from pathlib import Path
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    # ====================================================================
-    # -- SIGNATURE-AGNOSTIC MOCKS (Accept any kwargs via **kwargs) -------
-    # ====================================================================
-
-    class MockBlock:
-        """
-        Fully signature-agnostic block mock for merge testing.
-        Accepts ANY keyword argument via **kwargs and stores as attributes.
-        """
-
-        def __init__(self, **kwargs):
-            # Set required attrs with defaults, then override with kwargs
-            self.text = kwargs.pop("text", "")
-            self.confidence = kwargs.pop("confidence", 0.0)
-            self.bbox = kwargs.pop("bbox", {})
-            self.block_type = kwargs.pop("block_type", "text")
-            self.line_num = kwargs.pop("line_num", 0)
-            self.table_html = kwargs.pop("table_html", None)
-            # Store any remaining kwargs as attributes (e.g., metadata)
-            for k, v in kwargs.items():
-                object.__setattr__(self, k, v)
-            # Ensure metadata exists
-            if not hasattr(self, "metadata"):
-                object.__setattr__(self, "metadata", {})
-
-        def __repr__(self):
-            return f"MockBlock(text={self.text[:30]}..., conf={self.confidence})"
-
-    class MockPageResult:
-        """Minimal PageOCRResult mock — accepts any kwargs."""
-
-        def __init__(self, **kwargs):
-            self.page_num = kwargs.pop("page_num", 0)
-            self.blocks = kwargs.pop("blocks", [])
-            self.mean_confidence = kwargs.pop("mean_confidence", 0.0)
-            self.correlation_id = kwargs.pop("correlation_id", None)
-            # Store any extra kwargs
-            for k, v in kwargs.items():
-                object.__setattr__(self, k, v)
-
-    async def run_tests():
-        print("🔍 Testing OCRPipeline module (app/ocr/pipeline.py)")
-        print("=" * 70)
-
-        try:
-            # -- Test 1: Module imports & singleton -----------------------
-            print("\n📌 Test 1: Module imports & singleton caching")
-            from app.ocr.pipeline import (
-                get_ocr_pipeline,
-                reset_ocr_pipeline_cache,
-                OCRPipeline,
-            )
-
-            reset_ocr_pipeline_cache()
-            pipe1 = get_ocr_pipeline(confidence_threshold=0.7)
-            pipe2 = get_ocr_pipeline(confidence_threshold=0.7)
-            assert pipe1 is pipe2
-            print(f"   ✅ Singleton caching: same instance = {pipe1 is pipe2}")
-
-            reset_ocr_pipeline_cache()
-            pipe3 = get_ocr_pipeline(confidence_threshold=0.9)
-            assert pipe1 is not pipe3
-            print(f"   ✅ Cache invalidation: new instance for new params = {pipe1 is not pipe3}")
-
-            # -- Test 2: Pipeline initialization --------------------------
-            print("\n📌 Test 2: OCRPipeline initialization")
-            pipeline = OCRPipeline(confidence_threshold=0.75, use_gpu=False)
-            assert pipeline.confidence_threshold == 0.75
-            print(f"   ✅ Initialized: threshold={pipeline.confidence_threshold}, langs={pipeline.ocr_languages}")
-
-            # -- Test 3: File validation ----------------------------------
-            print("\n📌 Test 3: Input validation")
-            try:
-                pipeline._validate_file_input(Path("/nonexistent/file.pdf"))
-                print("   ❌ Should raise FileNotFoundError")
-            except FileNotFoundError:
-                print("   ✅ Non-existent file correctly rejected")
-
-            with tempfile.NamedTemporaryFile(suffix=".xyz", delete=False) as tmp:
-                tmp_path = Path(tmp.name)
-            try:
-                pipeline._validate_file_input(tmp_path)
-                print("   ❌ Should raise ValueError for unsupported extension")
-            except ValueError as e:
-                if "Unsupported file type" in str(e):
-                    print("   ✅ Unsupported extension rejected: '.xyz'")
-            finally:
-                tmp_path.unlink(missing_ok=True)
-
-            # -- Test 4: Warmup -------------------------------------------
-            print("\n📌 Test 4: Pipeline warmup")
-            warmup_success = pipeline.warmup()
-            print(f"   ✅ Warmup: {'PASS' if warmup_success else 'SKIP (models load on first use)'}")
-
-            # -- Test 5: Merge logic (SIGNATURE-AGNOSTIC MOCKS) -----------
-            print("\n📌 Test 5: _merge_results_blockwise (confidence-weighted fusion)")
-
-            # Use signature-agnostic mocks — accepts ANY kwargs
-            paddle_block = MockBlock(
-                text="Invoice Total: $1,234.56",
-                confidence=0.95,
-                bbox={"x0": 100, "y0": 200, "x1": 300, "y1": 220},
-                block_type="text",
-                line_num=10,
-                table_html=None,
-                metadata={"source": "paddle"},  # ✅ Now accepted via **kwargs
-            )
-
-            paddle_result = MockPageResult(
-                page_num=0,
-                blocks=[paddle_block],
-                mean_confidence=0.95,
-                correlation_id="test-merge",
-            )
-
-            vision_block = MockBlock(
-                text="Invoice Total: $1,234.56",
-                confidence=0.88,
-                bbox={"x0": 102, "y0": 201, "x1": 298, "y1": 221},
-                block_type="text",
-                line_num=10,
-                table_html="<table><tr><td>Total</td><td>$1,234.56</td></tr></table>",
-                metadata={"source": "vision", "enriched": True},  # ✅ Accepted
-            )
-
-            vision_result = MockPageResult(
-                page_num=0,
-                blocks=[vision_block],
-                mean_confidence=0.88,
-                correlation_id="test-merge",
-            )
-
-            # Merge test — now works with ANY block class signature
-            merged = pipeline._merge_results_blockwise(paddle_result, vision_result)
-
-            assert len(merged.blocks) >= 1, "Should have at least 1 merged block"
-            assert merged.blocks[0].text == "Invoice Total: $1,234.56", "Text should be preserved"
-            assert merged.blocks[0].confidence == 0.95, "Should prefer higher confidence"
-            print(f"   ✅ Block fusion: text preserved, confidence={merged.blocks[0].confidence}")
-
-            # -- Test 6: Async wrapper ------------------------------------
-            print("\n📌 Test 6: Async wrapper with timeout")
-            try:
-                await pipeline.process_file_async(file_path="/nonexistent/test.png", timeout_seconds=1.0)
-                print("   ❌ Should raise error")
-            except (FileNotFoundError, Exception) as e:
-                print(f"   ✅ Async wrapper handles errors: {type(e).__name__}")
-
-            # -- Test 7: Page counting & extensions -----------------------
-            print("\n📌 Test 7: Page counting & extension support")
-            assert pipeline._count_pages(Path("test.jpg")) == 1
-            print("   ✅ Image files: counted as 1 page")
-            for ext in [".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp"]:
-                assert ext in OCRPipeline.SUPPORTED_EXTENSIONS
-            print(f"   ✅ Supported extensions: {sorted(OCRPipeline.SUPPORTED_EXTENSIONS)}")
-
-            # -- Test 8: PIL->CV2 conversion -------------------------------
-            print("\n📌 Test 8: PIL to OpenCV conversion")
-            try:
-                from PIL import Image
-
-                pil_img = Image.new("RGB", (100, 100), color="red")
-                cv2_img = pipeline._pil_to_cv2(pil_img)
-                assert cv2_img.shape == (100, 100, 3)
-                print(f"   ✅ PIL->CV2: shape={cv2_img.shape}, RGB->BGR verified")
-            except ImportError as e:
-                print(f"   ⚠️ Dependency missing — skipping: {e}")
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! OCRPipeline module verified.")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    success = asyncio.run(run_tests())
-    sys.exit(0 if success else 1)

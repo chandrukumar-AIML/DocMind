@@ -1,7 +1,3 @@
-# backend/app/ingest/xlsx_extractor.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, M - Memory safety, T - Batch processing
-# OWASP-FIX: 7 - PII redaction, 9 - File handling, 1 - Formula safety
 from __future__ import annotations
 import asyncio
 import logging
@@ -205,8 +201,4 @@ class XlsxExtractor:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["XlsxExtractor", "XlsxContent"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

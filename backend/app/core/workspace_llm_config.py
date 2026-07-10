@@ -1,4 +1,3 @@
-# backend/app/core/workspace_llm_config.py
 """
 Per-workspace LLM provider configuration (BYOK — bring your own key).
 

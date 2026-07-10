@@ -1,4 +1,3 @@
-# backend/app/core/esign_handler.py
 """E-Signature handler: DocuSign API primary + in-app canvas fallback."""
 
 from __future__ import annotations
@@ -230,18 +229,3 @@ async def record_inapp_signature(
 
     return {"signed": True, "request_id": request_id, "signer": signer_user_id}
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke():
-        print("E-sign handler smoke test")
-        # Test that schema bootstrap function is importable
-        assert callable(ensure_esign_schema)
-        assert callable(create_esign_request)
-        # Test DocuSign env vars fallback
-        key = os.getenv("DOCUSIGN_INTEGRATION_KEY", "")
-        print(f"DocuSign integration key configured: {bool(key)}")
-        print("E-sign handler checks passed")
-
-    asyncio.run(smoke())

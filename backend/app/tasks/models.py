@@ -38,7 +38,6 @@ class TaskCreateRequest(BaseModel):
     metadata: Optional[dict[str, Any]] = Field(default=None, description="Additional task metadata")
     correlation_id: Optional[str] = CorrelationIdField
 
-    # ✅ FIXED: Pydantic v2 config
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -63,7 +62,6 @@ class TaskCreateRequest(BaseModel):
     @classmethod
     def sanitize_metadata(cls, data: Any) -> Any:
         """Sanitize metadata dict to ensure JSON-serializability."""
-        # ✅ FIXED: Proper signature with cls + data parameters
         if not isinstance(data, dict):
             return data
 
@@ -98,7 +96,6 @@ class TaskResponse(BaseModel):
     metadata: Optional[dict[str, Any]] = None
     correlation_id: Optional[str] = None
 
-    # ✅ FIXED: Pydantic v2 config with from_attributes
     model_config = ConfigDict(
         from_attributes=True,
         json_schema_extra={
@@ -115,11 +112,9 @@ class TaskResponse(BaseModel):
         },
     )
 
-    # ✅ NEW: Helper to convert from dict (for ORM compatibility)
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TaskResponse":
         """Create TaskResponse from dict with safe field mapping."""
-        # ✅ FIXED: Proper classmethod signature with cls parameter
 
         def _safe_datetime(value: Any) -> Optional[datetime]:
             """Safely parse datetime from string or return as-is."""
@@ -217,8 +212,4 @@ __all__ = [
     "get_task_models_metadata",
 ]  # ✅ FIXED: Closed the list properly
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

@@ -1,6 +1,3 @@
-# backend/app/domains/medical/pii_redactor.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, M - Modular
-# OWASP-FIX: 1 - HIPAA compliance: REDACT BEFORE EXTERNAL CALLS
 # HIPAA: All PII must be redacted BEFORE any external API calls
 
 from __future__ import annotations
@@ -77,7 +74,6 @@ class PIIRedactor:
     """
 
     def __init__(self, model: str = "gpt-4o"):
-        # FIXED: Use centralized LLM pool for LLM pass (only if enabled)
         from app.core.domain_utils import get_domain_llm
 
         self.llm = get_domain_llm(streaming=False, model_override=model)
@@ -120,7 +116,6 @@ class PIIRedactor:
         # PASS 2: LLM-based contextual PII - ONLY on ALREADY-REDACTED text
         # This ensures no raw PII is ever sent to external APIs
         if use_llm_pass and len(redacted) > 50:
-            # FIXED: Pass the already-redacted text to LLM, never the original
             redacted = self._llm_redact(redacted, corr_id)
             if redacted != text:  # Only count if LLM actually changed something
                 redacted_items["LLM_CONTEXTUAL"] = 1
@@ -155,7 +150,6 @@ Text (already partially redacted):
 {redacted_text[:3000]}
 """
         try:
-            # FIXED: Apply retry + ensure we're working with redacted text only
             response = await self._llm_retry(lambda: self.llm.ainvoke([{"role": "user", "content": prompt}]))
             return response.content.strip()
         except Exception as e:
@@ -167,8 +161,4 @@ Text (already partially redacted):
 # DVMELTSS-M: Explicit module exports
 __all__ = ["PIIRedactor", "RedactionResult", "PII_PATTERNS"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

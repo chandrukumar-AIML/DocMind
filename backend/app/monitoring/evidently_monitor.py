@@ -1,7 +1,3 @@
-# backend/app/monitoring/evidently_monitor.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
-# ✅ FIXED: Proper async/sync bridge + input validation + safe DataFrame handling
 
 from __future__ import annotations
 
@@ -48,7 +44,6 @@ class DriftReport:
 
     def to_dict(self) -> dict:
         """Serialize for API/MLflow."""
-        # ✅ FIXED: Safe serialization with None handling
         return {
             "run_date": self.run_date,
             "workspace_id": self.workspace_id,
@@ -64,7 +59,6 @@ class DriftReport:
         }
 
 
-# ✅ NEW: Input validation helper
 def _validate_drift_inputs(
     current_hours: float,
     reference_hours: float,
@@ -108,7 +102,6 @@ class EvidentlyMonitor:
 
     def __init__(self, workspace_id: str = "default", thresholds: Optional[dict] = None):
         self.workspace_id = workspace_id
-        # FIXED: Use centralized threshold getter with overrides
         self.quality_thresholds = get_quality_thresholds(thresholds)
         self.collector = MetricsCollector()
 
@@ -140,7 +133,6 @@ class EvidentlyMonitor:
                 correlation_id=corr_id,
             )
 
-        # FIXED: Validate windows using centralized utility
         current_hours = validate_monitoring_window(current_hours, min_hours=24, max_hours=720)
         reference_hours = validate_monitoring_window(reference_hours, min_hours=48, max_hours=1440)
 
@@ -153,7 +145,6 @@ class EvidentlyMonitor:
             correlation_id=corr_id,
         )
 
-        # ✅ FIXED: Use run_async_in_task for safe async execution
         async def _get_current():
             return await self.collector.get_recent_async(hours=current_hours, workspace_id=self.workspace_id)
 
@@ -234,7 +225,6 @@ class EvidentlyMonitor:
 
     def _metrics_to_df(self, metrics: list[QueryMetrics]) -> pd.DataFrame:
         """Convert metrics list to DataFrame for Evidently."""
-        # ✅ FIXED: Handle empty/None metrics
         if not metrics:
             return pd.DataFrame()
 
@@ -338,7 +328,6 @@ class EvidentlyMonitor:
             curr = current_df[col].dropna().values
             ref = reference_df[col].dropna().values if col in reference_df.columns else np.array([])
 
-            # ✅ FIXED: Safe length checks for KS test
             if len(curr) < 5 or len(ref) < 5:
                 results[col] = {
                     "drift_detected": False,
@@ -362,7 +351,6 @@ class EvidentlyMonitor:
     def _check_quality_thresholds(self, stats: dict) -> list[str]:
         """Check current window stats against quality alert thresholds."""
         alerts = []
-        # FIXED: Use centralized threshold config
         thresholds = self.quality_thresholds
 
         for metric, threshold in thresholds.items():
@@ -495,8 +483,4 @@ __all__ = [
     "get_evidently_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

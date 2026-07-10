@@ -1,4 +1,3 @@
-# backend/app/database/__init__.py
 """Database package for DocuMind AI — SQLAlchemy 2.0 async support."""
 
 from __future__ import annotations

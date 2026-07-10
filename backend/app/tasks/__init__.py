@@ -1,7 +1,3 @@
-# backend/app/tasks/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
-# ✅ FIXED: Direct return in __getattr__ + error handling + idempotent logging
 
 """
 DocuMind AI - Celery Tasks Module
@@ -111,7 +107,6 @@ def _reset_caches_for_tests() -> None:
         except Exception:
             pass
 
-    # ✅ FIXED: Reset module-level singletons
     try:
         from . import manager
 
@@ -152,7 +147,6 @@ def _log_module_init() -> None:
 _log_module_init()
 
 
-# ✅ NEW: Metadata helper for monitoring
 def get_tasks_metadata() -> dict[str, Any]:
     """Return tasks module metadata for monitoring/debugging."""
     from .celery_app import get_celery_metadata

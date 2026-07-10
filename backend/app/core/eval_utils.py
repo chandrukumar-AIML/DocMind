@@ -1,7 +1,3 @@
-# backend/app/core/eval_utils.py
-# DVMELTSS-FIX: M - Modular, E - Error handling, A - Async
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - Async-safe LLM calls
 """
 Shared utilities for evaluation modules (RAGAS, OCR, retrieval).
 
@@ -21,7 +17,6 @@ import asyncio
 import logging
 from typing import Any, Final, Optional, TypeVar
 
-# ✅ FIXED: Added missing import for generate_correlation_id
 from app.core.ids import generate_correlation_id
 from app.core.llm_pool import get_llm
 from app.core.retry import retry_async, RetryConfig
@@ -170,7 +165,6 @@ def aggregate_metrics(
 
 def generate_eval_correlation_id(prefix: str = "eval") -> str:
     """Generate correlation ID for evaluation tracing."""
-    # ✅ FIXED: Now generate_correlation_id is imported and defined
     return f"{prefix}_{generate_correlation_id()}"
 
 
@@ -194,8 +188,4 @@ __all__ = [
     "validate_eval_sample",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

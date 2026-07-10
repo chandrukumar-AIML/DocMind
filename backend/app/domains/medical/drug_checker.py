@@ -1,5 +1,3 @@
-# backend/app/domains/medical/drug_checker.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 
 from __future__ import annotations
 
@@ -99,7 +97,6 @@ class DrugInteractionChecker:
     """
 
     def __init__(self, model: str = "gpt-4o"):
-        # FIXED: Use centralized LLM pool
         self.llm = get_domain_llm(streaming=False, model_override=model)
         self._llm_retry = retry_async(
             config=RetryConfig(
@@ -123,7 +120,6 @@ class DrugInteractionChecker:
             meds = await self._extract_medications(chunk.page_content, corr_id)
             all_meds.extend(meds)
 
-        # FIXED: Case-insensitive deduplication by name
         seen: set[str] = set()
         unique_meds = []
         for m in all_meds:
@@ -217,8 +213,4 @@ class DrugInteractionChecker:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["DrugInteractionChecker", "DrugCheckResult", "DrugInteraction"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

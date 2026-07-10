@@ -1,4 +1,3 @@
-# backend/app/api/routes/audit.py
 """Audit log API — filterable, exportable, role-gated."""
 
 from __future__ import annotations
@@ -66,6 +65,3 @@ async def export_audit(
         headers={"Content-Disposition": f'attachment; filename="audit_{workspace_id}.csv"'},
     )
 
-
-if __name__ == "__main__":
-    print("Audit routes:", [r.path for r in router.routes])

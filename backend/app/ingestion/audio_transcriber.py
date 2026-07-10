@@ -1,8 +1,3 @@
-# backend/app/ingest/audio_transcriber.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, M - Memory safety, T - Batch processing
-# OWASP-FIX: 3 - Credential safety, 9 - File handling
-# ✅ FIXED: Proper async/sync bridge + file-like wrapper + input validation
 
 from __future__ import annotations
 
@@ -41,7 +36,6 @@ _RETRY_MAX_DELAY: Final = 30.0
 _MIN_AUDIO_DURATION: Final = 0.1
 _MAX_AUDIO_DURATION: Final = 3600
 
-# ✅ NEW: Timeout for Whisper API calls (seconds)
 _WHISPER_TIMEOUT: Final = 300
 
 
@@ -104,7 +98,6 @@ class TranscriptionResult:
 
     def to_dict(self) -> dict:
         """Serialize for API responses / logging."""
-        # ✅ FIXED: Safe serialization with None handling
         return {
             "source_file": self.source_file,
             "full_text": self.full_text[:500] + ("..." if len(self.full_text) > 500 else ""),
@@ -144,7 +137,6 @@ async def _temp_audio_file(audio_bytes: bytes, suffix: str = ".mp3"):
                 logger.warning(f"Temp file cleanup failed: {e}")
 
 
-# ✅ NEW: Input validation helper
 def _validate_transcribe_inputs(
     file_path: Optional[str | Path],
     file_bytes: Optional[bytes],
@@ -180,7 +172,6 @@ class AudioTranscriber:
         self.enable_diarization = getattr(settings, "enable_speaker_diarization", False)
         self.hf_token = getattr(settings, "huggingface_token", "")
         self.max_retries = max_retries
-        # FIXED: Centralized retry config
         self._llm_retry = retry_async(
             config=RetryConfig(
                 max_attempts=max_retries,
@@ -222,7 +213,6 @@ class AudioTranscriber:
             try:
                 loop = asyncio.get_running_loop()
 
-                # ✅ FIXED: Read bytes and wrap in file-like object for OpenAI API
                 audio_bytes = await loop.run_in_executor(None, lambda: audio_path.read_bytes())
 
                 # OpenAI API expects file-like object, not raw bytes
@@ -238,7 +228,6 @@ class AudioTranscriber:
                 if self.language:
                     kwargs["language"] = self.language
 
-                # ✅ FIXED: Add timeout to API call
                 response = await asyncio.wait_for(
                     self.client.audio.transcriptions.create(**kwargs),
                     timeout=_WHISPER_TIMEOUT,
@@ -340,7 +329,6 @@ class AudioTranscriber:
         try:
             loop = asyncio.get_running_loop()
 
-            # ✅ FIXED: Use functools.partial for safe arg passing in executor
             audio = await loop.run_in_executor(None, functools.partial(AudioSegment.from_file, str(audio_path)))
 
             duration_s = len(audio) / 1000
@@ -355,7 +343,6 @@ class AudioTranscriber:
                         chunk = audio[start_ms : start_ms + _CHUNK_DURATION_SEC * 1000]
                         chunk_path = Path(tmp_dir) / f"chunk_{i:03d}.mp3"
 
-                        # ✅ FIXED: Use functools.partial for safe arg passing
                         await loop.run_in_executor(
                             None,
                             functools.partial(chunk.export, str(chunk_path), format="mp3"),
@@ -443,7 +430,6 @@ class AudioTranscriber:
 
             loop = asyncio.get_running_loop()
 
-            # ✅ FIXED: Use functools.partial for safe arg passing
             diarization = await loop.run_in_executor(None, functools.partial(diarization_pipeline, str(audio_path)))
 
             speaker_turns: list[tuple[float, float, str]] = []
@@ -605,8 +591,4 @@ __all__ = [
     "get_audio_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

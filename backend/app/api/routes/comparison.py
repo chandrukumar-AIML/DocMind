@@ -1,4 +1,3 @@
-# backend/app/api/routes/comparison.py
 """Batch cross-document comparison API routes."""
 
 from __future__ import annotations
@@ -141,18 +140,3 @@ async def list_comparison_jobs(
         "correlation_id": corr_id,
     }
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke():
-        print("Comparison routes smoke test")
-        req = ComparisonRequest(
-            source_files=["a.pdf", "b.pdf"],
-            mode=ComparisonMode.DIFFERENCE,
-        )
-        assert req.mode == ComparisonMode.DIFFERENCE
-        print("ComparisonRequest validation OK")
-        print("Comparison routes checks passed")
-
-    asyncio.run(smoke())

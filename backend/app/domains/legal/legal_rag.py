@@ -1,5 +1,3 @@
-# backend/app/domains/legal/legal_rag.py
-# DVMELTSS-FIX: M - Modular, S - Security, L - Logging
 
 from __future__ import annotations
 
@@ -33,14 +31,9 @@ class LegalRAGChain(AdvancedRAGChain):
     """
 
     def _build_system_prompt(self, context: str, correlation_id: Optional[str] = None) -> str:
-        # FIXED: Add correlation_id to prompt for tracing (optional metadata)
         safe_context = context[:4000] + ("..." if len(context) > 4000 else "")
         return LEGAL_SYSTEM_PROMPT.format(context=safe_context)
 
 
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

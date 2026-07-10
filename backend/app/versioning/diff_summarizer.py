@@ -1,7 +1,3 @@
-# backend/app/versioning/diff_summarizer.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, A - Async
-# BATMAN-FIX: A - True async, T - Batch processing
-# ✅ FIXED: Explicit async retry loop + input validation + safe LLM parsing + timeout
 
 """
 LLM-based change summarization for document versioning.
@@ -39,7 +35,6 @@ _DOMAIN_CONTEXTS: Final = {
 }
 
 
-# ✅ NEW: Input validation helper
 def _validate_summarizer_inputs(
     added_content: Optional[list[str]],
     removed_content: Optional[list[str]],
@@ -89,12 +84,10 @@ async def generate_change_summary_async(
 
     domain_context = _DOMAIN_CONTEXTS.get(document_type, document_type)
 
-    # ✅ FIXED: Safe truncation before preview
     added_preview = "\n".join(added_content[:3])[:200] if added_content else "(none)"
     removed_preview = "\n".join(removed_content[:3])[:200] if removed_content else "(none)"
     modified_count = len(modified_sections or [])
 
-    # FIXED: Use centralized prompt escaping with safe truncation
     raw_prompt = f"""Summarize changes to this {domain_context} document.
 ADDED (first 3 lines):
 {added_preview}
@@ -113,7 +106,6 @@ Keep it concise and professional."""
 
     llm = get_llm(streaming=False, temperature_override=0.3)
 
-    # ✅ FIXED: Explicit async retry loop (avoids closure/scoping issues with inner decorators)
     last_error = None
     for attempt in range(_SUMMARY_RETRY_CONFIG.max_attempts):
         try:
@@ -173,7 +165,6 @@ def generate_fallback_summary(
     Returns:
         Fallback summary string
     """
-    # ✅ FIXED: Clamp inputs to valid ranges
     added_count = max(0, int(added_count))
     removed_count = max(0, int(removed_count))
     modified_count = max(0, int(modified_count))
@@ -217,8 +208,4 @@ __all__ = [
     "get_summarizer_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

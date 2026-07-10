@@ -1,7 +1,3 @@
-# backend/app/core/celery_utils.py
-# DVMELTSS-FIX: M - Modular, A - Async-safe, E - Error handling
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - True async for task orchestration
 """
 Shared Celery utilities for DocuMind AI.
 
@@ -52,7 +48,6 @@ def run_async_in_task(
     """
     Run an async callable from synchronous task/adapter code.
 
-    # FIXED: This helper is intentionally synchronous because callers use it
     as a sync bridge. Returning a coroutine here leaks into API responses and
     background tasks.
     # OPTIMIZED: If a loop is already running, execute the coroutine on a
@@ -144,8 +139,4 @@ __all__ = [
     "get_queue_for_file_size",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

@@ -1,11 +1,3 @@
-# backend/app/ocr/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
-# ✅ FIXED: __getattr__ returns values directly (not via unreliable locals())
-# ✅ FIXED: _reset_caches_for_tests() actually resets module caches (LRU, singletons)
-# ✅ FIXED: Lazy import error handling with clear messages
-# ✅ FIXED: Idempotent module init logging + debug level
-# ✅ FIXED: Added __dir__() for IDE/tab-completion support
 
 from __future__ import annotations
 from typing import Any

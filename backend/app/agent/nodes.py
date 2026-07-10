@@ -1,10 +1,3 @@
-# backend/app/agent/nodes.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Security/Scalability
-# ASCALE-FIX: A - Async, L - Layered, E - Error propagation
-# ✅ FIXED: Python 3.8 compatibility for asyncio.to_thread
-# ✅ FIXED: Safe JSON parsing with non-greedy regex
-# ✅ FIXED: Named helper functions for thread executor (no lambda capture issues)
-# ✅ FIXED: Input validation + safe settings access + streaming LLM fix
 
 from __future__ import annotations
 
@@ -24,7 +17,6 @@ from app.core.llm_pool import get_llm, get_llm_for_workspace
 from app.agent.state import AgentState
 
 logger = logging.getLogger(__name__)
-# [OK] FIXED: Removed module-level get_settings() call — import-time crash risk when
 # env vars not configured (e.g., in tests/CI). Constants now use safe hardcoded defaults;
 # any node that needs live settings calls get_settings() inline.
 
@@ -55,7 +47,6 @@ def _safe_json_parse(raw: str, fallback: dict[str, Any]) -> dict[str, Any]:
     """
     cleaned = raw.strip()
 
-    # ✅ FIXED: Extract JSON from markdown code blocks more reliably
     if "```" in cleaned:
         # Match ```json or ``` followed by JSON content (non-greedy, multiline)
         match = re.search(r"```(?:json)?\s*({[\s\S]*?})\s*```", cleaned)
@@ -248,7 +239,6 @@ async def node_vector_retriever(state: AgentState) -> dict:
         store = VectorStoreManager(workspace_id=state.get("workspace_id", "default"))
         expander = HyDEExpander()
 
-        # ✅ FIXED: Use named helper functions to avoid lambda capture issues
         async def _expand_query(q: str) -> str:
             return await _run_in_thread(expander.expand, q)
 
@@ -302,7 +292,6 @@ async def node_graph_retriever(state: AgentState) -> dict:
     try:
         retriever = CypherRetriever()
 
-        # ✅ FIXED: Use named helper to avoid lambda capture
         async def _retrieve_graph(q: str, ws: str):
             return await _run_in_thread(lambda: retriever.retrieve(query=q, workspace_id=ws, use_text_to_cypher=True))
 
@@ -542,7 +531,6 @@ Context:
 {context}"""
 
     try:
-        # ✅ FIXED: Use streaming LLM with astream + accumulate (BYOK-aware)
         try:
             llm_stream = await get_llm_for_workspace(state.get("workspace_id", "default"), streaming=True)
         except Exception as e:
@@ -923,220 +911,3 @@ __all__ = [
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.agent.nodes) ---------
 # ========================================================================
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
-    from pathlib import Path
-    from unittest.mock import AsyncMock, MagicMock, patch
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    async def run_tests():
-        print("🔍 Testing Nodes module (app/agent/nodes.py)")
-        print("=" * 70)
-
-        try:
-            from app.agent.nodes import (
-                _safe_json_parse,
-                _validate_state_keys,
-                QueryAnalysisSchema,
-                HallucinationCheckSchema,
-                node_query_analyzer,
-                node_answer_generator,
-                node_hallucination_checker,
-            )
-
-            # -- Test 1: Helpers & Schemas ------------------------------
-            print("\n📌 Test 1: Helpers & Pydantic Schemas")
-
-            # JSON parsing
-            result = _safe_json_parse('{"test": true}', {"test": False})
-            assert result["test"] is True
-            print("   ✅ _safe_json_parse: handles plain JSON")
-
-            result = _safe_json_parse('```json\n{"test": true}\n```', {"test": False})
-            assert result["test"] is True
-            print("   ✅ _safe_json_parse: handles markdown-fenced JSON")
-
-            result = _safe_json_parse("invalid{json", {"fallback": True})
-            assert result["fallback"] is True
-            print("   ✅ _safe_json_parse: returns fallback on failure")
-
-            # State validation
-            state = {"key1": "val", "key2": 123}
-            assert _validate_state_keys(state, ["key1", "key2"], "t1")[0] is True
-            assert _validate_state_keys(state, ["key1", "missing"], "t1")[0] is False
-            print("   ✅ _validate_state_keys: catches missing keys")
-
-            # Schemas
-            parsed = QueryAnalysisSchema(
-                query_type="factual",
-                retrieval_route="vector",
-                standalone_question="test?",
-                reasoning="test",
-            )
-            assert parsed.model_dump()["query_type"] == "factual"
-            print("   ✅ Schemas: QueryAnalysisSchema validates correctly")
-
-            # -- Test 2: Query Analyzer ---------------------------------
-            print("\n📌 Test 2: node_query_analyzer (structured output)")
-
-            state = {
-                "question": "What is AI?",
-                "correlation_id": "test-qa",
-                "chat_history": [],
-            }
-
-            # Mock structured LLM
-            with patch("app.agent.nodes.get_llm") as mock_get_llm:
-                mock_llm = MagicMock()
-                mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(
-                    return_value=QueryAnalysisSchema(
-                        query_type="factual",
-                        retrieval_route="vector",
-                        standalone_question="What is artificial intelligence?",
-                        reasoning="General query",
-                    )
-                )
-                mock_get_llm.return_value = mock_llm
-
-                result = await node_query_analyzer(state)
-                assert result["query_type"] == "factual"
-                assert result["retrieval_route"] == "vector"
-                assert "QueryAnalyzer" in result["agent_steps"][0]
-                print("   ✅ query_analyzer: returns structured analysis")
-
-            # Fallback on error
-            with patch("app.agent.nodes.get_llm", side_effect=Exception("LLM Down")):
-                result = await node_query_analyzer(state)
-                assert result["error_code"] == "ANALYSIS_FAILED"
-                assert "fallback to defaults" in result["agent_steps"][0]
-                print("   ✅ query_analyzer: graceful fallback on LLM failure")
-
-            # -- Test 3: Answer Generator -------------------------------
-            print("\n📌 Test 3: node_answer_generator (streaming)")
-
-            graded_docs = [
-                {
-                    "doc": MagicMock(
-                        page_content="AI is smart.",
-                        metadata={
-                            "source_file": "doc.pdf",
-                            "page_number": 0,
-                            "block_type": "p",
-                        },
-                    ),
-                    "score": 0.9,
-                    "relevant": True,
-                }
-            ]
-            state = {
-                "standalone_question": "What is AI?",
-                "graded_docs": graded_docs,
-                "relevance_score": 0.9,
-                "correlation_id": "test-ag",
-            }
-
-            with patch("app.agent.nodes.get_llm") as mock_get_llm:
-                mock_llm = MagicMock()
-
-                # Mock streaming async generator
-                async def mock_stream(*args, **kwargs):
-                    class Chunk:
-                        def __init__(self, content):
-                            self.content = content
-
-                    yield Chunk("AI ")
-                    yield Chunk("is intelligence.")
-
-                mock_llm.astream = mock_stream
-                mock_get_llm.return_value = mock_llm
-
-                result = await node_answer_generator(state)
-                assert "intelligence" in result["answer"]
-                assert len(result["citations"]) == 1
-                assert result["confidence_score"] > 0.0
-                print("   ✅ answer_generator: streams answer + builds citations")
-
-            # -- Test 4: Hallucination Checker --------------------------
-            print("\n📌 Test 4: node_hallucination_checker")
-
-            state = {
-                "answer": "AI is great.",
-                "graded_docs": [
-                    {
-                        "doc": MagicMock(page_content="AI is artificial intelligence.", metadata={}),
-                        "score": 0.8,
-                        "relevant": True,
-                    }
-                ],
-                "graph_context": "",
-                "correlation_id": "test-hc",
-            }
-
-            with patch("app.agent.nodes.get_llm") as mock_get_llm:
-                mock_llm = MagicMock()
-                mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(
-                    return_value=HallucinationCheckSchema(is_grounded=True, unsupported_claims=[], confidence=0.95)
-                )
-                mock_get_llm.return_value = mock_llm
-
-                result = await node_hallucination_checker(state)
-                assert result["is_grounded"] is True
-                assert result["needs_human_review"] is False
-                print("   ✅ hallucination_checker: validates grounding correctly")
-
-            # Skip check for empty answers
-            state_empty = {"answer": "", "correlation_id": "test-hc-skip"}
-            result = await node_hallucination_checker(state_empty)
-            assert result["is_grounded"] is True and result["agent_steps"][0].startswith(
-                "HallucinationChecker: no-answer"
-            )
-            print("   ✅ hallucination_checker: skips check for empty answers")
-
-            # -- Test 5: Correlation ID & Safe Defaults -----------------
-            print("\n📌 Test 5: Correlation ID & safe defaults")
-
-            with patch("app.agent.nodes.logger") as mock_logger:
-                empty_state = {}
-                result = await node_query_analyzer(empty_state)
-
-                # Verify error returned for missing keys
-                assert result["error_code"] == "STATE_VALIDATION_FAILED"
-                print("   ✅ Safe defaults: returns structured error for empty state")
-
-                # Verify correlation_id fallback in logs (if used)
-                log_calls = [str(c) for c in mock_logger.error.call_args_list + mock_logger.warning.call_args_list]
-                assert any("query_analyzer" in call for call in log_calls)
-                print("   ✅ Correlation ID: fallback ID appears in logs")
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! Nodes module verified.")
-            print("\n💡 What we verified:")
-            print("   • Helpers: _safe_json_parse, _validate_state_keys, Pydantic schemas ✅")
-            print("   • Query analyzer: structured output + LLM failure fallback ✅")
-            print("   • Answer generator: streaming LLM + citation building ✅")
-            print("   • Hallucination checker: grounding validation + empty answer skip ✅")
-            print("   • Error handling: structured error codes for missing state ✅")
-            print("\n🔐 Production: LangGraph nodes with async safety & tracing ready")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    success = asyncio.run(run_tests())
-    sys.exit(0 if success else 1)

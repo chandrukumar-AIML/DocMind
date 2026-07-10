@@ -1,6 +1,4 @@
 ﻿# backend/app/models/agent_schemas.py
-# DVMELTSS-FIX: V - Validate, M - Modular, S - Security
-# ASCALE-FIX: S - Separation, E - Explicit types
 
 """Agent-related Pydantic models for FastAPI validation."""
 from __future__ import annotations
@@ -73,7 +71,6 @@ class AgentQueryRequest(BaseModel):
     @field_validator("question")
     @classmethod
     def sanitize_question(cls, v: str) -> str:
-        # FIXED: Use centralized sanitizer
         return sanitize_text(v, max_length=2000, min_length=3)
 
     class Config:
@@ -160,9 +157,4 @@ __all__ = [
     "AgentStreamChunk",
 ]
 # Local smoke test entry point. Run: python -m 
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
-
-    run_module_smoke(sys.modules[__name__], __file__)
 

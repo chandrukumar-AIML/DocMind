@@ -1,8 +1,3 @@
-# backend/app/tasks/progress.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, S - Security
-# BATMAN-FIX: A - True async Redis, T - Retry logic
-# ASCALE-FIX: E - Error propagation, L - Logging
-# ✅ FIXED: Proper async/sync bridge + input validation + JSON serialization
 
 from __future__ import annotations
 
@@ -38,7 +33,6 @@ class TaskStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-# ✅ NEW: Custom JSON encoder for ProgressEvent
 class _ProgressEventEncoder(json.JSONEncoder):
     """Handle non-serializable types in ProgressEvent details."""
 
@@ -100,11 +94,9 @@ class ProgressEvent:
             )
         if self.status == TaskStatus.FAILED:
             d["error"] = self.error
-        # ✅ FIXED: Use custom encoder for non-serializable values
         return json.dumps(d, cls=_ProgressEventEncoder)
 
 
-# ✅ NEW: Input validation helper
 def _validate_progress_inputs(
     task_id: str,
     status: str,
@@ -198,12 +190,10 @@ class ProgressPublisher:
         try:
             redis = await self._get_redis()
 
-            # FIXED: Use centralized key sanitization
             channel_key = sanitize_redis_key(f"{self.CHANNEL_PREFIX}:{task_id}")
             state_key = sanitize_redis_key(f"{self.STATE_PREFIX}:{task_id}")
             history_key = sanitize_redis_key(f"{self.HISTORY_PREFIX}:{task_id}")
 
-            # FIXED: Use retry wrapper for Redis operations
             @retry_async(config=self._REDIS_RETRY_CONFIG)
             async def _publish():
                 pipe = redis.pipeline()
@@ -411,8 +401,4 @@ __all__ = [
     "get_progress_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

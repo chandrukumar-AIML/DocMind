@@ -1,10 +1,3 @@
-# backend/app/auth/store.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Security, L - Logging
-# ASCALE-FIX: A - Async, S - Separation, E - Error propagation
-# ✅ FIXED: hash_password moved outside async transaction (blocking bcrypt)
-# ✅ FIXED: add_member() validates workspace exists + is active
-# ✅ FIXED: Early membership check in create_user() for clearer errors
-# ✅ FIXED: Session reuse optimization in get_or_create_default_workspace()
 
 from __future__ import annotations
 
@@ -57,7 +50,6 @@ class UserStore:
         if not is_valid:
             raise ValueError(f"Password validation failed: {pwd_error}")
 
-        # ✅ FIXED: Move blocking bcrypt hash OUTSIDE async transaction
         # bcrypt is CPU-bound and will freeze the event loop if run inside async context
         hashed_pw = hash_password(password)
 
@@ -92,7 +84,6 @@ class UserStore:
                     await session.flush()
                     target_ws_id = str(workspace.id)
                 else:
-                    # ✅ FIXED: Validate workspace exists + is active BEFORE membership check
                     ws_uuid = uuid.UUID(target_ws_id)
                     ws = await session.scalar(select(Workspace).where(Workspace.id == ws_uuid))
                     if not ws:
@@ -100,7 +91,6 @@ class UserStore:
                     if not ws.is_active:
                         raise ValueError("Target workspace is inactive")
 
-                    # ✅ FIXED: Early check for existing membership (clearer error than UniqueConstraint)
                     existing_member = await session.scalar(
                         select(WorkspaceMember).where(
                             WorkspaceMember.user_id == user.id,
@@ -227,7 +217,6 @@ class UserStore:
 
         async with self._session_factory() as session:
             async with session.begin():
-                # ✅ FIXED: Check workspace exists + is active BEFORE membership logic
                 ws = await session.scalar(select(Workspace).where(Workspace.id == ws_uuid))
                 if not ws:
                     raise ValueError(f"Workspace not found: {workspace_id}")
@@ -272,7 +261,6 @@ class UserStore:
             async with self._session_factory() as session:
                 try:
                     async with session.begin():
-                        # ✅ FIXED: Re-check inside transaction to avoid duplicate insert
                         ws = await session.scalar(select(Workspace).where(Workspace.slug == "default"))
                         if ws:
                             return ws
@@ -347,127 +335,3 @@ class UserStore:
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.auth.store) -----------
 # ========================================================================
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
-    from pathlib import Path
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    async def run_tests():
-        print("🔍 Testing UserStore module (app/auth/store.py)")
-        print("=" * 70)
-
-        try:
-            from app.auth.store import UserStore, _generate_safe_slug_suffix
-            from app.auth.jwt_handler import hash_password, verify_password
-
-            # -- Test 1: Password hashing (NO MOCKS - REAL bcrypt) ---------
-            print("\n📌 Test 1: Password hashing (bcrypt) + verification")
-            plain = "SecurePass123!"
-            hashed = hash_password(plain)
-            assert hashed.startswith("$2b$"), "Should be bcrypt hash"
-            assert verify_password(plain, hashed) is True, "Should verify correct password"
-            assert verify_password("WrongPass", hashed) is False, "Should reject wrong password"
-            print(f"   ✅ Password hashed: {hashed[:20]}... | verify=True")
-
-            # Test bcrypt length limit
-            try:
-                hash_password("A" * 100)
-                print("   ❌ Should reject long password")
-            except ValueError as e:
-                if "exceeds maximum length" in str(e):
-                    print("   ✅ Long password rejected")
-
-            # -- Test 2: Helper functions (pure logic) --------------------
-            print("\n📌 Test 2: Helper functions (pure logic, no DB)")
-            slug_suffix = _generate_safe_slug_suffix()
-            assert len(slug_suffix) == 8, "Should be 8 hex chars"
-            print(f"   ✅ Slug suffix generator: {slug_suffix}")
-
-            # -- Test 3: Input validation (pre-DB checks) -----------------
-            print("\n📌 Test 3: Input validation (pre-DB checks)")
-            store = UserStore()
-
-            # Test invalid email (fails at validate_email() before any DB call)
-            try:
-                await store.create_user(email="invalid-email", password="Pass123!")
-                print("   ❌ Should reject invalid email")
-            except ValueError as e:
-                if "email" in str(e).lower():
-                    print("   ✅ Invalid email rejected pre-DB")
-
-            # Test weak password (fails at validate_password_strength())
-            try:
-                await store.create_user(email="test@example.com", password="short")
-                print("   ❌ Should reject weak password")
-            except ValueError as e:
-                if "password" in str(e).lower():
-                    print("   ✅ Weak password rejected pre-DB")
-
-            # -- Test 4: Method signatures & async nature -----------------
-            print("\n📌 Test 4: Method signatures (async/await ready)")
-            import inspect
-
-            # Verify key methods are async
-            assert inspect.iscoroutinefunction(store.create_user), "create_user should be async"
-            assert inspect.iscoroutinefunction(store.authenticate), "authenticate should be async"
-            assert inspect.iscoroutinefunction(store.get_user_by_id), "get_user_by_id should be async"
-            print("   ✅ All CRUD methods are async coroutines")
-
-            # Verify return type annotations
-            create_user_sig = inspect.signature(store.create_user)
-            assert "User" in str(create_user_sig.return_annotation) or "User" in repr(create_user_sig.return_annotation)
-            print("   ✅ create_user has proper return type annotation")
-
-            # -- Test 5: Import & initialization --------------------------
-            print("\n📌 Test 5: Module imports & initialization")
-            from app.auth.store import UserStore
-
-            store = UserStore()
-            assert hasattr(store, "_session_factory"), "Should have session factory"
-            assert hasattr(store, "create_user"), "Should have create_user method"
-            print("   ✅ UserStore initialized with session factory")
-
-            # -- Test 6: Error handling patterns --------------------------
-            print("\n📌 Test 6: Error handling (ValueError for validation)")
-            # All validation errors should be ValueError (not HTTPException)
-            # This allows the API layer to convert to appropriate HTTP status
-            try:
-                await store.create_user(email="bad@email", password="weak")
-            except ValueError:
-                print("   ✅ Validation errors raise ValueError (API layer converts to HTTP)")
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! UserStore module verified.")
-            print("\n💡 What we verified:")
-            print("   • Password hashing: bcrypt with 12 rounds ✅")
-            print("   • Input validation: email + password strength ✅")
-            print("   • Async method signatures: ready for FastAPI ✅")
-            print("   • Error handling: ValueError for API conversion ✅")
-            print("\n🔧 For full DB integration tests:")
-            print("   • Use pytest with test database fixture")
-            print("   • Run: pytest tests/auth/test_store.py -v")
-            print("\n🔐 Security: All sensitive ops happen server-side")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    # Run async tests
-    success = asyncio.run(run_tests())
-    sys.exit(0 if success else 1)

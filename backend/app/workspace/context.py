@@ -1,7 +1,3 @@
-# backend/app/workspace/context.py
-# DVMELTSS-FIX: V - Validate, M - Modular, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
-# ✅ FIXED: Proper immutable pattern + input validation + safe serialization
 
 from __future__ import annotations
 
@@ -26,7 +22,6 @@ class WorkspaceContext:
     correlation_id: Optional[str] = None
 
     def __post_init__(self):
-        # ✅ FIXED: Proper immutable pattern for frozen dataclass
         # Validate and set workspace_id safely
         try:
             safe_id = validate_workspace_id(self.workspace_id)
@@ -41,7 +36,6 @@ class WorkspaceContext:
     @property
     def collection_name(self) -> str:
         """Get ChromaDB collection name for this workspace."""
-        # ✅ FIXED: Safe fallback if name generation fails
         try:
             return get_chroma_collection_name(self.workspace_id)
         except Exception:
@@ -51,7 +45,6 @@ class WorkspaceContext:
     @property
     def can_write(self) -> bool:
         """Check if user has write permissions."""
-        # ✅ FIXED: Safe method call with fallback
         try:
             return bool(self.user.can_write())
         except AttributeError:
@@ -60,7 +53,6 @@ class WorkspaceContext:
     @property
     def can_admin(self) -> bool:
         """Check if user has admin permissions."""
-        # ✅ FIXED: Safe method call with fallback
         try:
             return bool(self.user.can_admin())
         except AttributeError:
@@ -68,7 +60,6 @@ class WorkspaceContext:
 
     def to_dict(self) -> dict:
         """Serialize context for logging/debugging."""
-        # ✅ FIXED: Safe serialization with None handling
         return {
             "workspace_id": self.workspace_id,
             "user_id": getattr(self.user, "user_id", ""),
@@ -77,7 +68,6 @@ class WorkspaceContext:
         }
 
 
-# ✅ NEW: Input validation helper
 def _validate_context_inputs(
     user: Optional[AuthenticatedUser],
     correlation_id: Optional[str],
@@ -151,8 +141,4 @@ __all__ = [
     "get_workspace_context_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

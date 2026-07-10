@@ -1,7 +1,3 @@
-# backend/app/core/prompts.py
-# DVMELTSS-FIX: M - Modular, S - Security, V - Validate
-# ASCALE-FIX: S - Separation, C - Coupling
-# OWASP-FIX: 1 - Prompt injection prevention
 """
 Shared prompt utilities for DocuMind AI.
 
@@ -61,7 +57,6 @@ def escape_prompt_content(text: str) -> str:
     if not text or not isinstance(text, str):
         return ""
 
-    # FIXED: Escape ALL { and } in user content unconditionally.
     # Previous regex preserved {word:word} patterns which could still cause
     # format errors when } was later double-replaced. User content should
     # never contain template syntax — escape everything.
@@ -153,8 +148,4 @@ __all__ = [
     "SAFETY_MARGIN_TOKENS",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

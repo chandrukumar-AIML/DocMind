@@ -1,4 +1,3 @@
-# backend/app/api/routes/apikeys.py
 """API key management routes — create, list, revoke, rotate."""
 
 from __future__ import annotations
@@ -116,6 +115,3 @@ async def key_usage(
     rows = await get_key_usage(key_id, days)
     return {"key_id": key_id, "days": days, "daily_usage": rows}
 
-
-if __name__ == "__main__":
-    print("API key routes:", [r.path for r in router.routes])

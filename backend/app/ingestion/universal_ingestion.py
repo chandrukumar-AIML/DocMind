@@ -1,8 +1,3 @@
-# backend/app/ingest/universal_ingestion.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, T - Routing efficiency, M - Resource cleanup
-# OWASP-FIX: 9 - Path traversal prevention, 1 - Input sanitization
-# ✅ FIXED: Proper async/sync bridge + input validation + safe imports
 
 from __future__ import annotations
 
@@ -42,7 +37,6 @@ _EXTENSION_FALLBACK: Final = {
     ".jpeg": FileFormat.JPEG,
 }
 
-# ✅ NEW: Per-handler timeout (seconds)
 _HANDLER_TIMEOUT: Final = 300  # 5 minutes
 
 
@@ -71,7 +65,6 @@ class IngestionResult:
 
     def to_dict(self) -> dict:
         """Serialize for API responses."""
-        # ✅ FIXED: Safe serialization with None handling
         return {
             "source_file": self.source_file,
             "format": self.format,
@@ -87,7 +80,6 @@ class IngestionResult:
         }
 
 
-# ✅ NEW: Input validation helper
 def _validate_ingest_inputs(
     file_path: Optional[str | Path],
     file_bytes: Optional[bytes],
@@ -175,7 +167,6 @@ class UniversalIngestionPipeline:
             )
 
         try:
-            # ✅ FIXED: Add timeout to each handler
             if fmt == FileFormat.DOCX:
                 return await asyncio.wait_for(
                     self._ingest_docx_async(safe_path, corr_id),
@@ -226,7 +217,6 @@ class UniversalIngestionPipeline:
     async def _ingest_document_async(self, file_path: Path, corr_id: str) -> IngestionResult:
         """Async: Route to existing OCR pipeline for PDF/image files."""
         try:
-            # ✅ FIXED: Lazy import to avoid circular deps
             from app.ocr.pipeline import get_ocr_pipeline
             from app.chunking.parent_child import ParentChildChunker
 
@@ -263,7 +253,6 @@ class UniversalIngestionPipeline:
     async def _ingest_audio_async(self, file_path: Path, file_bytes: bytes, corr_id: str) -> IngestionResult:
         """Async: Transcribe audio/video and create text Documents."""
         try:
-            # ✅ FIXED: Lazy import to avoid circular deps
             from .audio_transcriber import AudioTranscriber
 
             transcriber = AudioTranscriber()
@@ -330,7 +319,6 @@ class UniversalIngestionPipeline:
     async def _ingest_docx_async(self, file_path: Path, corr_id: str) -> IngestionResult:
         """Async: Extract and chunk a Word document."""
         try:
-            # ✅ FIXED: Lazy import to avoid circular deps
             from .docx_extractor import DocxExtractor
 
             extractor = DocxExtractor()
@@ -368,7 +356,6 @@ class UniversalIngestionPipeline:
     async def _ingest_xlsx_async(self, file_path: Path, corr_id: str) -> IngestionResult:
         """Async: Extract and chunk an Excel spreadsheet."""
         try:
-            # ✅ FIXED: Lazy import to avoid circular deps
             from .xlsx_extractor import XlsxExtractor
 
             extractor = XlsxExtractor()
@@ -438,8 +425,4 @@ __all__ = [
     "get_ingestion_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

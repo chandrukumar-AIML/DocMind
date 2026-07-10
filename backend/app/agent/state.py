@@ -1,9 +1,3 @@
-# backend/app/agent/state.py
-# DVMELTSS-FIX: M - Modular, V - Validate, T - Testing
-# ASCALE-FIX: S - Separation, L - Layered architecture
-# ✅ FIXED: Pydantic v2 validator syntax + aligned TypedDict/Model defaults
-# ✅ FIXED: Safe list merging with operator.add + correlation_id propagation
-# ✅ FIXED: Filter dict sanitization + runtime range validation
 
 from __future__ import annotations
 
@@ -62,7 +56,6 @@ class AgentState(TypedDict, total=False):
     ASCALE-L: Clear layered flow: Input -> Analysis -> Retrieval -> Grading -> Generation -> Validation
     """
 
-    # ✅ NEW: Correlation ID for distributed tracing
     correlation_id: NotRequired[str]  # [OWNER: API] request ID for end-to-end tracing
 
     # ========================================================================
@@ -199,7 +192,6 @@ if _PYDANTIC_AVAILABLE:
         self_rag_complete: bool = True
         self_rag_notes: str = ""
 
-        # ✅ FIXED: Pydantic v2 validators
         @field_validator("question", "standalone_question", mode="before")
         @classmethod
         def strip_strings(cls, v: Any) -> Any:
@@ -264,7 +256,6 @@ def validate_agent_state_strict(state: dict) -> tuple[bool, Optional[str]]:
         return False, f"Pydantic validation failed: {e}"
 
 
-# ✅ NEW: Serialization helpers
 def state_to_dict(state: AgentState) -> dict[str, Any]:
     """Convert AgentState to JSON-serializable dict."""
     result = dict(state)
@@ -341,210 +332,3 @@ if _PYDANTIC_AVAILABLE:
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.agent.state) ---------
 # ========================================================================
 
-if __name__ == "__main__":
-    import sys
-    from pathlib import Path
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    def run_tests():
-        print("🔍 Testing State module (app/agent/state.py)")
-        print("=" * 70)
-
-        try:
-            from app.agent.state import (
-                _sanitize_filter_dict,
-                validate_agent_state_minimal,
-                validate_agent_state_strict,
-                state_to_dict,
-                state_from_dict,
-                get_required_fields,
-                _PYDANTIC_AVAILABLE,
-            )
-
-            if _PYDANTIC_AVAILABLE:
-                from app.agent.state import AgentStateModel
-
-            # -- Test 1: Helpers & Constants ----------------------------
-            print("\n📌 Test 1: Helpers & Constants")
-
-            # Safe dict
-            safe = {"a": 1, "b": "str", "c": [1, 2], "d": {"k": "v"}, "e": None}
-            assert _sanitize_filter_dict(safe) == safe
-            print("   ✅ _sanitize_filter_dict: preserves safe values")
-
-            # Unsafe dict (lambda)
-            unsafe = {"func": lambda x: x, "safe": 1}
-            res = _sanitize_filter_dict(unsafe)
-            assert "func" not in res
-            assert res["safe"] == 1
-            print("   ✅ _sanitize_filter_dict: removes functions")
-
-            # Required fields
-            assert get_required_fields() == [
-                "question",
-                "workspace_id",
-                "standalone_question",
-            ]
-            print("   ✅ get_required_fields: returns correct list")
-
-            # -- Test 2: Minimal Validation -----------------------------
-            print("\n📌 Test 2: validate_agent_state_minimal")
-
-            # Valid
-            valid = {
-                "question": "Test?",
-                "workspace_id": "ws-1",
-                "standalone_question": "Test?",
-            }
-            is_valid, err = validate_agent_state_minimal(valid)
-            assert is_valid is True and err is None
-            print("   ✅ Minimal: valid state passes")
-
-            # Missing keys
-            missing = {"workspace_id": "ws-1"}
-            is_valid, err = validate_agent_state_minimal(missing)
-            assert is_valid is False and "Missing" in err
-            print("   ✅ Minimal: catches missing keys")
-
-            # Invalid score
-            bad_score = {
-                "question": "Q",
-                "workspace_id": "W",
-                "standalone_question": "Q",
-                "confidence_score": 1.5,
-            }
-            is_valid, err = validate_agent_state_minimal(bad_score)
-            assert is_valid is False and "0.0" in err
-            print("   ✅ Minimal: rejects out-of-range scores")
-
-            # Empty string
-            empty_q = {"question": " ", "workspace_id": "W", "standalone_question": "Q"}
-            is_valid, err = validate_agent_state_minimal(empty_q)
-            assert is_valid is False
-            print("   ✅ Minimal: rejects empty strings")
-
-            # -- Test 3: Serialization ----------------------------------
-            print("\n📌 Test 3: state_to_dict & state_from_dict")
-
-            raw_data = {
-                "question": "Test?",
-                "workspace_id": "ws-1",
-                "standalone_question": "Test?",
-                "filter_dict": {"safe": 1, "unsafe": lambda: 0},
-            }
-
-            # Serialize (sanitizes filter_dict)
-            serialized = state_to_dict(raw_data)
-            assert "unsafe" not in serialized["filter_dict"]
-            assert serialized["filter_dict"]["safe"] == 1
-            print("   ✅ state_to_dict: sanitizes filter_dict")
-
-            # Deserialize
-            deserialized = state_from_dict(raw_data)
-            assert deserialized["question"] == "Test?"
-            assert deserialized["standalone_question"] == "Test?"
-            print("   ✅ state_from_dict: reconstructs state")
-
-            # -- Test 4: Pydantic Model Validation ----------------------
-            print("\n📌 Test 4: Pydantic Model (AgentStateModel)")
-
-            if _PYDANTIC_AVAILABLE:
-                # ✅ FIX: Use strings with length >= 3 to satisfy min_length validation
-                # Valid instantiation
-                model = AgentStateModel(
-                    question="  What is AI?  ",
-                    workspace_id="ws-1",
-                    standalone_question="What is AI?",
-                    confidence_score=0.95,
-                    relevance_score=0.8,
-                )
-                assert model.question == "What is AI?"  # Validator stripped spaces
-                assert model.confidence_score == 0.95
-                print("   ✅ Pydantic: creates valid model & strips strings")
-
-                # Score clamping (input > 1.0)
-                model_clamped = AgentStateModel(
-                    question="Test Question",
-                    workspace_id="ws-1",
-                    standalone_question="Test Question",
-                    confidence_score=5.0,  # Should clamp to 1.0
-                    relevance_score=-0.5,  # Should clamp to 0.0
-                )
-                assert model_clamped.confidence_score == 1.0
-                assert model_clamped.relevance_score == 0.0
-                print("   ✅ Pydantic: clamps scores to [0.0, 1.0] range")
-
-                # Filter sanitization via model validator
-                model_filter = AgentStateModel(
-                    question="Test Question",
-                    workspace_id="ws-1",
-                    standalone_question="Test Question",
-                    filter_dict={"safe": "ok", "bad": lambda: None},
-                )
-                assert "bad" not in model_filter.filter_dict
-                print("   ✅ Pydantic: sanitizes filter_dict automatically")
-
-                # Strict Validation Wrapper
-                valid_dict = {
-                    "question": "Test Question",  # ✅ Length >= 3
-                    "workspace_id": "ws-valid",  # ✅ Length >= 1
-                    "standalone_question": "Test Question",  # ✅ Length >= 3
-                    "confidence_score": 0.5,
-                }
-                is_valid, err = validate_agent_state_strict(valid_dict)
-                assert is_valid is True
-                print("   ✅ Strict validation: passes valid dict")
-
-                # Test rejection of short question (min_length=3)
-                invalid_short_q = {
-                    "question": "A",
-                    "workspace_id": "W",
-                    "standalone_question": "Test",
-                }
-                is_valid, err = validate_agent_state_strict(invalid_short_q)
-                assert is_valid is False
-                print("   ✅ Strict validation: rejects short question (< 3 chars)")
-
-            else:
-                print("   ⏭️ Skipped: Pydantic not available (falling back to minimal validation)")
-                # Fallback test
-                is_valid, err = validate_agent_state_strict(
-                    {
-                        "question": "Test",
-                        "workspace_id": "W",
-                        "standalone_question": "Test",
-                    }
-                )
-                assert is_valid is True
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! State module verified.")
-            print("\n💡 What we verified:")
-            print("   • Helpers: _sanitize_filter_dict removes unsafe types ✅")
-            print("   • Validation: Minimal validator catches missing/invalid fields ✅")
-            print("   • Serialization: state_to/from_dict handles data correctly ✅")
-            print("   • Pydantic Model: validates inputs, clamps scores, strips strings ✅")
-            print("   • Integration: Filter sanitization applied in Model & Dict helpers ✅")
-            print("\n🔐 Production: State management with validation & safety ready")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    success = run_tests()
-    sys.exit(0 if success else 1)

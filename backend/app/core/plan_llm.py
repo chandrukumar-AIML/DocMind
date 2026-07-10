@@ -1,4 +1,3 @@
-# backend/app/core/plan_llm.py
 """
 Maps a workspace plan to the appropriate LLM configuration.
 

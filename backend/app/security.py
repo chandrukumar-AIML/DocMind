@@ -1,7 +1,3 @@
-# backend/app/security.py
-# DVMELTSS-FIX: S - Security, V - Validate, E - Error handling
-# ASCALE-FIX: S - Separation, C - Coupling, E - Error propagation
-# OWASP-FIX: 3 - Credential safety, 7 - Safe data handling
 from __future__ import annotations
 import hashlib
 import hmac
@@ -57,10 +53,8 @@ def validate_api_key(
             )
         return None
 
-    # ✅ FIXED: Production validation against configured app API keys
     if not settings.api_reload:
         # In production, validate against app-specific API keys.
-        # FIXED: Only application API keys authorize this API. Provider keys
         # such as OPENAI_API_KEY must never grant access to the service.
         valid_keys = [key.strip() for key in settings.app_api_keys if key and key.strip()]
         if not valid_keys:
@@ -118,7 +112,6 @@ def verify_hmac_signature(
             payload,
             getattr(hashlib, algorithm),
         ).hexdigest()
-        # ✅ FIXED: Constant-time comparison to prevent timing attacks
         return hmac.compare_digest(expected.lower(), signature.lower())
     except Exception as e:
         logger.warning(f"HMAC verification failed: {e}")
@@ -258,8 +251,4 @@ __all__ = [
     "http_bearer",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

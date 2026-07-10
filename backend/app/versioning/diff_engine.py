@@ -1,7 +1,3 @@
-# backend/app/versioning/diff_engine.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, M - Modular
-# BATMAN-FIX: A - True async, M - Memory safety
-# ASCALE-FIX: L - Layered, E - Error propagation
 from __future__ import annotations
 import logging
 from typing import Final, Optional
@@ -157,8 +153,4 @@ def compare_versions(
 # DVMELTSS-M: Explicit module exports
 __all__ = ["compute_document_diff", "summarize_changes", "compare_versions"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

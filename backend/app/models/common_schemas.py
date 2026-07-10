@@ -1,6 +1,4 @@
 ﻿# backend/app/models/common_schemas.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
 
 from __future__ import annotations
 
@@ -71,13 +69,11 @@ class IngestRequest(BaseModel):
     @field_validator("document_language")
     @classmethod
     def validate_language(cls, v: Optional[str]) -> Optional[str]:
-        # FIXED: Use centralized validator
         return validate_language_code(v)
 
     @field_validator("tags")
     @classmethod
     def validate_tags(cls, v: List[str]) -> List[str]:
-        # FIXED: Use centralized validator
         return validate_tags(v)
 
     model_config = ConfigDict(
@@ -111,7 +107,6 @@ class QueryRequest(BaseModel):
     @field_validator("question")
     @classmethod
     def sanitize_question(cls, v: str) -> str:
-        # FIXED: Use centralized sanitizer
         return sanitize_text(v, max_length=2000, min_length=3)
 
     @field_validator("session_id")
@@ -126,7 +121,6 @@ class QueryRequest(BaseModel):
     @field_validator("filter_page_range")
     @classmethod
     def validate_page_range(cls, v: Optional[Tuple[int, int]]) -> Optional[Tuple[int, int]]:
-        # FIXED: Use centralized validator
         return validate_page_range(v)
 
     @field_validator("chat_history")
@@ -326,9 +320,4 @@ __all__ = [
     "DeleteResponse", "HealthResponse", "ErrorResponse",
 ]
 # Local smoke test entry point. Run: python -m 
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
-
-    run_module_smoke(sys.modules[__name__], __file__)
 

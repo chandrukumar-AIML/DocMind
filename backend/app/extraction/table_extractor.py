@@ -1,11 +1,3 @@
-# backend/app/extraction/table_extractor.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, M - Memory safe pandas, T - Fast parsing
-# OWASP-FIX: 1 - Prompt escaping, 7 - Safe data handling
-# ✅ FIXED: Safe sync wrapper (no deadlock in FastAPI)
-# ✅ FIXED: Retry logic moved to class method for testability
-# ✅ FIXED: Input validation + memory guard for huge tables
-# ✅ FIXED: Optional tabulate import + fallback markdown generator
 
 from __future__ import annotations
 
@@ -43,7 +35,6 @@ _RETRY_MAX_DELAY: Final = 30.0
 _CURRENCY_RE: Final = re.compile(r"[$€£¥₹,\s]")
 _PERCENT_RE: Final = re.compile(r"%\s*$")
 
-# ✅ NEW: Memory constraints for huge tables
 _MAX_COLUMNS: Final = 200  # Truncate wide tables to prevent OOM
 _MAX_ROWS_FOR_SUMMARY: Final = 50  # Limit rows sent to LLM for summary
 _MAX_HTML_PREVIEW: Final = 2000  # Keep small HTML preview
@@ -152,14 +143,12 @@ class TableExtractor:
     """
 
     def __init__(self, model: str = "gpt-4o", max_retries: int = _MAX_RETRIES):
-        # FIXED: Use centralized vision LLM pool
         self.client = get_vision_llm(model_override=model, timeout=30.0)
         self.model = model
         self.max_retries = max_retries
 
         logger.info(f"TableExtractor initialized: model={model}, async=True")
 
-    # ✅ NEW: Input validation helper
     def _validate_table_input(self, html: str, text: str, corr_id: str) -> tuple[bool, str]:
         """Validate table input before processing."""
         if not html and not text:
@@ -170,7 +159,6 @@ class TableExtractor:
             logger.warning(f"[{corr_id}] Text too large ({len(text)} chars) — truncating")
         return True, ""
 
-    # ✅ FIXED: Moved retry logic to dedicated method for testability
     @retry_async(
         config=RetryConfig(
             max_attempts=_MAX_RETRIES,
@@ -181,7 +169,6 @@ class TableExtractor:
     )
     async def _call_vision_api(self, prompt: str, corr_id: str):
         """Call vision LLM with retry logic."""
-        # ✅ FIXED: Run sync OpenAI call in thread to avoid blocking event loop
         if sys.version_info >= (3, 9):
             return await asyncio.to_thread(
                 self.client.chat.completions.create,
@@ -214,7 +201,6 @@ class TableExtractor:
         """DVMELTSS-E: Async LLM call for table summary with centralized retry."""
         corr_id = correlation_id
 
-        # FIXED: Use centralized prompt escaping
         safe_prompt = escape_prompt_content(prompt)
 
         if self._estimate_tokens(safe_prompt) > 4000:
@@ -340,7 +326,6 @@ class TableExtractor:
 
     async def _generate_summary_async(self, markdown: str, source_file: str, corr_id: str) -> tuple[str, str]:
         """Generate semantic summary via LLM with centralized retry."""
-        # FIXED: Use centralized prompt escaping + limit rows for LLM
         safe_markdown = escape_prompt_content(markdown[:1500])
         safe_source = escape_prompt_content(source_file)
 
@@ -469,8 +454,4 @@ Document: {safe_source}
 # DVMELTSS-M: Explicit module exports
 __all__ = ["TableExtractor", "ExtractedTable"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

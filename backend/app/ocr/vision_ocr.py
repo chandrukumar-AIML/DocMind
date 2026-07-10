@@ -1,14 +1,3 @@
-# backend/app/ocr/vision_ocr.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - Async-safe, M - Memory safety
-# OWASP-FIX: 1 - PII protection, 7 - Safe API calls
-# ✅ FIXED: Sync OpenAI call wrapped in thread executor (no event loop block)
-# ✅ FIXED: Split sync/async interfaces + proper timeout handling
-# ✅ FIXED: Image size validation + auto-downscale for OpenAI limits
-# ✅ FIXED: JSON schema validation with TypedDict + safe fallbacks
-# ✅ FIXED: Cost estimation hook + correlation_id propagation to OpenAI
-# ✅ FINAL FIX: Separate sync/async retry paths + fixed _parse_response typo
 
 from __future__ import annotations
 import asyncio
@@ -44,7 +33,6 @@ JSON schema: {"blocks": [{"text": "extracted", "block_type": "paragraph|title|ta
 Rules: Preserve exact text/spelling/numbers/punctuation. For tables: extract as pipe-separated rows. Assign block_type visually. reading_order: 0-indexed top-to-bottom. confidence: 0.0–1.0. If illegible, include with confidence < 0.5. Include bbox for each block."""
 
 
-# ✅ NEW: TypedDict for schema validation
 class VisionBlockSchema(TypedDict, total=False):
     text: str
     block_type: str
@@ -58,7 +46,6 @@ class VisionResponseSchema(TypedDict, total=False):
     blocks: List[VisionBlockSchema]
 
 
-# ✅ NEW: Cost estimation constants (approximate, for monitoring)
 _VISION_COST_PER_1K_TOKENS: Final = 0.01  # GPT-4o pricing (adjust as needed)
 _AVG_TOKENS_PER_PAGE: Final = 2000  # Estimate for cost tracking
 
@@ -96,7 +83,6 @@ class VisionOCREngine:
     - Async-safe interface for FastAPI integration
     """
 
-    # ✅ NEW: Image constraints for OpenAI API
     _MAX_IMAGE_DIM: Final = 2048
     _MAX_IMAGE_SIZE_MB: Final = 20  # OpenAI limit
     _JPEG_QUALITY: Final = 85  # Balance quality/size
@@ -112,7 +98,6 @@ class VisionOCREngine:
         if not api_key or not api_key.startswith("sk-"):
             raise ValueError("Invalid OpenAI API key format. Must start with 'sk-'")
 
-        # ✅ FIXED: Configure httpx client with timeout
         self.client = OpenAI(
             api_key=api_key,
             timeout=httpx.Timeout(timeout_seconds),
@@ -127,7 +112,6 @@ class VisionOCREngine:
             f"VisionOCR initialized: model={model}, timeout={timeout_seconds}s, " f"cost_tracking={track_costs}"
         )
 
-    # ✅ NEW: Async interface for FastAPI
     async def process_page_async(
         self,
         image: np.ndarray,
@@ -250,7 +234,6 @@ class VisionOCREngine:
                 item["text"] = scrub_pii_for_ocr(item["text"], domain="all")
 
         start_time = time.perf_counter()
-        # ✅ FIXED: Call SYNC version of retry for sync path
         blocks = self._call_with_retry_sync(user_content, page_num, corr_id)
         latency_ms = (time.perf_counter() - start_time) * 1000
 
@@ -281,7 +264,6 @@ class VisionOCREngine:
         )
         return result
 
-    # ✅ FIXED: Image validation + preparation helper
     def _validate_and_prepare_image(self, image: np.ndarray, corr_id: str) -> np.ndarray:
         """Validate and prepare image for OpenAI Vision API."""
         if not isinstance(image, np.ndarray):
@@ -387,7 +369,6 @@ class VisionOCREngine:
     )
     async def _call_vision_api(self, user_content: list[dict], corr_id: str):
         """Async call to OpenAI Vision API with retry logic."""
-        # ✅ FIXED: Run sync OpenAI call in thread to avoid blocking event loop
         if sys.version_info >= (3, 9):
             return await asyncio.to_thread(
                 self.client.chat.completions.create,
@@ -457,18 +438,15 @@ class VisionOCREngine:
         logger.error(f"[{correlation_id}] VisionOCR exhausted retries — returning empty")
         return []
 
-    # ✅ FIXED: Correct variable name + enumerate in loop
     def _parse_response(self, raw_json: str, page_num: int, correlation_id: str) -> list[TextBlock]:
         """Parse Vision OCR JSON response into TextBlock list with schema validation."""
         try:
-            # ✅ FIXED: Variable name was wrong (VisionResponseSchema -> data)
             data: VisionResponseSchema = json.loads(raw_json)
         except json.JSONDecodeError as e:
             logger.error(f"[{correlation_id}] Failed to parse VisionOCR JSON: {e}")
             return []
 
         blocks = []
-        # ✅ FIXED: Added enumerate() for proper indexing
         for i, item in enumerate(data.get("blocks", [])):
             # ✅ Validate required fields with safe fallbacks
             text = item.get("text", "").strip()
@@ -536,249 +514,3 @@ __all__ = ["VisionOCREngine", "VisionOCRMetrics"]
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.ocr.vision_ocr) -------
 # ========================================================================
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
-    from pathlib import Path
-    from unittest.mock import patch, MagicMock
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    async def run_tests():
-        print("🔍 Testing VisionOCREngine module (app/ocr/vision_ocr.py)")
-        print("=" * 70)
-
-        try:
-            from app.ocr.vision_ocr import (
-                VisionOCREngine,
-                VisionOCRMetrics,
-                _VISION_COST_PER_1K_TOKENS,
-                _AVG_TOKENS_PER_PAGE,
-            )
-            from app.ocr.paddle_ocr import PageOCRResult
-
-            # -- Test 1: Module imports & dataclasses ---------------------
-            print("\n📌 Test 1: Module imports & dataclass validation")
-
-            metrics = VisionOCRMetrics(
-                page_num=0,
-                tokens_used=2000,
-                estimated_cost=0.02,
-                latency_ms=1500.5,
-                correlation_id="test-123",
-            )
-            metrics_dict = metrics.to_dict()
-            assert metrics_dict["estimated_cost"] == 0.02
-            print(f"   ✅ VisionOCRMetrics: to_dict() works, cost=${metrics_dict['estimated_cost']}")
-
-            try:
-                metrics.page_num = 999
-            except (AttributeError, Exception):
-                print("   ✅ VisionOCRMetrics is immutable (frozen)")
-
-            # -- Test 2: Engine initialization & validation ---------------
-            print("\n📌 Test 2: Engine initialization & API key validation")
-
-            try:
-                VisionOCREngine(api_key="invalid-key")
-            except ValueError as e:
-                if "Invalid OpenAI API key" in str(e):
-                    print(f"   ✅ Invalid API key rejected: {e}")
-
-            with patch("app.ocr.vision_ocr.OpenAI") as mock_openai:
-                mock_client = MagicMock()
-                mock_openai.return_value = mock_client
-                engine = VisionOCREngine(api_key="sk-test123", model="gpt-4o-mini", track_costs=True)
-                assert engine.model == "gpt-4o-mini"
-                print(f"   ✅ Engine initialized: model={engine.model}")
-
-            # -- Test 3: Image validation & preparation -------------------
-            print("\n📌 Test 3: _validate_and_prepare_image (dtype/channel conversion)")
-
-            with patch("app.ocr.vision_ocr.OpenAI"):
-                engine = VisionOCREngine(api_key="sk-test123")
-
-                valid_rgb = np.random.randint(0, 256, (500, 500, 3), dtype=np.uint8)
-                result = engine._validate_and_prepare_image(valid_rgb, "test-img")
-                assert result.dtype == np.uint8 and result.shape[2] == 3
-                print(f"   ✅ Valid RGB: {valid_rgb.shape} -> {result.shape}")
-
-                gray = np.random.randint(0, 256, (400, 400), dtype=np.uint8)
-                result = engine._validate_and_prepare_image(gray, "test-gray")
-                assert result.ndim == 3 and result.shape[2] == 3
-                print(f"   ✅ Grayscale->RGB: {gray.shape} -> {result.shape}")
-
-                huge = np.random.randint(0, 256, (3000, 3000, 3), dtype=np.uint8)
-                result = engine._validate_and_prepare_image(huge, "test-huge")
-                assert max(result.shape[:2]) <= 2048
-                print(f"   ✅ Large image downscaled: {huge.shape[:2]} -> {result.shape[:2]}")
-
-            # -- Test 4: JSON parsing with schema validation --------------
-            print("\n📌 Test 4: _parse_response (JSON -> TextBlock list)")
-
-            valid_json = json.dumps(
-                {
-                    "blocks": [
-                        {
-                            "text": "Invoice #12345",
-                            "block_type": "title",
-                            "confidence": 0.98,
-                            "reading_order": 0,
-                            "bbox": [[10, 10], [200, 10], [200, 40], [10, 40]],
-                            "language": "en",
-                        },
-                        {
-                            "text": "Total: $1,234.56",
-                            "block_type": "paragraph",
-                            "confidence": 0.95,
-                            "reading_order": 1,
-                            "bbox": [[10, 50], [150, 50], [150, 70], [10, 70]],
-                        },
-                    ]
-                }
-            )
-
-            with patch("app.ocr.vision_ocr.OpenAI"):
-                engine = VisionOCREngine(api_key="sk-test123")
-                blocks = engine._parse_response(valid_json, page_num=0, correlation_id="test-parse")
-
-                assert len(blocks) == 2
-                assert blocks[0].text == "Invoice #12345"
-                assert blocks[0].block_type == "title"
-                print(f"   ✅ Valid JSON parsed: {len(blocks)} blocks, first type={blocks[0].block_type}")
-
-            empty_blocks = engine._parse_response("not valid json", page_num=0, correlation_id="test-invalid")
-            assert empty_blocks == []
-            print("   ✅ Invalid JSON handled: returned empty list")
-
-            json_no_bbox = json.dumps({"blocks": [{"text": "No bbox text", "confidence": 0.9}]})
-            blocks = engine._parse_response(json_no_bbox, page_num=0, correlation_id="test-nobbox")
-            assert len(blocks) == 1
-            assert blocks[0].bbox == [[0, 0], [100, 0], [100, 20], [0, 20]]
-            print("   ✅ Missing bbox: placeholder used")
-
-            json_bad_conf = json.dumps({"blocks": [{"text": "Test", "confidence": 1.5}]})
-            blocks = engine._parse_response(json_bad_conf, page_num=0, correlation_id="test-conf")
-            assert blocks[0].confidence == 1.0
-            print(f"   ✅ Confidence clamped: 1.5 -> {blocks[0].confidence}")
-
-            # -- Test 5: Cost estimation ----------------------------------
-            print("\n📌 Test 5: get_cost_estimate (monitoring hook)")
-
-            with patch("app.ocr.vision_ocr.OpenAI"):
-                engine = VisionOCREngine(api_key="sk-test123", track_costs=True)
-                estimate = engine.get_cost_estimate(num_pages=5)
-                expected_cost = (5 * _AVG_TOKENS_PER_PAGE) / 1000 * _VISION_COST_PER_1K_TOKENS
-                assert estimate["estimated_cost_usd"] == round(expected_cost, 4)
-                print(f"   ✅ Cost estimate: 5 pages -> ${estimate['estimated_cost_usd']:.4f}")
-
-            # -- Test 6: Sync processing with mocked API ------------------
-            print("\n📌 Test 6: process_page (sync path with mocked API)")
-
-            with patch("app.ocr.vision_ocr.OpenAI") as mock_openai:
-                mock_client = MagicMock()
-                mock_openai.return_value = mock_client
-
-                # Mock the sync API response
-                mock_response = MagicMock()
-                mock_response.choices = [MagicMock()]
-                mock_response.choices[0].message.content = json.dumps(
-                    {
-                        "blocks": [
-                            {
-                                "text": "Mock Vision OCR",
-                                "confidence": 0.92,
-                                "bbox": [[0, 0], [100, 0], [100, 20], [0, 20]],
-                                "reading_order": 0,
-                            }
-                        ]
-                    }
-                )
-                mock_client.chat.completions.create.return_value = mock_response
-
-                engine = VisionOCREngine(api_key="sk-test123")
-                test_img = np.random.randint(0, 256, (200, 200, 3), dtype=np.uint8)
-
-                with patch(
-                    "app.ocr.vision_ocr.image_to_b64",
-                    return_value="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
-                ):
-                    # ✅ Use SYNC method to avoid async/sync mixing issues in test
-                    result = engine.process_page(test_img, page_num=0)
-
-                    assert result.page_num == 0
-                    assert isinstance(result, PageOCRResult)
-                    print(f"   ✅ Sync processing: returned PageOCRResult with {len(result.blocks)} blocks")
-
-            # -- Test 7: PII scrubbing integration ------------------------
-            print("\n📌 Test 7: PII scrubbing before API call")
-
-            from app.core.ocr_utils import scrub_pii_for_ocr
-
-            original_text = "Contact: john.doe@email.com, SSN: 123-45-6789"
-            scrubbed = scrub_pii_for_ocr(original_text, domain="all")
-            assert "john.doe@email.com" not in scrubbed or "email" in scrubbed.lower()
-            print("   ✅ PII scrubbing: sensitive data masked in text content")
-
-            # -- Test 8: Retry logic verification (sync path) -------------
-            print("\n📌 Test 8: Retry logic for transient errors (sync path)")
-
-            with patch("app.ocr.vision_ocr.OpenAI") as mock_openai:
-                mock_client = MagicMock()
-                mock_openai.return_value = mock_client
-
-                engine = VisionOCREngine(api_key="sk-test123", max_retries=2)
-
-                call_count = 0
-
-                def mock_create_sync(*args, **kwargs):
-                    nonlocal call_count
-                    call_count += 1
-                    if call_count == 1:
-                        from openai import RateLimitError
-
-                        raise RateLimitError(message="Rate limit", response=MagicMock(), body=None)
-                    mock_resp = MagicMock()
-                    mock_resp.choices = [MagicMock()]
-                    mock_resp.choices[0].message.content = json.dumps({"blocks": []})
-                    return mock_resp
-
-                mock_client.chat.completions.create.side_effect = mock_create_sync
-
-                test_img = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
-                with patch(
-                    "app.ocr.vision_ocr.image_to_b64",
-                    return_value="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
-                ):
-                    result = engine.process_page(test_img, page_num=0)
-                    assert result is not None
-                    print(f"   ✅ Retry logic: succeeded after {call_count} attempt(s)")
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! VisionOCREngine module verified.")
-            print("\n💡 Note: Real Vision OCR requires:")
-            print("   • Valid OpenAI API key with GPT-4o access")
-            print("   • Network connectivity to api.openai.com")
-            print("   • Cost awareness: ~$0.01-0.03 per page depending on content")
-            print("\n🔐 Security: PII is scrubbed from text prompts before API calls")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    success = asyncio.run(run_tests())
-    sys.exit(0 if success else 1)

@@ -1,7 +1,3 @@
-# backend/app/ingest/handwriting_ocr.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, M - Memory safety, T - Timeout guards
-# OWASP-FIX: 1 - Prompt safety, 3 - Model sandbox, 7 - Safe error logging
 from __future__ import annotations
 import asyncio
 import json
@@ -420,8 +416,4 @@ class HandwritingOCR:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["HandwritingOCR", "HandwritingResult"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

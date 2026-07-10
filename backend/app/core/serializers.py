@@ -1,6 +1,3 @@
-# backend/app/core/serializers.py
-# DVMELTSS-FIX: M - Modular, S - Security, V - Validate
-# ASCALE-FIX: S - Separation, C - Coupling
 """
 Shared serialization utilities for DocuMind AI.
 
@@ -123,8 +120,4 @@ __all__ = [
     "cache_deserialize",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

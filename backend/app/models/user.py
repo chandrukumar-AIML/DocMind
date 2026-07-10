@@ -60,9 +60,4 @@ class UserResponse(UserBase):
     class Config:
         from_attributes = True
 # Local smoke test entry point. Run: python -m 
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
-
-    run_module_smoke(sys.modules[__name__], __file__)
 

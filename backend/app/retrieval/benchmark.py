@@ -1,11 +1,3 @@
-# backend/app/retrieval/benchmark.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async
-# BATMAN-FIX: A - True async, T - Concurrent execution + timeout guards
-# ✅ FIXED: Sync search_fn wrapped in thread executor (no event loop block)
-# ✅ FIXED: Per-query timeout + global concurrency limit
-# ✅ FIXED: Safe kwargs filtering for search_fn signature compatibility
-# ✅ FIXED: Memory guard + chunked processing for large benchmarks
-# ✅ FIXED: Zero-division guard + deterministic percentile calculation
 
 from __future__ import annotations
 import asyncio
@@ -71,11 +63,9 @@ class RetrievalBenchmark:
     """
 
     def __init__(self, global_concurrency_limit: int = _GLOBAL_CONCURRENCY_LIMIT):
-        # ✅ NEW: Global semaphore to prevent system overload when comparing methods
         self._global_semaphore = asyncio.Semaphore(global_concurrency_limit)
         logger.info(f"RetrievalBenchmark initialized: global_concurrency={global_concurrency_limit}")
 
-    # ✅ NEW: Helper for Python 3.8 compatibility
     async def _run_in_thread(self, func: Callable, *args, **kwargs):
         """Run blocking function in thread pool — compatible with Python 3.8+."""
         if sys.version_info >= (3, 9):
@@ -84,7 +74,6 @@ class RetrievalBenchmark:
             loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in Python 3.10+
             return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
 
-    # ✅ NEW: Safe kwargs filter — only pass params that search_fn accepts
     def _filter_kwargs(self, fn: Callable, **kwargs) -> dict[str, any]:
         """Filter kwargs to only include parameters accepted by fn."""
         try:
@@ -114,7 +103,6 @@ class RetrievalBenchmark:
         corr_id = correlation_id or generate_retrieval_correlation_id(f"bench_{method_name}")
         k = validate_top_k(k)
 
-        # ✅ NEW: Memory guard — truncate if too many queries
         if len(queries) > _MAX_BENCHMARK_QUERIES:
             logger.warning(f"[{corr_id}] Query list too large ({len(queries)} > {_MAX_BENCHMARK_QUERIES}) — truncating")
             queries = queries[:_MAX_BENCHMARK_QUERIES]
@@ -122,7 +110,6 @@ class RetrievalBenchmark:
         latencies: list[float] = []
         successes = 0
 
-        # ✅ NEW: Per-method semaphore + global semaphore for nested limiting
         method_semaphore = asyncio.Semaphore(_CONCURRENCY_LIMIT)
 
         async def run_query(query: dict[str, any]) -> Optional[float]:
@@ -145,7 +132,6 @@ class RetrievalBenchmark:
                             timeout=timeout_seconds,
                         )
                     else:
-                        # ✅ FIXED: Wrap sync call in thread to avoid blocking event loop
                         await asyncio.wait_for(
                             self._run_in_thread(search_fn, **safe_kwargs),
                             timeout=timeout_seconds,
@@ -160,7 +146,6 @@ class RetrievalBenchmark:
                     logger.warning(f"[{corr_id}] {method_name} query failed: {type(e).__name__}: {e}")
                     return None
 
-        # ✅ NEW: Process in chunks to free memory between batches
         all_results = []
         for i in range(0, len(queries), _CHUNK_SIZE):
             chunk = queries[i : i + _CHUNK_SIZE]
@@ -175,7 +160,6 @@ class RetrievalBenchmark:
         successes = len(valid_latencies)
         total = len(queries)
 
-        # ✅ FIXED: Safe division guard
         if not valid_latencies or total == 0:
             return BenchmarkResult(
                 method_name=method_name,
@@ -191,7 +175,6 @@ class RetrievalBenchmark:
         # Convert to milliseconds and sort for percentiles
         latencies_ms = sorted([l * 1000 for l in valid_latencies])
 
-        # ✅ FIXED: Deterministic percentile calculation (nearest-rank method)
         def percentile(data: list[float], p: float) -> float:
             if not data:
                 return 0.0
@@ -294,8 +277,4 @@ class RetrievalBenchmark:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["RetrievalBenchmark", "BenchmarkResult"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

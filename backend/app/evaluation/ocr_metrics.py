@@ -1,6 +1,3 @@
-# backend/app/evaluation/ocr_metrics.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
-# ✅ FIXED: None handling + safe division + input validation
 
 from __future__ import annotations
 
@@ -33,13 +30,11 @@ class OCRPageMetrics:
     @property
     def accuracy_cer(self) -> float:
         """Character-level accuracy (1 - CER)."""
-        # ✅ FIXED: Clamp to [0.0, 1.0]
         return max(0.0, min(1.0, 1.0 - self.cer))
 
     @property
     def accuracy_wer(self) -> float:
         """Word-level accuracy (1 - WER)."""
-        # ✅ FIXED: Clamp to [0.0, 1.0]
         return max(0.0, min(1.0, 1.0 - self.wer))
 
 
@@ -88,7 +83,6 @@ class OCRDocumentMetrics:
         }
 
 
-# ✅ NEW: Input validation helper
 def _validate_page_inputs(
     predicted: Optional[str],
     ground_truth: Optional[str],
@@ -118,7 +112,6 @@ class OCRMetricsCalculator:
 
     def compute_cer(self, predicted: str, ground_truth: str, normalize: bool = True) -> float:
         """Compute Character Error Rate (CER) = edit_distance / len(ground_truth)."""
-        # ✅ FIXED: Handle None inputs
         if predicted is None or ground_truth is None:
             return 1.0
 
@@ -139,7 +132,6 @@ class OCRMetricsCalculator:
 
     def compute_wer(self, predicted: str, ground_truth: str, normalize: bool = True) -> float:
         """Compute Word Error Rate (WER) = edit_distance_words / len(ground_truth_words)."""
-        # ✅ FIXED: Handle None inputs
         if predicted is None or ground_truth is None:
             return 1.0
 
@@ -249,7 +241,6 @@ class OCRMetricsCalculator:
 
     def confidence_distribution(self, confidences: List[float]) -> dict:
         """Compute statistical distribution of OCR confidence scores."""
-        # ✅ FIXED: Handle empty list gracefully
         if not confidences:
             logger.warning("confidence_distribution called with empty list")
             return {
@@ -285,12 +276,10 @@ class OCRMetricsCalculator:
             p_chunk = predicted[i : i + window]
             g_chunk = ground_truth[i : i + window]
 
-            # ✅ FIXED: Skip empty ground truth chunks to avoid division by zero
             if not g_chunk:
                 continue
 
             distance = levenshtein_distance(p_chunk, g_chunk)
-            # ✅ FIXED: Safe division
             cer = distance / len(g_chunk) if len(g_chunk) > 0 else 0.0
             cers.append(cer)
 
@@ -315,8 +304,4 @@ __all__ = [
     "get_ocr_metrics_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

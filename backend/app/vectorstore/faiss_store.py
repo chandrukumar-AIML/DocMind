@@ -1,8 +1,4 @@
-# backend/app/vectorstore/faiss_store.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, M - Memory safety, T - Atomic operations
 # ACID-INDEX: E - Error handling (atomic save/load)
-# ✅ FIXED: Proper async/sync bridge + path validation + atomic rebuild
 
 from __future__ import annotations
 
@@ -14,7 +10,6 @@ from typing import Optional, List, TYPE_CHECKING, Any, Union
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
-# ✅ FIXED: Use TYPE_CHECKING to avoid circular import at runtime
 if TYPE_CHECKING:
     from .embeddings import CachedOpenAIEmbeddings
     from .chroma_store import ChromaVectorStore
@@ -51,7 +46,6 @@ class FAISSVectorStore:
         self.index_path = Path(index_path) if index_path else Path(settings.faiss_index_path)
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # ✅ FIXED: Lazy import embeddings to avoid circular import
         if embeddings is None:
             from .embeddings import CachedOpenAIEmbeddings
 
@@ -59,7 +53,6 @@ class FAISSVectorStore:
         else:
             self.embeddings = embeddings
 
-        # ✅ FIXED: Store chroma reference but don't import at module level
         self.chroma_store = chroma_store
 
         self._store: Optional[FAISS] = None
@@ -71,7 +64,6 @@ class FAISSVectorStore:
         if self._store is not None:
             logger.debug(f"FAISSVectorStore cleanup: {self._count_public()} vectors in memory")
 
-    # ✅ NEW: Document validation helper
     def _validate_documents(self, docs: List[Document], corr_id: str) -> List[Document]:
         """Validate that items are proper Document instances."""
         valid = []
@@ -99,7 +91,6 @@ class FAISSVectorStore:
 
         self._rebuild_from_chroma(corr_id)
 
-    # ✅ FIXED: Atomic rebuild with temp file + rollback
     def _rebuild_from_chroma(self, correlation_id: str):
         """Rebuild FAISS index from ChromaDB chunks with atomic save."""
         logger.info(f"[{correlation_id}] Rebuilding FAISS index from ChromaDB...")
@@ -210,7 +201,6 @@ class FAISSVectorStore:
             search_kwargs={"k": k},
         )
 
-    # ✅ FIXED: Proper async/sync bridge for save
     def _save_to_disk(self, correlation_id: Optional[str] = None):
         """Persist FAISS index atomically with error handling."""
         if self._store is None:
@@ -246,7 +236,6 @@ class FAISSVectorStore:
         Only safe because the file is written by our own process and path is config-controlled.
         NEVER load a FAISS index from an untrusted source.
         """
-        # ✅ FIXED: Strict path containment check
         allowed_base = Path(get_settings().faiss_index_path).parent.resolve()
         actual_path = self.index_path.resolve()
 
@@ -255,7 +244,6 @@ class FAISSVectorStore:
         except ValueError:
             raise VectorStoreError(f"FAISS index path not allowed: {self.index_path}")
 
-        # ✅ FIXED: Verify file hash if checksum exists (for tamper detection)
         checksum_path = self.index_path.with_suffix(".sha256")
         if checksum_path.exists():
             expected_hash = checksum_path.read_text().strip()
@@ -278,7 +266,6 @@ class FAISSVectorStore:
                 f"expected={self.embeddings.dimensions}. Delete index and rebuild."
             )
 
-    # ✅ FIXED: Public wrapper for count to avoid private API
     def _count_public(self) -> int:
         """Return number of vectors in FAISS index using public API."""
         if self._store is None:
@@ -305,8 +292,4 @@ def get_faiss_metadata() -> dict[str, Any]:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["FAISSVectorStore", "get_faiss_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

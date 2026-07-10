@@ -1,6 +1,3 @@
-# backend/app/api/routes/provenance.py
-# DVMELTSS-FIX: M/E/S + ASCALE-L + OWASP-3
-# ✅ FIXED: Safe dict access + input validation + timeout handling + proper error codes
 
 from __future__ import annotations
 
@@ -18,7 +15,6 @@ from app.provenance.store import ProvenanceStore
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/provenance", tags=["provenance"])
 
-# ✅ NEW: Store operation timeout (seconds)
 _STORE_TIMEOUT: Final = 30.0
 
 
@@ -53,7 +49,6 @@ class AnswerResponse(BaseModel):
     citations: list[CitationResponse]
 
 
-# ✅ NEW: Input validation helper
 def _validate_provenance_inputs(
     answer_id: Optional[str],
     source_file: Optional[str],
@@ -260,7 +255,6 @@ async def search_citations(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
 
-    # ✅ FIXED: Basic query sanitization to prevent injection
     safe_q = q.strip()[:200]
 
     store = ProvenanceStore()
@@ -295,7 +289,6 @@ async def search_citations(
 # ========================================================================
 def _dict_to_answer_response(a: dict) -> AnswerResponse:
     """Convert dict to AnswerResponse with safe key access."""
-    # ✅ FIXED: Use .get() with defaults for all keys
     return AnswerResponse(
         answer_id=a.get("answer_id", ""),
         question=a.get("question", ""),
@@ -351,8 +344,4 @@ def get_provenance_metadata() -> dict[str, Any]:
 
 __all__ = ["router", "get_provenance_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

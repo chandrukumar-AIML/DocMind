@@ -1,7 +1,3 @@
-# backend/app/domains/legal/clause_extractor.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
-# BATMAN-FIX: A - API efficiency, B - Batch processing
-# OWASP-FIX: 1 - Prompt injection prevention
 
 from __future__ import annotations
 
@@ -127,7 +123,6 @@ class ClauseExtractor:
     }
 
     def __init__(self, model: str = "gpt-4o"):
-        # FIXED: Use centralized LLM pool
         self.llm = get_domain_llm(streaming=False, model_override=model)
 
         # DVMELTSS-E: Retry config for LLM calls
@@ -193,7 +188,6 @@ class ClauseExtractor:
 
         clause_types_str = " | ".join(CLAUSE_TYPES)
 
-        # FIXED: Use centralized prompt builder with escaping
         prompt = build_domain_prompt(
             CLAUSE_EXTRACTION_PROMPT,
             clause_types=clause_types_str,
@@ -201,10 +195,8 @@ class ClauseExtractor:
         )
 
         try:
-            # FIXED: Apply retry decorator to LLM call
             response = await self._llm_retry(lambda: self.llm.ainvoke([{"role": "user", "content": prompt}]))
 
-            # FIXED: Use centralized JSON parser with graceful fallback
             data = safe_parse_llm_json(response.content, default={"clauses": []})
 
             # Validate output structure
@@ -235,7 +227,6 @@ class ClauseExtractor:
             return clauses
 
         except Exception as e:
-            # FIXED: Include correlation_id in error log
             logger.warning(f"[{correlation_id}] Clause extraction failed: {e}")
             return []
 
@@ -248,8 +239,4 @@ __all__ = [
     "CLAUSE_TYPES",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

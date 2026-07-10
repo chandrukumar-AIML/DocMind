@@ -1,6 +1,3 @@
-# backend/app/evaluation/ragas_dataset.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
-# ✅ FIXED: Safe file I/O + input validation + duplicate detection
 
 from __future__ import annotations
 
@@ -64,7 +61,6 @@ class EvalDataset:
         if not self.samples:
             return False, "Dataset has no samples"
 
-        # ✅ FIXED: Check for duplicate sample IDs
         seen_ids = set()
         for i, sample in enumerate(self.samples):
             sample_id = sample.get("id", f"sample_{i}")
@@ -91,7 +87,6 @@ class EvalDataset:
             question = item.get("question", "")
             ground_truth = item.get("ground_truth", "")
 
-            # ✅ FIXED: Add warning about empty answer/contexts
             if not question or not ground_truth:
                 logger.warning(f"[{corr_id}] Skipping sample with empty question/ground_truth")
                 continue
@@ -108,7 +103,6 @@ class EvalDataset:
         return ragas_samples
 
 
-# ✅ NEW: Input validation helper
 def _validate_dataset_inputs(
     domain: Optional[str],
     version: Optional[str],
@@ -139,7 +133,6 @@ class DatasetManager:
 
     def save(self, dataset: EvalDataset) -> Path:
         """Save dataset to disk as JSON with atomic write."""
-        # FIXED: Validate before saving
         is_valid, error = dataset.validate()
         if not is_valid:
             raise ValueError(f"Cannot save invalid dataset: {error}")
@@ -147,7 +140,6 @@ class DatasetManager:
         filename = f"{dataset.domain}_{dataset.version}.json"
         path = self.dir / filename
 
-        # ✅ FIXED: Atomic write with temp file + error handling
         try:
             # Write to temp file first
             with tempfile.NamedTemporaryFile(mode="w", dir=self.dir, delete=False, suffix=".tmp") as tmp:
@@ -207,7 +199,6 @@ class DatasetManager:
             with open(path) as f:
                 data = json.load(f)
 
-            # ✅ FIXED: Safe dict access with defaults
             dataset = EvalDataset(
                 name=data.get("name", ""),
                 domain=data.get("domain", ""),
@@ -218,7 +209,6 @@ class DatasetManager:
                 correlation_id=corr_id,
             )
 
-            # FIXED: Validate after loading
             is_valid, error = dataset.validate()
             if not is_valid:
                 logger.error(f"[{corr_id}] Loaded dataset validation failed: {error}")
@@ -341,8 +331,4 @@ __all__ = [
     "get_dataset_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

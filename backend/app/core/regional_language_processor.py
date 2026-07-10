@@ -1,4 +1,3 @@
-# backend/app/core/regional_language_processor.py
 """Indian regional language support: Tanglish, cross-language search, Indian formats."""
 
 from __future__ import annotations
@@ -179,37 +178,3 @@ def preprocess_regional_query(query: str) -> dict[str, Any]:
         "is_multilingual": script is not None or tanglish_normalized != query.lower(),
     }
 
-
-if __name__ == "__main__":
-    print("Regional language processor smoke test")
-
-    assert validate_pan("ABCDE1234F")
-    assert not validate_pan("INVALID")
-    print("PAN validation OK")
-
-    assert validate_gstin("27AAPFU0939F1ZV")
-    assert not validate_gstin("BADGSTIN")
-    print("GSTIN validation OK")
-
-    assert validate_aadhaar("2345 6789 0123")
-    print("Aadhaar validation OK")
-
-    n = normalize_indian_number("5.2 crores")
-    assert n == 52_000_000.0, f"Expected 52M, got {n}"
-    n2 = normalize_indian_number("18 lakhs")
-    assert n2 == 1_800_000.0, f"Expected 1.8M, got {n2}"
-    print("Indian number normalization OK")
-
-    q = preprocess_regional_query("aadayam kanam ottam")
-    assert q["normalized_query"] == "income amount total"
-    print("Tanglish normalization OK")
-
-    d = parse_indian_date("31/12/2024")
-    assert d == "2024-12-31", f"Got {d}"
-    print("Date parsing OK")
-
-    entities = extract_indian_entities("PAN: ABCDE1234F GSTIN: 27AAPFU0939F1ZV")
-    assert "ABCDE1234F" in entities["pan"]
-    print("Entity extraction OK")
-
-    print("All regional language processor checks passed")

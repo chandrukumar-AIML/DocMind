@@ -1,11 +1,3 @@
-# backend/app/auth/models.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
-# [OK] FIXED: display_name + updated_at columns added to User model
-# [OK] FIXED: UserRoleEnum uses explicit string literals
-# [OK] FIXED: Completed truncated _enforce_single_primary event listener
-# [OK] FIXED: hybrid_property -> property (avoids SQL query confusion)
-# [OK] FIXED: Removed redundant timestamp listener (handled by column defaults)
 
 from __future__ import annotations
 
@@ -142,6 +134,11 @@ class Workspace(Base):
     stripe_subscription_id = Column(String(255), nullable=True)
     subscription_status = Column(String(30), nullable=False, default="none", server_default="none")
 
+    # Soft-delete — use is_deleted=True + deleted_at timestamp instead of hard DELETE.
+    # Queries that must exclude deleted workspaces should filter on is_deleted=False.
+    is_deleted = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
+
     members: Mapped[list["WorkspaceMember"]] = relationship(
         "WorkspaceMember",
         back_populates="workspace",
@@ -212,6 +209,10 @@ class User(Base):
         default=_utcnow,
         onupdate=_utcnow,
     )
+
+    # Soft-delete — prefer is_deleted over hard DELETE to preserve audit trails.
+    is_deleted = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
 
     memberships: Mapped[list["WorkspaceMember"]] = relationship(
         "WorkspaceMember",
@@ -433,7 +434,6 @@ class UsageLog(Base):
     tokens_used = Column(Integer, default=0, nullable=False, server_default=text("0"))
     ocr_pages = Column(Integer, default=0, nullable=False, server_default=text("0"))
     storage_delta_mb = Column(Float, default=0.0, nullable=False, server_default=text("0.0"))
-    # [OK] FIXED: 'metadata' is a reserved SQLAlchemy attribute on Declarative models.
     # Renamed to 'log_metadata'; column name in DB stays "metadata" for backward compat.
     log_metadata = Column("metadata", JSONB, default=dict, nullable=False, server_default=text("'{}'"))
     created_at = Column(
@@ -516,82 +516,3 @@ def _enforce_single_primary(mapper, connection, target: WorkspaceMember):
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.auth.models) ---------
 # ========================================================================
 
-if __name__ == "__main__":
-    import sys
-
-    print("[>>] Testing Auth Models module (app/auth/models.py)")
-    print("=" * 70)
-
-    try:
-        # [OK] NO IMPORT NEEDED!
-        # We are inside the file, so User, Workspace, UserRole are already defined.
-
-        # -- Test 1: UserRole enum ---------------------------------------
-        print("\n[PIN] Test 1: UserRole enum values")
-        assert UserRole.ADMIN.value == "admin"
-        assert UserRole.EDITOR.value == "editor"
-        assert UserRole.VIEWER.value == "viewer"
-        assert UserRole.is_valid("admin") is True
-        assert UserRole.is_valid("invalid") is False
-        print("   [OK] UserRole: admin/editor/viewer + is_valid() check")
-
-        # -- Test 2: SQLAlchemy model attributes ------------------------
-        print("\n[PIN] Test 2: SQLAlchemy model structure (columns)")
-        # Check User model has expected columns via __table__.c
-        user_cols = [c.name for c in User.__table__.c]
-        assert "email" in user_cols, f"Missing 'email' in User columns: {user_cols}"
-        assert "hashed_password" in user_cols
-        assert "is_active" in user_cols
-        print("   [OK] User model columns: email, hashed_password, is_active")
-
-        # Check Workspace model
-        ws_cols = [c.name for c in Workspace.__table__.c]
-        assert "slug" in ws_cols, f"Missing 'slug' in Workspace columns: {ws_cols}"
-        assert "is_active" in ws_cols
-        print("   [OK] Workspace model columns: slug, is_active")
-
-        # Check WorkspaceMember model
-        member_cols = [c.name for c in WorkspaceMember.__table__.c]
-        assert "role" in member_cols, f"Missing 'role' in Member columns: {member_cols}"
-        assert "is_primary" in member_cols
-        print("   [OK] WorkspaceMember model columns: role, is_primary")
-
-        # -- Test 3: Model relationships --------------------------------
-        print("\n[PIN] Test 3: Model relationships (selectinload ready)")
-        # Check relationships are defined via __mapper__.relationships
-        user_rels = [r.key for r in User.__mapper__.relationships]
-        assert "memberships" in user_rels, f"Missing 'memberships' in User rels: {user_rels}"
-        print("   [OK] User relationships: memberships")
-
-        ws_rels = [r.key for r in Workspace.__mapper__.relationships]
-        assert "members" in ws_rels, f"Missing 'members' in Workspace rels: {ws_rels}"
-        print("   [OK] Workspace relationships: members")
-
-        # -- Test 4: Table metadata -------------------------------------
-        print("\n[PIN] Test 4: Table metadata (schema validation)")
-        assert User.__tablename__ == "users"
-        assert Workspace.__tablename__ == "workspaces"
-        assert WorkspaceMember.__tablename__ == "workspace_members"
-        print("   [OK] Table names: users, workspaces, workspace_members")
-
-        # Check primary keys
-        assert len(User.__table__.primary_key) == 1
-        assert str(list(User.__table__.primary_key)[0].name) == "id"
-        print("   [OK] Primary keys: User.id (UUID)")
-
-        print("\n" + "=" * 70)
-        print("[OK] ALL TESTS PASSED! Auth models module verified.")
-        print("\n[TIP] What we verified:")
-        print("   • UserRole enum: admin/editor/viewer + validation [OK]")
-        print("   • SQLAlchemy models: columns, relationships, primary keys [OK]")
-        print("   • Table meta names, schema validation [OK]")
-        print("\n[FIX] For integration tests:")
-        print("   • Run: python -m app.api.routes.auth")
-        print("\n[SEC] Security: Models enforce email format, password hashing")
-
-    except Exception as e:
-        print(f"\n[FAIL] Test failed: {e}")
-        import traceback
-
-        traceback.print_exc()
-        sys.exit(1)

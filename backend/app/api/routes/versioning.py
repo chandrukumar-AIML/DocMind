@@ -1,6 +1,3 @@
-# backend/app/api/routes/versioning.py
-# DVMELTSS-FIX: M/E/S + ASCALE-L + Workspace isolation
-# ✅ FIXED: Input validation + timeout handling + safe registry ops + proper error codes
 
 from __future__ import annotations
 
@@ -18,7 +15,6 @@ from app.versioning.registry import VersionRegistry
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/versioning", tags=["versioning"])
 
-# ✅ NEW: Registry operation timeout (seconds)
 _REGISTRY_TIMEOUT: Final = 30.0
 
 
@@ -38,7 +34,6 @@ class DiffResponse(BaseModel):
     changes: list[dict]
 
 
-# ✅ NEW: Input validation helper
 def _validate_versioning_inputs(
     source_file: Optional[str],
     v1: Optional[int],
@@ -89,7 +84,6 @@ async def get_version_history(
             timeout=_REGISTRY_TIMEOUT,
         )
 
-        # ✅ FIXED: Safe serialization with fallback
         version_dicts = []
         for v in versions or []:
             if hasattr(v, "model_dump"):
@@ -134,7 +128,6 @@ async def get_version_diff(
 
     workspace_id = user.workspace_id if user else "default"
 
-    # ✅ FIXED: Strict v1 < v2 check
     if v1 >= v2:
         raise HTTPException(status_code=400, detail="v1 must be strictly less than v2")
 
@@ -152,7 +145,6 @@ async def get_version_diff(
             timeout=_REGISTRY_TIMEOUT,
         )
 
-        # ✅ FIXED: Safe serialization with fallback
         changes_list = []
         raw_changes = getattr(diff, "changes", None) or getattr(diff, "modified_sections", []) or []
         for c in raw_changes:
@@ -220,7 +212,6 @@ async def get_version_details(
     if not version:
         raise HTTPException(status_code=404, detail="Version not found")
 
-    # ✅ FIXED: Safe serialization with fallback
     if hasattr(version, "model_dump"):
         version_dict = version.model_dump()
     elif hasattr(version, "to_dict"):
@@ -255,8 +246,4 @@ def get_versioning_api_metadata() -> dict[str, Any]:
 
 __all__ = ["router", "get_versioning_api_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

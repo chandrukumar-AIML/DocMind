@@ -1,10 +1,3 @@
-# backend/app/retrieval/rrf_fusion.py
-# DVMELTSS-FIX: M - Modular, V - Validate
-# ASCALE-FIX: S - Separation
-# ✅ FIXED: Weights validation + auto-normalize
-# ✅ FIXED: Safe import fallback for reciprocal_rank_fusion
-# ✅ FIXED: Warning log for items missing id/chunk_id
-# ✅ FIXED: Optional score normalization + deterministic tie-breaking
 
 from __future__ import annotations
 import logging
@@ -166,7 +159,6 @@ class RRFFusion:
             for doc_id, score in fused_scores.items()
         ]
 
-        # ✅ FIXED: Deterministic sort — by score desc, then doc_id asc for ties
         results.sort(key=lambda r: (-r.fused_score, r.doc_id))
 
         logger.debug(f"[{corr_id}] RRF fusion: {len(results)} results")
@@ -196,8 +188,4 @@ class RRFFusion:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["RRFFusion", "RRFFusionResult"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

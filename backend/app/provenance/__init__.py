@@ -1,7 +1,3 @@
-# backend/app/provenance/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
-# ✅ FIXED: Direct return in __getattr__ + error handling + idempotent logging
 
 """
 DocuMind AI - Provenance & Citation Tracking Module
@@ -107,7 +103,6 @@ def _reset_caches_for_tests() -> None:
         except Exception:
             pass
 
-    # ✅ FIXED: Reset module-level singletons in store.py
     try:
         from . import store
 
@@ -142,7 +137,6 @@ def _log_module_init() -> None:
 _log_module_init()
 
 
-# ✅ NEW: Metadata helper for monitoring
 def get_provenance_metadata() -> dict[str, Any]:
     """Return provenance module metadata for monitoring/debugging."""
     from .store import get_provenance_metadata as _get_meta

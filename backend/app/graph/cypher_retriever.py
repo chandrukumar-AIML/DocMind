@@ -1,8 +1,3 @@
-# backend/app/graph/cypher_retriever.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, T - Timeouts, M - Safe string handling
-# OWASP-FIX: 1 - Prompt injection prevention, 9 - Cypher injection prevention
-# ✅ FIXED: Safe sync wrapper + proper async handling + input validation
 
 from __future__ import annotations
 
@@ -129,13 +124,11 @@ LIMIT 20
     def __init__(self, neo4j_store: Optional[Neo4jStore] = None, model: str = "gpt-4o"):
         settings = get_settings()
         self.store = neo4j_store or get_neo4j_store()
-        # FIXED: Use centralized LLM pool
         self.llm = get_llm(streaming=False, model_override=model, temperature_override=0.0)
         self.model = model
 
         logger.info(f"CypherRetriever initialized: model={model}, async=True")
 
-    # ✅ NEW: Input validation helper
     def _validate_inputs(
         self,
         query: str,
@@ -177,7 +170,6 @@ LIMIT 20
     @retry_async(config=_LLM_RETRY_CONFIG)
     async def _call_llm_async(self, prompt: str, corr_id: str) -> str:
         """Centralized LLM call with retry logic."""
-        # ✅ FIXED: Check if llm.ainvoke is truly async
         if inspect.iscoroutinefunction(self.llm.ainvoke):
             response = await self.llm.ainvoke([{"role": "user", "content": prompt}])
         else:
@@ -215,7 +207,6 @@ LIMIT 20
             logger.error(f"[{corr_id}] Invalid inputs: {error}")
             return "", []
 
-        # FIXED: Use centralized sanitization
         safe_query = sanitize_cypher_input(query)
 
         try:
@@ -225,7 +216,6 @@ LIMIT 20
                 params = template_params or {}
                 params["workspace_id"] = workspace_id
                 cypher = CYPHER_TEMPLATES[template_name]
-                # ✅ FIXED: Add timeout to Neo4j query
                 result = await asyncio.wait_for(
                     self.store.execute_query_async(cypher, params, workspace_id),
                     timeout=_NEO4J_TIMEOUT,
@@ -247,12 +237,10 @@ LIMIT 20
 
     async def _text_to_cypher_retrieve_async(self, query: str, workspace_id: str, correlation_id: str) -> list[dict]:
         """Async: Generate Cypher from natural language using centralized LLM."""
-        # FIXED: Use centralized prompt escaping
         safe_prompt = escape_graph_prompt(f"{self.CYPHER_GENERATION_PROMPT}\n\nGenerate Cypher for: {query}")
 
         try:
             content = await self._call_llm_async(safe_prompt, correlation_id)
-            # ✅ FIXED: Robust markdown/code block stripping with regex
             cypher = re.sub(r"```(?:cypher)?\s*", "", content)
             cypher = re.sub(r"```", "", cypher).strip()
 
@@ -263,7 +251,6 @@ LIMIT 20
 
             logger.info(f"[{correlation_id}] Generated Cypher: {cypher[:200]}")
 
-            # ✅ FIXED: Add timeout to Neo4j query
             result = await asyncio.wait_for(
                 self.store.execute_query_async(
                     cypher,
@@ -283,7 +270,6 @@ LIMIT 20
 
     async def _keyword_entity_search_async(self, query: str, workspace_id: str, correlation_id: str) -> list[dict]:
         """Async fallback: extract keywords from query and search entities."""
-        # ✅ FIXED: Better keyword extraction with NLP fallback
         try:
             import nltk
             from nltk import word_tokenize, pos_tag
@@ -308,11 +294,9 @@ LIMIT 20
             words = [w for w in query.split() if len(w) > 3 and w.isalpha()]
             search_term = words[0] if words else query[:20]
 
-        # FIXED: Use centralized sanitization
         search_term = sanitize_cypher_input(search_term)
 
         cypher = CYPHER_TEMPLATES["entity_search"]
-        # ✅ FIXED: Add timeout to Neo4j query
         result = await asyncio.wait_for(
             self.store.execute_query_async(
                 cypher,
@@ -379,8 +363,4 @@ def get_cypher_metadata() -> dict[str, Any]:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["CypherRetriever", "get_cypher_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

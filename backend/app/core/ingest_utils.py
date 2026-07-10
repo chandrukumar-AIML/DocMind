@@ -1,7 +1,3 @@
-# backend/app/core/ingest_utils.py
-# DVMELTSS-FIX: M - Modular, S - Security, V - Validate
-# ASCALE-FIX: S - Separation, C - Coupling
-# OWASP-FIX: 7 - PII redaction, 9 - Path safety
 """
 Shared utilities for ingestion modules.
 
@@ -23,7 +19,6 @@ import re
 from pathlib import Path
 from typing import Final, Optional, Union
 
-# ✅ FIXED: Added missing import for generate_correlation_id
 from app.core.ids import generate_correlation_id
 
 logger = logging.getLogger(__name__)
@@ -135,7 +130,6 @@ async def read_file_bytes_async(file_path: Path, max_bytes: Optional[int] = None
 
 def generate_ingest_correlation_id(prefix: str = "ingest") -> str:
     """Generate correlation ID for ingestion tracing."""
-    # ✅ FIXED: Now generate_correlation_id is imported and defined
     return f"{prefix}_{generate_correlation_id()}"
 
 
@@ -148,8 +142,4 @@ __all__ = [
     "generate_ingest_correlation_id",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

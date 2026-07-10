@@ -1,8 +1,4 @@
-# backend/app/monitoring/auto_improver.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, S - Security
-# BATMAN-FIX: A - True async, T - Batch processing, M - Memory safety
 # ACID-INDEX: E - Error handling (audit trail)
-# ✅ FIXED: Proper async/sync bridge + input validation + thread-safe cooldown
 
 from __future__ import annotations
 
@@ -44,7 +40,6 @@ class ImprovementAction:
 
     def to_dict(self) -> dict:
         """Serialize for API/MLflow."""
-        # ✅ FIXED: Safe serialization with None handling
         return {
             "action_type": self.action_type,
             "trigger": self.trigger,
@@ -60,7 +55,6 @@ class ImprovementAction:
         }
 
 
-# ✅ NEW: Input validation helper
 def _validate_improvement_inputs(
     quality_alerts: Optional[list],
     drifted_columns: Optional[list],
@@ -100,7 +94,6 @@ class AutoImprover:
     def __init__(self, workspace_id: str = "default"):
         self.workspace_id = workspace_id
         self.settings = get_settings()
-        # FIXED: Use centralized threshold config
         self.quality_thresholds = get_quality_thresholds()
 
     def should_trigger(self, quality_alerts: list[str]) -> bool:
@@ -108,7 +101,6 @@ class AutoImprover:
         if not quality_alerts:
             return False
 
-        # ✅ FIXED: Thread-safe cooldown check
         with self._lock:
             last = self._last_improvement.get(self.workspace_id, 0.0)
             hours_since = (time.time() - last) / 3600
@@ -141,12 +133,10 @@ class AutoImprover:
             logger.error(f"Invalid improvement inputs: {error}")
             return "alert_only"
 
-        # FIXED: Use centralized thresholds
         faithfulness_threshold = self.quality_thresholds.get("faithfulness", 0.70)
         precision_threshold = self.quality_thresholds.get("context_precision_mean", 0.55)
         latency_threshold = self.quality_thresholds.get("latency_ms_p95", 8000)
 
-        # ✅ FIXED: Safe None checks for stats
         faithfulness = current_stats.get("faithfulness_mean") if current_stats else None
         latency_p95 = current_stats.get("latency_ms_p95", 0) if current_stats else 0
         precision = current_stats.get("context_precision_mean") if current_stats else None
@@ -252,7 +242,6 @@ class AutoImprover:
         from app.retrieval import HybridRetriever, RETRIEVAL_PROFILES
         from app.vectorstore.store_manager import VectorStoreManager
 
-        # ✅ FIXED: Properly instantiate VectorStoreManager, scoped to this workspace
         store = VectorStoreManager(workspace_id=self.workspace_id)
 
         # Analyze document type distribution
@@ -287,7 +276,6 @@ class AutoImprover:
         """
         from app.vectorstore.store_manager import VectorStoreManager
 
-        # ✅ FIXED: Properly instantiate VectorStoreManager, scoped to this workspace
         store = VectorStoreManager(workspace_id=self.workspace_id)
         docs = store.list_documents()
 
@@ -318,7 +306,6 @@ class AutoImprover:
         """
         from app.vectorstore.store_manager import VectorStoreManager
 
-        # ✅ FIXED: Properly instantiate VectorStoreManager, scoped to this workspace
         store = VectorStoreManager(workspace_id=self.workspace_id)
         docs = store.list_documents()
 
@@ -395,8 +382,4 @@ __all__ = [
     "get_auto_improver_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

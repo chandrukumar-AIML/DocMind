@@ -1,4 +1,3 @@
-# backend/app/api/routes/regional.py
 """Indian regional language support API: query normalization, entity extraction, validation."""
 
 from __future__ import annotations
@@ -135,26 +134,3 @@ async def list_supported_scripts() -> dict[str, Any]:
         ],
     }
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke():
-        print("Regional routes smoke test")
-        req = QueryPreprocessRequest(query="aadayam kanam ottam thedi")
-        result = preprocess_regional_query(req.query)
-        assert result["normalized_query"] == "income amount total search"
-        print(f"Query preprocessing OK: {result['normalized_query']}")
-
-        val_req = ValidationRequest(value="ABCDE1234F", type="pan")
-        assert validate_pan(val_req.value) is True
-        print("PAN validation route OK")
-
-        num_req = NumberParseRequest(text="5 crores")
-        parsed = normalize_indian_number(num_req.text)
-        assert parsed == 50_000_000.0
-        print("Number parsing route OK")
-
-        print("Regional routes checks passed")
-
-    asyncio.run(smoke())

@@ -1,6 +1,3 @@
-# backend/app/dependencies.py
-# DVMELTSS-FIX: M - Modular, A - Async-safe, S - Scalability, D - Dependencies
-# ASCALE-FIX: S - Separation, C - Coupling, E - Error handling
 # ADDED: Production-ready central dependency providers for OCR, vector store, and RAG chain
 
 from __future__ import annotations
@@ -132,8 +129,4 @@ __all__ = [
     "reset_dependency_cache",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

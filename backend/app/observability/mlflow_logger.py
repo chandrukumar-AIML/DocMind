@@ -1,8 +1,3 @@
-# backend/app/observability/mlflow_logger.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - Async artifact logging, T - Thread-safe circuit breaker
-# ✅ FIXED: Proper resource cleanup + input validation + safe truncation
 
 from __future__ import annotations
 
@@ -30,7 +25,6 @@ from app.core.pii_utils import scrub_pii_for_evaluation
 logger = logging.getLogger(__name__)
 
 # Composite metric keys for RAG evaluation
-# FIXED: Added context_recall — was missing from composite score calculation
 COMPOSITE_METRICS: Final = [
     "faithfulness",
     "answer_relevance",
@@ -38,7 +32,6 @@ COMPOSITE_METRICS: Final = [
     "context_recall",
 ]
 
-# ✅ NEW: Socket timeout constant
 _SOCKET_TIMEOUT: Final = 2.0
 
 
@@ -69,7 +62,6 @@ def configure_mlflow(correlation_id: Optional[str] = None) -> bool:
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
 
         try:
-            # ✅ FIXED: Use timeout + handle connection errors gracefully
             sock = socket.create_connection((host, port), timeout=_SOCKET_TIMEOUT)
             sock.close()
         except (OSError, socket.timeout) as e:
@@ -172,7 +164,6 @@ class MLflowLogger:
             **({"correlation_id": corr_id} if corr_id else {}),
         }
         if tags:
-            # FIXED: Use centralized PII scrubbing + truncate long values
             default_tags.update({k: scrub_pii_for_evaluation(str(v)[:500], domain="general") for k, v in tags.items()})
 
         run = None
@@ -183,7 +174,6 @@ class MLflowLogger:
                 tags=default_tags,
             )
             self._active_run = run
-            # FIXED: Get uri from settings (was undefined)
             ui_base = settings.mlflow_tracking_uri.rstrip("/")
             if ui_base.startswith("http"):
                 ui_url = f"{ui_base}/#/experiments/{run.info.experiment_id}" f"/runs/{run.info.run_id}"
@@ -198,7 +188,6 @@ class MLflowLogger:
             logger.warning(f"[{corr_id}] MLflow run '{run_name}' failed: {e}")
             yield NULL_RUN
         finally:
-            # ✅ FIXED: Ensure run is ended even on exception
             if run is not None:
                 try:
                     mlflow.end_run()
@@ -219,7 +208,6 @@ class MLflowLogger:
         correlation_id: Optional[str] = None,
     ):
         """Log OCR evaluation metrics to MLflow."""
-        # ✅ FIXED: Clamp all inputs to valid ranges
         cer = max(0.0, min(1.0, cer))
         wer = max(0.0, min(1.0, wer))
         mean_confidence = max(0.0, min(1.0, mean_confidence))
@@ -252,7 +240,6 @@ class MLflowLogger:
         if not self.__class__._mlflow_available:
             return
 
-        # ✅ FIXED: Single, clean circuit breaker implementation
         with self.__class__._class_lock:
             try:
                 mlflow.log_metrics(metrics, step=step)
@@ -501,7 +488,6 @@ class MLflowLogger:
         try:
             yield
         finally:
-            # ✅ FIXED: Guaranteed logging even if yielded code raises
             elapsed_ms = (time.perf_counter() - start) * 1000
             self._safe_log_metrics({metric_name: round(elapsed_ms, 2)}, step=step)
 
@@ -521,7 +507,6 @@ class MLflowLogger:
             artifact_path: MLflow artifact subpath
             correlation_id: Request ID for distributed tracing
         """
-        # ✅ FIXED: Handle empty results gracefully
         if not results:
             logger.debug("No evaluation results to log")
             return
@@ -547,19 +532,16 @@ class MLflowLogger:
         correlation_id: Optional[str] = None,
     ):
         """Async version of log_eval_results_csv for non-blocking artifact logging."""
-        # FIXED: get_event_loop() deprecated in Python 3.10+; use asyncio.to_thread() instead
         await asyncio.to_thread(self.log_eval_results_csv, results, filename, artifact_path, correlation_id)
 
     def _safe_log_params(self, params: Dict[str, str]):
         """Log parameters with truncation to avoid MLflow length limits."""
 
-        # ✅ FIXED: Smarter truncation with ellipsis indicator
         def _smart_truncate(value: str, max_len: int = 500) -> str:
             if len(value) <= max_len:
                 return value
             return value[: max_len - 3] + "..."
 
-        # FIXED: Use centralized PII scrubbing + smart truncate
         truncated = {k: _smart_truncate(scrub_pii_for_evaluation(str(v), domain="general")) for k, v in params.items()}
         try:
             mlflow.log_params(truncated)
@@ -569,7 +551,6 @@ class MLflowLogger:
     def _safe_log_param(self, key: str, value: str):
         """Log a single parameter with truncation."""
         try:
-            # ✅ FIXED: Smart truncate + PII scrubbing
             def _smart_truncate(value: str, max_len: int = 500) -> str:
                 if len(value) <= max_len:
                     return value
@@ -627,8 +608,4 @@ __all__ = [
     "get_mlflow_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

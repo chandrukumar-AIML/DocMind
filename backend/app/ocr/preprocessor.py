@@ -1,13 +1,3 @@
-# backend/app/ocr/preprocessor.py
-# DVMELTSS-FIX: M - Modular, S - Security, A - Async
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: M - Memory safety, A - Async-safe
-# ✅ FIXED: Removed ImageNet normalization (breaks OCR)
-# ✅ FIXED: Proper dtype handling (no float32->uint8 corruption)
-# ✅ FIXED: Deskew fallback for low-text/blank pages
-# ✅ FIXED: Input validation + memory guard for huge images
-# ✅ FIXED: Async wrapper with thread executor for FastAPI
-# ✅ FINAL FIX: Added comprehensive main() block for local testing
 
 from __future__ import annotations
 import asyncio
@@ -68,13 +58,11 @@ class DocumentPreprocessor:
     -> Output: uint8 BGR [0, 255] ready for PaddleOCR
     """
 
-    # ✅ NEW: Valid image constraints
     _VALID_DTYPES: Final = {np.uint8}
     _VALID_CHANNELS: Final = {1, 3}  # Grayscale or BGR
 
     def __init__(self, target_dpi: int = _DEFAULT_TARGET_DPI):
         self.target_dpi = target_dpi
-        # ✅ FIXED: Removed Normalize step — PaddleOCR expects raw [0,255] BGR
         self.pipeline: Compose = A.Compose(
             [
                 A.GaussianBlur(blur_limit=(3, 3), p=0.5),
@@ -85,7 +73,6 @@ class DocumentPreprocessor:
         )
         logger.info(f"DocumentPreprocessor initialized: target_dpi={target_dpi}")
 
-    # ✅ NEW: Async wrapper for FastAPI integration
     async def preprocess_async(
         self,
         image_input: Union[np.ndarray, Image.Image, str, Path],
@@ -181,7 +168,6 @@ class DocumentPreprocessor:
             correlation_id=corr_id,
         )
 
-    # ✅ NEW: Combined load + validate helper
     def _load_and_validate_image(
         self,
         image_input: Union[np.ndarray, Image.Image, str, Path],
@@ -271,7 +257,6 @@ class DocumentPreprocessor:
             logger.debug(f"Upscaled image from ({w},{h}) to ({new_w},{min_height})")
         return img
 
-    # ✅ NEW: Memory guard for huge images
     def _guard_image_size(self, img: np.ndarray, corr_id: str) -> np.ndarray:
         """Downscale image if dimensions exceed safe limits."""
         h, w = img.shape[:2]
@@ -298,178 +283,3 @@ __all__ = ["PreprocessResult", "DocumentPreprocessor"]
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.ocr.preprocessor) -----
 # ========================================================================
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
-    from pathlib import Path
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    async def run_tests():
-        print("🔍 Testing DocumentPreprocessor module (app/ocr/preprocessor.py)")
-        print("=" * 70)
-
-        try:
-            # -- Test 1: Module imports & initialization ------------------
-            print("\n📌 Test 1: Module imports & initialization")
-            from app.ocr.preprocessor import DocumentPreprocessor, PreprocessResult
-
-            preprocessor = DocumentPreprocessor(target_dpi=300)
-            assert preprocessor.target_dpi == 300
-            pipeline_info = preprocessor.get_pipeline_info()
-            assert pipeline_info["normalization_applied"] is False, "Should NOT apply ImageNet normalization"
-            print(
-                f"   ✅ Initialized: dpi={preprocessor.target_dpi}, no normalization={not pipeline_info['normalization_applied']}"
-            )
-
-            # -- Test 2: Image loading & validation -----------------------
-            print("\n📌 Test 2: Image loading & validation")
-
-            # Test numpy array input (already uint8)
-            test_img = np.random.randint(0, 256, (500, 500, 3), dtype=np.uint8)
-            result = preprocessor.preprocess(test_img, correlation_id="test-1")
-            assert result.image.dtype == np.uint8, "Output must be uint8"
-            assert result.original_size == (500, 500)
-            print(f"   ✅ NumPy input: dtype={result.image.dtype}, size={result.original_size}")
-
-            # Test PIL Image input — ✅ USE IMAGE THAT MEETS MIN HEIGHT
-            pil_img = Image.new("RGB", (600, 1200), color="white")  # Height=1200 >= 1000
-            result = preprocessor.preprocess(pil_img, correlation_id="test-2")
-            # PIL (W=600, H=1200) -> CV2 (H=1200, W=600, C=3)
-            assert result.image.shape[:2] == (
-                1200,
-                600,
-            ), f"Expected (1200, 600), got {result.image.shape[:2]}"
-            print(f"   ✅ PIL input: (W=600,H=1200) -> CV2 shape={result.image.shape[:2]}")
-
-            # Test grayscale -> BGR conversion
-            gray_img = np.random.randint(0, 256, (300, 300), dtype=np.uint8)
-            result = preprocessor.preprocess(gray_img, correlation_id="test-3")
-            assert result.was_grayscale is True
-            assert result.image.ndim == 3 and result.image.shape[2] == 3, "Should be 3-channel BGR"
-            print(f"   ✅ Grayscale->BGR: {result.was_grayscale} -> {result.image.shape[2]} channels")
-
-            # -- Test 3: Preprocessing pipeline (blur, CLAHE, sharpen) ---
-            print("\n📌 Test 3: Augmentation pipeline (no normalization)")
-
-            # Create test image with text-like pattern
-            text_img = np.ones((800, 1200, 3), dtype=np.uint8) * 255  # White background
-            text_img[200:250, 100:500] = 0  # Black "text" rectangle
-
-            result = preprocessor.preprocess(text_img, correlation_id="test-4")
-            assert result.image.dtype == np.uint8, "Output must stay uint8"
-            assert result.image.min() >= 0 and result.image.max() <= 255, "Values in [0,255]"
-            assert not np.issubdtype(result.image.dtype, np.floating), "Should NOT be float (no normalization)"
-            print(f"   ✅ Pipeline: dtype={result.image.dtype}, range=[{result.image.min()}, {result.image.max()}]")
-
-            # -- Test 4: Deskew with fallback -----------------------------
-            print("\n📌 Test 4: Deskew with low-text fallback")
-
-            # Test with blank page (should skip deskew)
-            blank_img = np.ones((1000, 1000, 3), dtype=np.uint8) * 255
-            result = preprocessor.preprocess(blank_img, correlation_id="test-5")
-            assert result.was_deskewed is False, "Blank page should skip deskew"
-            assert result.deskew_angle == 0.0
-            print(f"   ✅ Blank page: deskew skipped (was_deskewed={result.was_deskewed})")
-
-            # Test with simulated skewed text (simple diagonal line)
-            skewed_img = np.ones((500, 500, 3), dtype=np.uint8) * 255
-            cv2.line(skewed_img, (50, 100), (450, 400), 0, 3)  # Diagonal black line
-            result = preprocessor.preprocess(skewed_img, correlation_id="test-6")
-            assert result.image is not None
-            print(f"   ✅ Skewed image: processed (angle={result.deskew_angle:.2f}°)")
-
-            # -- Test 5: Resolution enforcement (explicit test) -----------
-            print("\n📌 Test 5: Minimum resolution enforcement")
-
-            # Small image should be upscaled to min_height=1000
-            small_img = np.random.randint(0, 256, (200, 300, 3), dtype=np.uint8)
-            result = preprocessor.preprocess(small_img, correlation_id="test-7")
-            assert result.image.shape[0] >= 1000, f"Height should be >= 1000, got {result.image.shape[0]}"
-            expected_w = int(300 * (1000 / 200))  # Scale width proportionally
-            assert result.image.shape[1] == expected_w, f"Width should be scaled to {expected_w}"
-            print(f"   ✅ Upscale: {small_img.shape[:2]} -> {result.image.shape[:2]}")
-
-            # -- Test 6: Memory guard for huge images ---------------------
-            print("\n📌 Test 6: Memory guard (downscale huge images)")
-
-            from unittest.mock import patch
-
-            huge_img = np.random.randint(0, 256, (500, 500, 3), dtype=np.uint8)
-            with patch("app.ocr.preprocessor._MAX_IMAGE_DIM", 400):  # Temporarily lower limit
-                result = preprocessor.preprocess(huge_img, correlation_id="test-8")
-                assert max(result.image.shape[:2]) <= 400, "Should be downscaled"
-            print(f"   ✅ Downscale: {huge_img.shape[:2]} -> {result.image.shape[:2]} (guard enforced)")
-
-            # -- Test 7: Async wrapper with timeout -----------------------
-            print("\n📌 Test 7: Async wrapper with timeout protection")
-
-            # Test with valid input (should succeed quickly)
-            result = await preprocessor.preprocess_async(test_img, correlation_id="test-9", timeout_seconds=10.0)
-            assert result.image is not None
-            print(f"   ✅ Async: completed within timeout, dtype={result.image.dtype}")
-
-            # Test timeout behavior (with non-existent file -> fast fail)
-            try:
-                await preprocessor.preprocess_async(
-                    "/nonexistent/image.png",
-                    correlation_id="test-10",
-                    timeout_seconds=0.1,
-                )
-                print("   ❌ Should raise error for missing file")
-            except (ValueError, FileNotFoundError, Exception) as e:
-                print(f"   ✅ Async error handling: {type(e).__name__}")
-
-            # -- Test 8: PreprocessResult validation ----------------------
-            print("\n📌 Test 8: PreprocessResult dataclass validation")
-
-            # Valid result should pass
-            valid_result = PreprocessResult(
-                image=np.zeros((100, 100, 3), dtype=np.uint8),
-                original_size=(100, 100),
-                was_deskewed=False,
-                deskew_angle=0.0,
-                was_grayscale=False,
-                correlation_id="valid",
-            )
-            assert valid_result.image.dtype == np.uint8
-            print(f"   ✅ Valid result: accepted (dtype={valid_result.image.dtype})")
-
-            # Invalid dtype should raise ValueError in __post_init__
-            try:
-                invalid_result = PreprocessResult(
-                    image=np.zeros((100, 100, 3), dtype=np.float32),  # Wrong dtype
-                    original_size=(100, 100),
-                    was_deskewed=False,
-                    deskew_angle=0.0,
-                    was_grayscale=False,
-                )
-                print("   ❌ Should raise ValueError for float32 image")
-            except ValueError as e:
-                if "must be uint8" in str(e):
-                    print(f"   ✅ Invalid dtype rejected: {e}")
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! DocumentPreprocessor module verified.")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    # Run async tests
-    success = asyncio.run(run_tests())
-    sys.exit(0 if success else 1)

@@ -1,7 +1,3 @@
-# backend/app/finetuning/model_registry.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# ASCALE-FIX: S - Separation, C - Coupling
-# OWASP-FIX: 7 - Safe credential handling
 
 from __future__ import annotations
 
@@ -174,7 +170,6 @@ class ModelRegistry:
             raise
 
         except Exception as e:
-            # FIXED: Redact sensitive info from error logs
             safe_error = scrub_pii_for_evaluation(str(e), domain="general")
 
             if self.hf_token:
@@ -297,7 +292,6 @@ tags:
 
         model = await loop.run_in_executor(None, lambda: SentenceTransformer(repo_id, **kwargs))
 
-        # [OK] FIXED: Validate embedding dimension against qdrant_dim config
         if expected_dim is None:
             _s = get_settings()
             expected_dim = getattr(_s, "qdrant_dim", 1536)
@@ -365,8 +359,4 @@ tags:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["ModelRegistry", "ModelCard"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

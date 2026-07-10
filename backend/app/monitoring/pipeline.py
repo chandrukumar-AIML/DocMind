@@ -1,8 +1,3 @@
-# backend/app/monitoring/monitoring_pipeline.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async orchestration
-# BATMAN-FIX: A - True async, T - Concurrency control
-# ASCALE-FIX: L - Layered architecture, E - Error propagation
-# ✅ FIXED: Proper async/sync bridge + non-blocking drift detection + input validation
 
 from __future__ import annotations
 
@@ -23,7 +18,6 @@ from app.core.celery_utils import run_async_in_task  # ✅ NEW: For safe async e
 
 logger = logging.getLogger(__name__)
 
-# ✅ NEW: Per-step timeout (seconds)
 _STEP_TIMEOUT: int = 120
 
 
@@ -51,7 +45,6 @@ class MonitoringRunResult:
     # Error
     error: Optional[str] = None
 
-    # FIXED: Added correlation_id for tracing
     correlation_id: Optional[str] = None
 
     @property
@@ -62,7 +55,6 @@ class MonitoringRunResult:
 
     def to_dict(self) -> dict:
         """Serialize for API responses."""
-        # ✅ FIXED: Safe serialization with None handling
         return {
             "run_id": self.run_id,
             "workspace_id": self.workspace_id,
@@ -78,7 +70,6 @@ class MonitoringRunResult:
         }
 
 
-# ✅ NEW: Input validation helper
 def _validate_pipeline_inputs(
     log_to_mlflow: Optional[bool],
     correlation_id: Optional[str],
@@ -182,7 +173,6 @@ class MonitoringPipeline:
             # -- Step 2: Evidently drift detection (non-blocking) --------------
             try:
                 monitor = EvidentlyMonitor(workspace_id=self.workspace_id)
-                # ✅ FIXED: Run sync monitor.run() in thread to avoid blocking event loop
                 import sys
 
                 if sys.version_info >= (3, 9):
@@ -317,8 +307,4 @@ __all__ = [
     "get_pipeline_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

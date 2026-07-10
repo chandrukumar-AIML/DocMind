@@ -1,7 +1,3 @@
-# backend/app/observability/langsmith_tracer.py
-# DVMELTSS-FIX: M - Modular, E - Error handling, A - Async
-# ASCALE-FIX: S - Separation, C - Coupling
-# ✅ FIXED: Proper sync retry + correct async context manager usage + input validation
 
 from __future__ import annotations
 
@@ -27,11 +23,9 @@ _LANGSMITH_RETRY_CONFIG: Final = RetryConfig(
     exceptions=(Exception,),
 )
 
-# ✅ NEW: Timeout for LangSmith API calls (seconds)
 _LANGSMITH_TIMEOUT: Final = 30.0
 
 # Check LangSmith availability once at module load.
-# [OK] FIXED: langsmith >= 0.2 deprecated `trace`/`atrace` context managers in favour of
 # the `@traceable` decorator API. We try the new decorator API first, then fall back to
 # the legacy context manager API for older installs.  All paths degrade gracefully.
 #
@@ -69,7 +63,6 @@ except ImportError:
         logger.debug("langsmith.atrace not available — async tracing disabled")
 
 
-# ✅ NEW: Input validation helper
 def _validate_tracer_inputs(
     name: Optional[str],
     run_type: str,
@@ -129,7 +122,6 @@ def traceable(
 
         span_name = name or fn.__qualname__
         span_tags = tags or []
-        # FIXED: Merge correlation_id into metadata
         span_metadata = {
             **(metadata or {}),
             **({"correlation_id": correlation_id} if correlation_id else {}),
@@ -199,7 +191,6 @@ def _run_with_trace_sync(
     try:
         start = time.perf_counter()
 
-        # [OK] FIXED: Prefer new decorator API (langsmith >= 0.1.48) over legacy trace()
         if _ls_traceable is not None:
             traced_fn = _ls_traceable(
                 run_type=run_type,
@@ -276,7 +267,6 @@ async def _run_with_trace_async(
     try:
         start = time.perf_counter()
 
-        # [OK] FIXED: Prefer new decorator API (langsmith >= 0.1.48) over legacy atrace()
         if _ls_traceable is not None:
             traced_fn = _ls_traceable(
                 run_type=run_type,
@@ -360,8 +350,4 @@ __all__ = [
     "get_tracer_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

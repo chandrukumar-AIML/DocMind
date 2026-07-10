@@ -1,6 +1,3 @@
-# backend/app/domains/legal/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
 
 """
 Legal Domain Module: Contract analysis, risk scoring, and legal QA.

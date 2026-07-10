@@ -1,4 +1,3 @@
-# backend/app/core/plan_registry.py
 """
 Subscription plan definitions — single source of truth for plan limits and Stripe mapping.
 

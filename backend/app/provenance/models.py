@@ -1,8 +1,4 @@
-# backend/app/provenance/models.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
 # ACID-INDEX: C - Constraints, I - Indexes, D - Data types
-# ✅ FIXED: Proper default for utcnow + max length constraints + __repr__ methods
 
 from __future__ import annotations
 
@@ -33,7 +29,6 @@ from app.database.base import Base
 from app.core.time_utils import utcnow
 
 
-# ✅ NEW: Enum for highlight colors (type-safe)
 class HighlightColor(str, Enum):
     GREEN = "green"
     YELLOW = "yellow"
@@ -66,12 +61,10 @@ class Answer(Base):
     retrieval_mode = Column(String(32), nullable=True)  # vector/graph/hybrid
     query_type = Column(String(32), nullable=True)  # factual/relational/etc
 
-    # ✅ FIXED: Add CheckConstraint for confidence_score range
     confidence_score = Column(Float, nullable=True)
     latency_seconds = Column(Float, nullable=True)
     model_name = Column(String(64), nullable=True)
 
-    # ✅ FIXED: Use lambda for dynamic default evaluation
     created_at = Column(DateTime(timezone=True), default=lambda: utcnow(), nullable=False)
     updated_at = Column(
         DateTime(timezone=True),
@@ -80,7 +73,6 @@ class Answer(Base):
         nullable=True,
     )
 
-    # FIXED: Added correlation_id for distributed tracing
     correlation_id = Column(String(128), nullable=True, index=True)
 
     # Relationships
@@ -140,30 +132,24 @@ class Citation(Base):
         nullable=False,
         index=True,
     )
-    # ✅ FIXED: Increased max length for long file paths
     source_file = Column(String(1024), nullable=False, index=True)
     page_number = Column(Integer, nullable=False, default=0)  # 0-indexed
     chunk_id = Column(String(128), nullable=True)
-    # ✅ FIXED: Limit chunk_text to prevent huge storage
     chunk_text = Column(String(4000), nullable=False)
 
-    # ✅ FIXED: Add CheckConstraint for confidence_score range
     confidence_score = Column(Float, nullable=False, default=0.0)
     block_type = Column(String(32), nullable=True)
 
     # Text location for highlight
     char_offset_start = Column(Integer, nullable=True)
     char_offset_end = Column(Integer, nullable=True)
-    # ✅ FIXED: Use Enum for type-safe highlight_color
     highlight_color = Column(SQLEnum(HighlightColor), nullable=True)
 
     # Phase I ready
     workspace_id = Column(String(128), nullable=False, default="default")
 
-    # FIXED: Added correlation_id for distributed tracing
     correlation_id = Column(String(128), nullable=True, index=True)
 
-    # ✅ FIXED: Use lambda for dynamic default evaluation
     created_at = Column(DateTime(timezone=True), default=lambda: utcnow(), nullable=False)
     updated_at = Column(
         DateTime(timezone=True),
@@ -220,14 +206,12 @@ class DocumentStore(Base):
     __tablename__ = "document_store"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # ✅ FIXED: Increased max length for long file paths
     source_file = Column(String(1024), nullable=False)
     workspace_id = Column(String(128), nullable=False, default="default")
     file_path = Column(Text, nullable=True)  # server-side path
     document_type = Column(String(64), nullable=True)
     page_count = Column(Integer, nullable=True)
 
-    # ✅ FIXED: Use lambda for dynamic default evaluation
     ingested_at = Column(DateTime(timezone=True), default=lambda: utcnow(), nullable=False)
     updated_at = Column(
         DateTime(timezone=True),
@@ -236,7 +220,6 @@ class DocumentStore(Base):
         nullable=True,
     )
 
-    # FIXED: Added correlation_id for distributed tracing
     correlation_id = Column(String(128), nullable=True, index=True)
 
     __table_args__ = (
@@ -266,8 +249,4 @@ class DocumentStore(Base):
 # DVMELTSS-M: Explicit module exports
 __all__ = ["Base", "Answer", "Citation", "DocumentStore", "HighlightColor"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

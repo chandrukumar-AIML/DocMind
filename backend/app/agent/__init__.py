@@ -1,7 +1,3 @@
-# backend/app/agent/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Logging/Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
-# ✅ FIXED: Direct return in __getattr__ + error handling + idempotent logging
 
 """
 DocuMind AI - LangGraph Agent Module

@@ -1,4 +1,3 @@
-# backend/app/core/llm_providers.py
 """
 Registry of supported LLM providers for per-workspace BYOK configuration.
 

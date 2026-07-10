@@ -1,6 +1,3 @@
-# backend/app/core/dead_letter.py
-# DVMELTSS-FIX: E - Error handling, M - Modular, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
 # ACID-INDEX: E - Error handling (dead-letter must not break main pipeline)
 """
 Dead-letter logging utilities for failed OCR/page processing.
@@ -158,8 +155,4 @@ def list_failed_pages(
 # DVMELTSS-M: Explicit module exports
 __all__ = ["log_failed_page", "list_failed_pages"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

@@ -1,6 +1,3 @@
-# backend/app/api/routes/finetuning.py
-# DVMELTSS-FIX: M/E/S + OWASP-3 + BATMAN-A
-# ✅ FIXED: Proper background task handling + input validation + safe file ops + timeout
 
 from __future__ import annotations
 
@@ -22,7 +19,6 @@ from app.finetuning.embedding_updater import EmbeddingUpdater
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/finetuning", tags=["finetuning"])
 
-# ✅ NEW: Operation timeouts (seconds)
 _DATASET_TIMEOUT: Final = 300.0  # 5 minutes for dataset generation
 _PULL_TIMEOUT: Final = 600.0  # 10 minutes for model download
 _REEMBED_TIMEOUT: Final = 1800.0  # 30 minutes for re-embedding
@@ -51,7 +47,6 @@ class ReembedRequest(BaseModel):
     model_path: str = Field(..., description="Local path to fine-tuned model")
 
 
-# ✅ NEW: Input validation helper
 def _validate_finetuning_inputs(
     domain: Optional[str],
     max_chunks: Optional[int],
@@ -113,7 +108,6 @@ async def generate_dataset(
     # Save path defaults
     safe_path = request.save_path or (f".cache/training_data/{request.domain}_{workspace_id}.jsonl")
 
-    # ✅ FIXED: Proper path security validation with resolve()
     try:
         resolved = Path(safe_path).resolve()
         base_dir = Path(".cache/training_data").resolve()
@@ -129,7 +123,6 @@ async def generate_dataset(
         logger.error(f"[{corr_id}] Path validation failed: {e}")
         raise HTTPException(status_code=400, detail="Invalid save path")
 
-    # ✅ FIXED: Use sync function for background task (not async)
     def _do_generate():
         try:
             generator = TripletDatasetGenerator()
@@ -177,7 +170,6 @@ async def get_dataset_status(
     if not path.exists():
         return {"exists": False, "path": str(path)}
 
-    # ✅ FIXED: Use context manager for safe file handling
     try:
         with open(path, "r", encoding="utf-8") as f:
             n_triplets = sum(1 for _ in f)
@@ -213,7 +205,6 @@ async def pull_model(
 
     registry = ModelRegistry()
     try:
-        # ✅ FIXED: Use functools.partial for safe arg passing in executor
         loop = asyncio.get_running_loop()  # FIXED: get_event_loop() deprecated in Python 3.10+
         local_path = await asyncio.wait_for(
             loop.run_in_executor(
@@ -287,7 +278,6 @@ async def reembed_workspace(
     # Validate model path exists and is safe
     model_path = Path(request.model_path)
     try:
-        # ✅ FIXED: Resolve and validate path is within allowed directories
         resolved = model_path.resolve()
         # Allow models in .cache/models or absolute paths that exist
         if not resolved.exists():
@@ -296,7 +286,6 @@ async def reembed_workspace(
         logger.error(f"[{corr_id}] Model path validation failed: {e}")
         raise HTTPException(status_code=400, detail="Invalid model path")
 
-    # ✅ FIXED: Use sync function for background task
     def _do_reembed():
         try:
             logger.info(f"[{corr_id}] Starting re-embedding: ws={workspace_id}")
@@ -346,8 +335,4 @@ def get_finetuning_metadata() -> dict[str, Any]:
 
 __all__ = ["router", "get_finetuning_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

@@ -77,8 +77,4 @@ def run_module_smoke(module: ModuleType, file_path: str) -> bool:
 
 __all__ = ["ensure_backend_path", "module_name_from_file", "run_module_smoke"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

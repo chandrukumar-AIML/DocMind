@@ -1,6 +1,3 @@
-# backend/app/versioning/models.py
-# DVMELTSS-FIX: V - Validate, M - Modular, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final, Optional
@@ -130,8 +127,4 @@ class VersionComparison(BaseModel):
 # DVMELTSS-M: Explicit module exports
 __all__ = ["DiffResult", "VersionMetadata", "DiffResultModel", "VersionComparison"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

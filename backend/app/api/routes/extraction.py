@@ -1,6 +1,3 @@
-# backend/app/api/routes/extraction.py
-# DVMELTSS-FIX: V/E/M/S + ASCALE-L + BATMAN-A
-# ✅ FIXED: Proper RateLimiter usage + input validation + safe pandas operations + timeout handling
 
 from __future__ import annotations
 
@@ -25,14 +22,10 @@ from app.middleware.rate_limiter import RateLimiter  # FIXED: actual module path
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/extraction", tags=["extraction"])
 
-# ✅ FIXED: Use proper RateLimiter with workspace-scoped keys (not constructor params)
 # Rate limiting is handled per-request via check_async in the endpoint
 
-# ✅ NEW: Cache operation timeout (seconds)
 _CACHE_TIMEOUT: Final = 10.0
-# ✅ NEW: LLM operation timeout (seconds)
 _LLM_TIMEOUT: Final = 30.0
-# ✅ NEW: Max rows for pandas operations to prevent memory abuse
 _MAX_PANDAS_ROWS: Final = 10000
 
 
@@ -69,7 +62,6 @@ class ExtractionStatsResponse(BaseModel):
     correlation_id: str
 
 
-# ✅ NEW: Input validation helper
 def _validate_extraction_inputs(
     table_id: Optional[str],
     source_file: Optional[str],
@@ -148,7 +140,6 @@ async def get_extraction_stats(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
 
-    # ✅ FIXED: Use vector store to get actual extraction counts
     vector_store = VectorStoreManager(workspace_id=workspace_id)
 
     try:
@@ -234,12 +225,10 @@ async def get_table(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
 
-    # ✅ FIXED: Validate table exists in vector store
     vector_store = VectorStoreManager(workspace_id=user.workspace_id)
     if not await _validate_table_exists(user.workspace_id, table_id, vector_store, corr_id):
         raise HTTPException(status_code=404, detail=f"Table not found: {table_id}")
 
-    # ✅ FIXED: Fetch from vector store instead of in-memory cache
     try:
         docs, _ = await asyncio.wait_for(
             vector_store.search_documents_async(
@@ -300,7 +289,6 @@ async def query_table(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
 
-    # ✅ FIXED: Proper rate limiting using RateLimiter.check_async with workspace-scoped key
     rate_limiter = RateLimiter()
     rate_key = f"extract_query:{user.workspace_id}:{user.user_id}"
 
@@ -324,12 +312,10 @@ async def query_table(
     except Exception as e:
         logger.warning(f"[{corr_id}] Rate limit check failed: {e} — allowing request (fail-open)")
 
-    # ✅ FIXED: Validate table exists in vector store
     vector_store = VectorStoreManager(workspace_id=user.workspace_id)
     if not await _validate_table_exists(user.workspace_id, table_id, vector_store, corr_id):
         raise HTTPException(status_code=404, detail=f"Table not found: {table_id}")
 
-    # ✅ FIXED: Fetch from vector store
     try:
         docs, _ = await asyncio.wait_for(
             vector_store.search_documents_async(
@@ -357,7 +343,6 @@ async def query_table(
         return TableQueryResponse(table_id=table_id, markdown=markdown, answer=None, correlation_id=corr_id)
 
     if request_body.operation == "describe" and request_body.question:
-        # ✅ FIXED: Use centralized LLM pool with timeout
         try:
             llm = get_vision_llm(model_override=settings.openai_chat_model, timeout=30.0)
 
@@ -367,7 +352,6 @@ async def query_table(
                 f"Question: {request_body.question}"
             )
 
-            # ✅ FIXED: Use asyncio.wait_for for proper timeout
             response = await asyncio.wait_for(
                 llm.ainvoke([{"role": "user", "content": prompt}]),
                 timeout=_LLM_TIMEOUT,
@@ -396,7 +380,6 @@ async def query_table(
         )
 
     try:
-        # ✅ FIXED: Limit DataFrame size to prevent memory abuse
         if len(records) > _MAX_PANDAS_ROWS:
             logger.warning(f"[{corr_id}] Table has {len(records)} rows, limiting to {_MAX_PANDAS_ROWS}")
             records = records[:_MAX_PANDAS_ROWS]
@@ -408,7 +391,6 @@ async def query_table(
             if col not in df.columns:
                 raise HTTPException(status_code=400, detail=f"Column not found: {col}")
 
-            # ✅ FIXED: Safe numeric conversion with proper regex pattern
             numeric = pd.to_numeric(
                 df[col].astype(str).str.replace(r"[,$%]", "", regex=True),
                 errors="coerce",
@@ -432,11 +414,9 @@ async def query_table(
             if col not in df.columns:
                 raise HTTPException(status_code=400, detail=f"Column not found: {col}")
 
-            # ✅ FIXED: Safe None checks + escape regex special chars in filter_value
             safe_value = re.escape(request_body.filter_value) if request_body.filter_value else ""
             filtered = df[df[col].astype(str).str.contains(safe_value, case=False, na=False, regex=True)]
 
-            # ✅ FIXED: Fallback if tabulate not installed
             try:
                 from tabulate import tabulate
 
@@ -764,8 +744,4 @@ def get_extraction_metadata() -> dict[str, Any]:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["router", "get_extraction_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

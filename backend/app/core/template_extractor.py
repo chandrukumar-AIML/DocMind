@@ -1,4 +1,3 @@
-# backend/app/core/template_extractor.py
 """No-code extraction template engine: LLM-driven structured field extraction."""
 
 from __future__ import annotations
@@ -440,18 +439,3 @@ async def run_extraction(
         "correlation_id": corr_id,
     }
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke():
-        print("Template extractor smoke test")
-        assert "invoice" in BUILTIN_TEMPLATES
-        assert "contract" in BUILTIN_TEMPLATES
-        inv = BUILTIN_TEMPLATES["invoice"]
-        assert any(f["name"] == "invoice_number" for f in inv["fields"])
-        assert any(f["required"] for f in inv["fields"])
-        print(f"Built-in templates: {list(BUILTIN_TEMPLATES.keys())}")
-        print("Template extractor checks passed")
-
-    asyncio.run(smoke())

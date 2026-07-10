@@ -1,4 +1,3 @@
-# backend/app/core/workspace_sso_config.py
 """
 Per-workspace SSO (OIDC) configuration.
 

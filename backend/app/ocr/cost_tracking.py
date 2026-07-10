@@ -1,7 +1,3 @@
-# backend/app/ocr/cost_tracking.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, M - Modular
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: M - Memory safety, T - Thread safety + Async safety
 
 from __future__ import annotations
 
@@ -358,14 +354,9 @@ def get_cost_tracker_metadata() -> dict[str, Any]:  # ✅ FIXED: Any is now impo
 
 
 # DVMELTSS-M: Explicit module exports
-# ✅ FIXED: Properly closed list (no stray brace)
 __all__ = [
     "VisionCostTracker",
     "get_cost_tracker_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

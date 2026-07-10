@@ -1,5 +1,3 @@
-# backend/app/domains/medical/icd10_extractor.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 
 from __future__ import annotations
 
@@ -70,7 +68,6 @@ class ICD10Extractor:
     """Extracts ICD-10 codes from clinical notes using GPT-4o."""
 
     def __init__(self, model: str = "gpt-4o"):
-        # FIXED: Use centralized LLM pool
         self.llm = get_domain_llm(streaming=False, model_override=model)
         self._llm_retry = retry_async(
             config=RetryConfig(
@@ -149,8 +146,4 @@ class ICD10Extractor:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["ICD10Extractor", "ICD10Code"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

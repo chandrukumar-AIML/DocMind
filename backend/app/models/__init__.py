@@ -1,6 +1,3 @@
-# backend/app/models/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
 
 """
 DocuMind AI - Pydantic Request/Response Models
@@ -19,7 +16,6 @@ __all__ = [
     "DocumentMetaResponse", "DocumentListResponse",
     "DeleteResponse", "HealthResponse", "ErrorResponse",
     "ProcessingStatus",
-    # ✅ NEW: Auth/User enums
     "UserRole",
     # Table
     "TableQueryRequest", "TableQueryResponse", "ExtractionStatsResponse",
@@ -28,7 +24,6 @@ __all__ = [
     "GraphEdge", "GraphVisualizationData", "GraphQueryResponse", "GraphSchemaResponse",
     # Document
     "DocumentMetadata", "PaginationParams", "DocumentUpdateRequest",
-    # ✅ NEW: Agent schemas
     "AgentMode", "AgentQueryRequest", "AgentCitation", "AgentQueryResponse", "AgentStreamChunk",
 ]
 
@@ -40,7 +35,6 @@ __description__ = "DocuMind AI Pydantic API Schemas"
 def __getattr__(name: str):
     """DVMELTSS-T: Lazy imports to prevent circular dependencies."""
     
-    # ✅ NEW: Auth/User enums - import from auth.models
     if name == "UserRole":
         from app.auth.models import UserRole
         return UserRole
@@ -79,7 +73,6 @@ def __getattr__(name: str):
         )
         return locals()[name]
     
-    # ✅ NEW: Agent schemas
     if name in ("AgentMode", "AgentQueryRequest", "AgentCitation", "AgentQueryResponse", "AgentStreamChunk"):
         from .agent_schemas import (
             AgentMode, AgentQueryRequest, AgentCitation, AgentQueryResponse, AgentStreamChunk

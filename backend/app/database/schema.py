@@ -30,7 +30,6 @@ async def ensure_auth_schema() -> None:
     PostgreSQL-specific: uses IF NOT EXISTS syntax.
     """
     async with async_engine.begin() as conn:
-        # ✅ FIXED: Check dialect before using PostgreSQL-specific syntax
         dialect = conn.dialect.name
         if dialect != "postgresql":
             logger.warning(f"Schema repairs are PostgreSQL-specific; detected dialect: {dialect}")
@@ -45,7 +44,6 @@ async def ensure_auth_schema() -> None:
             },
             {
                 "name": "updated_at",
-                # ✅ FIXED: Add DEFAULT + server_default for auto-timestamp on INSERT
                 "definition": "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
                 "description": "Last update timestamp (auto-set on INSERT)",
                 # Optional: Add index for sorting/filtering performance
@@ -53,7 +51,6 @@ async def ensure_auth_schema() -> None:
             },
         ]
 
-        # FIXED: SQLAlchemy inspection performs sync IO; run it through
         # AsyncConnection.run_sync so greenlet_spawn is active.
         def _get_existing_columns(sync_conn):
             inspector = inspect(sync_conn)
@@ -74,18 +71,15 @@ async def ensure_auth_schema() -> None:
                 logger.debug(f"Column 'users.{col_name}' already exists")
                 continue
 
-            # ✅ FIXED: Log what we're adding
             logger.info(f"Adding column 'users.{col_name}': {col['description']}")
 
             stmt = text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col_name} {col_def}")
             await conn.execute(stmt)
 
-            # ✅ FIXED: Create index if specified (for updated_at sorting)
             if col.get("index"):
                 index_name = f"ix_users_{col_name}"
                 if index_name not in existing_indexes:
                     logger.info(f"Creating index '{index_name}' on users.{col_name}")
-                    # ✅ FIXED: Use CREATE INDEX IF NOT EXISTS (not CONCURRENTLY inside transaction)
                     await conn.execute(text(f"CREATE INDEX IF NOT EXISTS {index_name} ON users ({col_name})"))
                 else:
                     logger.debug(f"Index '{index_name}' already exists")
@@ -200,8 +194,4 @@ async def ensure_provenance_schema() -> None:
 # -- Module Exports ----------------------------------------------------
 __all__ = ["ensure_auth_schema", "ensure_workspace_schema", "ensure_provenance_schema"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

@@ -1,6 +1,3 @@
-# backend/app/api/routes/agent.py
-# DVMELTSS-FIX: B/E/A/C + ASCALE-S/E/A + BATMAN-A
-# ✅ FIXED: Proper RateLimiter usage + input validation + safe cache handling + workspace scoping
 
 from __future__ import annotations
 
@@ -28,11 +25,9 @@ from app.core.usage_tracker import log_action, ACTION_AGENT_QUERY
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agent", tags=["agent"])
 
-# ✅ FIXED: Use proper RateLimiter with workspace-scoped keys (not constructor params)
 # Rate limiting is handled per-request via check_async in the endpoint
 
 
-# ✅ NEW: Input validation helper
 def _validate_agent_inputs(
     question: Optional[str],
     user: Optional[AuthenticatedUser],
@@ -73,7 +68,6 @@ async def _execute_agent_query(
     # DVMELTSS-C: Cache check for non-streaming queries
     if not stream:
         try:
-            # ✅ FIXED: Await the async cache factory + timeout
             cache = await asyncio.wait_for(get_cache(), timeout=10.0)
             cached = await asyncio.wait_for(
                 cache.get_result(
@@ -91,7 +85,6 @@ async def _execute_agent_query(
         except Exception as e:
             logger.warning(f"[{corr_id}] Cache check failed: {e} — proceeding with query")
 
-    # ✅ FIXED: Use singleton from app.state (set in main.py lifespan)
     agent = getattr(request.app.state, "agent_chain", None) if request else None
     if agent is None:
         logger.warning(f"[{corr_id}] AgentRAGChain not initialized — creating new instance (dev mode)")
@@ -107,7 +100,6 @@ async def _execute_agent_query(
         elif isinstance(msg, (HumanMessage, AIMessage)):
             lc_history.append(msg)
 
-    # ✅ FIXED: Safe timeout fallback
     timeout = getattr(settings, "agent_timeout_seconds", 120)
 
     try:
@@ -126,7 +118,6 @@ async def _execute_agent_query(
                         ),
                         timeout=timeout,
                     ):
-                        # ✅ FIXED: Check if client disconnected to stop wasted work
                         if request and await request.is_disconnected():
                             logger.info(f"[{corr_id}] Client disconnected — stopping agent stream")
                             break
@@ -213,7 +204,6 @@ async def agent_query(
 
     corr_id = body.correlation_id or request.headers.get("X-Correlation-ID") or generate_correlation_id("agent")
 
-    # ✅ FIXED: Proper rate limiting using RateLimiter.check_async with workspace-scoped key
     rate_limiter = RateLimiter()
     rate_key = f"agent:{user.workspace_id}:{user.user_id}"
 
@@ -240,7 +230,6 @@ async def agent_query(
     stream = bool(getattr(body, "stream", False))
     logger.info(f"[{corr_id}] Agent query: user={user.user_id[:8]}... workspace={user.workspace_id} stream={stream}")
 
-    # ✅ FIXED: Safe filter_dict extraction (fallback if build_filter_dict missing)
     filter_dict = None
     if hasattr(body, "build_filter_dict") and callable(body.build_filter_dict):
         filter_dict = body.build_filter_dict()
@@ -342,16 +331,13 @@ async def get_thread_history(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
 
-    # ✅ FIXED: Use singleton from app.state
     agent = getattr(request.app.state, "agent_chain", None)
     if agent is None:
         agent = AgentRAGChain()
 
     try:
-        # ✅ FIXED: AgentRAGChain.get_conversation_history() doesn't accept workspace_id — filter in app layer
         history = agent.get_conversation_history(thread_id)
 
-        # ✅ FIXED: Filter history to only include messages from this workspace (if metadata available)
         filtered_history = []
         for msg in history:
             msg_meta = getattr(msg, "additional_kwargs", {}) or {}
@@ -396,14 +382,12 @@ async def get_run_confidence(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error)
 
-    # ✅ FIXED: Use singleton from app.state
     agent = getattr(request.app.state, "agent_chain", None)
     if agent is None:
         agent = AgentRAGChain()
 
     try:
         config = {"configurable": {"thread_id": thread_id}}
-        # ✅ FIXED: Version-safe state access (see agent_chain.py fix)
         if hasattr(agent.graph, "get_state"):
             state = agent.graph.get_state(config)
         elif hasattr(agent.graph, "get_state_history"):
@@ -417,7 +401,6 @@ async def get_run_confidence(
 
         vals = state.values if hasattr(state, "values") else {}
 
-        # ✅ FIXED: Safe dict access for all values
         return {
             "thread_id": thread_id,
             "workspace_id": user.workspace_id,
@@ -458,8 +441,4 @@ def get_agent_metadata() -> dict[str, Any]:
 
 __all__ = ["router", "get_agent_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

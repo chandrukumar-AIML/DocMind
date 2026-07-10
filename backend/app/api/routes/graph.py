@@ -1,6 +1,3 @@
-# backend/app/api/routes/graph.py
-# DVMELTSS-FIX: M/E/S + ASCALE-A/E + OWASP-3
-# ✅ FIXED: Proper async handling + input validation + safe LLM pool usage + timeout
 
 from __future__ import annotations
 
@@ -39,7 +36,6 @@ from app.core.usage_tracker import log_action, ACTION_GRAPH_QUERY
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/graph", tags=["graph"])
 
-# ✅ NEW: Operation timeouts (seconds)
 _GRAPH_RETRIEVAL_TIMEOUT: Final = 60.0
 _ANSWER_GENERATION_TIMEOUT: Final = 45.0
 _SCHEMA_TIMEOUT: Final = 30.0
@@ -93,7 +89,6 @@ class GraphSchemaResponse(BaseModel):
     correlation_id: str
 
 
-# ✅ NEW: Input validation helper
 def _validate_graph_inputs(
     question: Optional[str],
     workspace_id: Optional[str],
@@ -128,7 +123,6 @@ async def _generate_answer_with_graph_context(
     correlation_id: str,
 ) -> str:
     """Generate answer injecting graph context alongside vector context."""
-    # ✅ FIXED: Use centralized LLM pool instead of direct ChatOpenAI
     try:
         llm = get_llm(streaming=False, temperature_override=0.1)
     except Exception as e:
@@ -307,7 +301,6 @@ async def graph_query(
         vector_store = VectorStoreManager(workspace_id=workspace_id)
         retriever = GraphRAGRetriever(store_manager=vector_store)
 
-        # ✅ FIXED: Use async method if available, fallback to executor
         if hasattr(retriever, "retrieve_async"):
             graph_result: GraphRAGResult = await asyncio.wait_for(
                 retriever.retrieve_async(
@@ -349,7 +342,6 @@ async def graph_query(
 
         latency = time.perf_counter() - start_ts
 
-        # ✅ FIXED: Safe citation extraction
         vector_docs = getattr(graph_result, "vector_docs", [])
         citations = []
         for doc in vector_docs[:3]:
@@ -538,7 +530,6 @@ async def extract_graph(
     task_id = str(uuid.uuid4())
 
     if background_tasks:
-        # ✅ FIXED: Use sync function for background task
         def _do_extract():
             try:
                 extractor = GraphExtractor()
@@ -546,7 +537,6 @@ async def extract_graph(
 
                 for source_file in source_files[:10]:  # Cap at 10 files
                     vector_store = VectorStoreManager(workspace_id=ws_id)
-                    # ✅ FIXED: Use async method with proper await
                     chunks = asyncio.run(vector_store.get_document_chunks_async(source_file))
 
                     results = extractor.extract_from_documents(chunks, source_file, ws_id)
@@ -610,8 +600,4 @@ def get_graph_metadata() -> dict[str, Any]:
 
 __all__ = ["router", "get_graph_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

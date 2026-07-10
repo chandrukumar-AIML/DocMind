@@ -1,7 +1,3 @@
-# backend/app/versioning/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
-# ✅ FIXED: Direct return in __getattr__ + error handling + idempotent logging
 
 """
 DocuMind AI - Document Versioning Module
@@ -105,7 +101,6 @@ def _reset_caches_for_tests() -> None:
         except Exception:
             pass
 
-    # ✅ FIXED: Reset module-level singletons if loaded
     try:
         from . import registry
 
@@ -138,7 +133,6 @@ def _log_module_init() -> None:
 _log_module_init()
 
 
-# ✅ NEW: Metadata helper for monitoring
 def get_versioning_metadata() -> dict[str, Any]:
     """Return versioning module metadata for debugging."""
     from .registry import get_versioning_metadata as _get_registry_meta

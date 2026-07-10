@@ -1,6 +1,3 @@
-# backend/app/api/routes/monitoring.py
-# DVMELTSS-FIX: M/E/S + ASCALE-A/E + OWASP-3
-# ✅ FIXED: Input validation + proper background task handling + timeout handling
 
 from __future__ import annotations
 
@@ -21,7 +18,6 @@ from app.monitoring.pipeline import MonitoringPipeline, AutoImprover
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
-# ✅ NEW: Operation timeouts (seconds)
 _COLLECTOR_TIMEOUT: Final = 30.0
 _PIPELINE_TIMEOUT: Final = 300.0
 
@@ -49,7 +45,6 @@ class RecordMetricsRequest(BaseModel):
     context_precision: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
 
-# ✅ NEW: Input validation helper
 def _validate_monitoring_inputs(
     hours: Optional[float],
     days: Optional[int],
@@ -227,7 +222,6 @@ async def run_monitoring_pipeline(
     pipeline = MonitoringPipeline(workspace_id=user.workspace_id)
 
     if async_mode:
-        # ✅ FIXED: Use sync function for background task
         def _run_sync():
             try:
                 asyncio.run(pipeline.run(log_to_mlflow=True, correlation_id=corr_id))
@@ -278,7 +272,6 @@ async def trigger_rechunk(
     try:
         improver = AutoImprover(workspace_id=user.workspace_id)
 
-        # ✅ FIXED: Use async method if available
         if hasattr(improver, "execute_async"):
             action = await asyncio.wait_for(
                 improver.execute_async(
@@ -350,8 +343,4 @@ def get_monitoring_metadata() -> dict[str, Any]:
 
 __all__ = ["router", "get_monitoring_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

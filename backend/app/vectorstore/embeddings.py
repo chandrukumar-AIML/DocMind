@@ -1,8 +1,3 @@
-# backend/app/vectorstore/embeddings.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, T - Batch processing, M - Memory safety
-# OWASP-FIX: 7 - Safe data handling, 9 - Input sanitization
-# ✅ FIXED: Async wrapper for sync OpenAI call + single cache save + input validation
 
 from __future__ import annotations
 
@@ -190,7 +185,6 @@ class CachedOpenAIEmbeddings(Embeddings):
             f"pii_scrubbing={enable_pii_scrubbing}"
         )
 
-    # ✅ NEW: Text validation helper
     def _validate_texts(self, texts: List[str], corr_id: str) -> List[str]:
         """Validate that texts is a list of non-empty strings."""
         if not isinstance(texts, list):
@@ -256,7 +250,6 @@ class CachedOpenAIEmbeddings(Embeddings):
                 key = self._cache_key(text)
                 self._add_to_cache(key, emb)
                 results[idx] = emb
-            # ✅ FIXED: Save cache ONCE after all batches processed (not per-batch)
             self._save_cache()
 
         return [r for r in results if r is not None]
@@ -271,7 +264,6 @@ class CachedOpenAIEmbeddings(Embeddings):
             batch = texts[batch_start : batch_start + self.MAX_BATCH_SIZE]
 
             try:
-                # ✅ FIXED: Use asyncio.run for sync API call in async context
                 if sys.version_info >= (3, 9):
                     embeddings = asyncio.run(self._call_api_with_retry_async(batch, correlation_id))
                 else:
@@ -297,7 +289,6 @@ class CachedOpenAIEmbeddings(Embeddings):
 
             all_embeddings.extend(embeddings)
 
-            # ✅ FIXED: Exponential backoff + jitter between batches
             if batch_start + self.MAX_BATCH_SIZE < len(texts):
                 backoff = min(2 ** (len(all_embeddings) // self.MAX_BATCH_SIZE), 10)
                 jitter = np.random.uniform(0, 0.5)
@@ -305,7 +296,6 @@ class CachedOpenAIEmbeddings(Embeddings):
 
         return all_embeddings
 
-    # ✅ FIXED: Proper async wrapper for sync OpenAI call
     async def _call_api_with_retry_async(self, texts: list[str], correlation_id: str) -> list[list[float]]:
         """Async wrapper that runs sync OpenAI call in thread."""
 
@@ -353,7 +343,6 @@ class CachedOpenAIEmbeddings(Embeddings):
             sign = 1.0 if digest[4] % 2 == 0 else -1.0
             vector[idx] += sign * 0.1  # Small weight to avoid overflow
         norm = np.linalg.norm(vector)
-        # ✅ FIXED: Guard against zero-norm division
         if norm > 1e-6:
             vector /= norm
         return vector.tolist()
@@ -382,7 +371,6 @@ class CachedOpenAIEmbeddings(Embeddings):
                 with open(self._keys_path, "r", encoding="utf-8") as f:
                     self._keys = [line.strip() for line in f if line.strip()]
 
-                # ✅ FIXED: Verify .npy file integrity before loading
                 vec_data = np.load(str(self._vecs_path), allow_pickle=False)
 
                 # Validate dimensions match
@@ -457,8 +445,4 @@ __all__ = [
     "get_embeddings_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

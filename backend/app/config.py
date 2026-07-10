@@ -1,6 +1,3 @@
-# DVMELTSS-FIX: V - Validate, S - Security, M - Modular
-# ASCALE-FIX: S - Separation, C - Coupling
-# ✅ FIXED: Added app_api_keys field, stronger JWT validation, prod warnings
 from __future__ import annotations
 import os
 import json
@@ -50,7 +47,6 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
-        # FIXED: Let field validators parse comma-separated env values such as
         # APP_API_KEYS=key1,key2 instead of requiring JSON arrays in every env.
         enable_decoding=False,
     )
@@ -348,7 +344,6 @@ class Settings(BaseSettings):
         pattern="^[a-z0-9_-]{3,64}$",
     )
 
-    # ✅ FIXED: App-specific API keys (SEPARATE from OpenAI keys)
     app_api_keys: List[str] = Field(
         default_factory=list,
         validation_alias=AliasChoices("APP_API_KEYS", "app_api_keys"),
@@ -419,7 +414,6 @@ class Settings(BaseSettings):
             raise ValueError(f"Path traversal not allowed: {v}")
         return str(Path(v))
 
-    # ✅ FIXED: Prod-warning validator
     @model_validator(mode="after")
     def warn_on_prod_defaults(self) -> "Settings":
         """Warn if dangerous defaults are used in non-dev environments."""
@@ -474,219 +468,3 @@ __all__ = ["Settings", "get_settings", "lazy_settings"]
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.config) --------------
 # ========================================================================
 
-if __name__ == "__main__":
-    import os
-    import sys
-    from pathlib import Path
-    from unittest.mock import patch
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    def run_tests():
-        print("🔍 Testing Config module (app/config.py)")
-        print("=" * 70)
-
-        try:
-            from app.config import Settings, get_settings, _parse_list_value
-            from pydantic import ValidationError
-
-            # -- Test 1: _parse_list_value helper ------------------------
-            print("\n📌 Test 1: _parse_list_value (robust parsing)")
-
-            result = _parse_list_value(None, default=["en"])
-            assert result == ["en"]
-            print("   ✅ None input: returns default")
-
-            result = _parse_list_value(["a", "b", ""], default=[])
-            assert result == ["a", "b"]
-            print("   ✅ List input: filtered empty strings")
-
-            result = _parse_list_value('["en", "ta", "hi"]', default=[])
-            assert result == ["en", "ta", "hi"]
-            print("   ✅ JSON array: parsed correctly")
-
-            result = _parse_list_value("en,ta,hi", default=[])
-            assert result == ["en", "ta", "hi"]
-            print("   ✅ Comma-separated: split correctly")
-
-            result = _parse_list_value("en", default=[])
-            assert result == ["en"]
-            print("   ✅ Single value: wrapped in list")
-
-            result = _parse_list_value(" en , ta , hi ", default=[])
-            assert result == ["en", "ta", "hi"]
-            print("   ✅ Whitespace: trimmed correctly")
-
-            # -- Test 2: Settings with defaults -------------------------
-            print("\n📌 Test 2: Settings instantiation (defaults)")
-
-            get_settings.cache_clear()
-            settings = Settings()
-
-            assert settings.app_name == "DocuMind AI"
-            assert settings.app_version == "2.0.0"
-            assert settings.api_port == 8000
-            assert settings.environment == "dev"
-            print("   ✅ Defaults: app_name, version, port, env loaded")
-
-            assert settings.max_upload_size_bytes == 50 * 1024 * 1024
-            print(f"   ✅ Computed: max_upload_size_bytes = {settings.max_upload_size_bytes}")
-
-            db_url = settings.database_url
-            assert db_url.startswith("postgresql+asyncpg://")
-            print("   ✅ Computed: database_url has asyncpg driver")
-
-            # -- Test 3: Environment variable overrides -----------------
-            print("\n📌 Test 3: Environment variable overrides")
-
-            get_settings.cache_clear()
-
-            test_env = {
-                "APP_NAME": "TestApp",
-                "API_PORT": "9999",
-                "ENVIRONMENT": "staging",
-                "OCR_LANGUAGES": "en,ta,hi",
-                "APP_API_KEYS": "key1,key2,key3",
-                "CORS_ORIGINS": '["http://test.com", "http://staging.com"]',
-            }
-
-            with patch.dict(os.environ, test_env, clear=False):
-                settings = Settings()
-
-                assert settings.app_name == "TestApp"
-                assert settings.api_port == 9999
-                assert settings.environment == "staging"
-                print("   ✅ Env override: app_name, port, environment")
-
-                assert settings.ocr_language_list == ["en", "ta", "hi"]
-                assert settings.app_api_keys == ["key1", "key2", "key3"]
-                assert "http://test.com" in settings.cors_origins
-                print("   ✅ Env override: list fields parsed correctly")
-
-            # -- Test 4: Field validators -------------------------------
-            print("\n📌 Test 4: Field validators")
-
-            with patch("app.config.logger"):
-                settings = Settings(openai_api_key="invalid-key-format")
-                assert settings.openai_api_key == "invalid-key-format"
-                print("   ✅ openai_api_key: accepts any string, logs warning for bad format")
-
-            try:
-                Settings(tmp_dir="../../../etc")
-                print("   ❌ Should reject path traversal")
-            except ValidationError:
-                print("   ✅ validate_path: rejects path traversal")
-
-            try:
-                Settings(jwt_secret_key="short")
-                print("   ❌ Should reject short JWT secret")
-            except ValidationError:
-                print("   ✅ jwt_secret_key: enforces min_length=64")
-
-            try:
-                Settings(default_workspace_id="INVALID@ID!")
-                print("   ❌ Should reject invalid workspace ID pattern")
-            except ValidationError:
-                print("   ✅ default_workspace_id: enforces pattern ^[a-z0-9_-]{3,64}$")
-
-            # -- Test 5: database_url property (essential guarantee) ----
-            print("\n📌 Test 5: database_url property")
-
-            settings = Settings()
-            assert settings.database_url.startswith("postgresql+asyncpg://")
-            print("   ✅ database_url: always returns URL with asyncpg driver")
-
-            # -- Test 6: warn_on_prod_defaults validator ----------------
-            print("\n📌 Test 6: warn_on_prod_defaults (model validator)")
-
-            with patch("app.config.logger") as mock_logger:
-                # Dev env: accepts dev defaults (no warnings expected)
-                settings = Settings(
-                    environment="dev",
-                    jwt_secret_key="dev-secret-DO-NOT-USE-IN-PROD-min-64-chars-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-                )
-                print("   ✅ Dev env: accepts dev defaults")
-
-                # Production env: should warn about weak defaults
-                # ✅ FIX: Use exactly 64 chars that still contains "dev-secret" to trigger warning
-                # "dev-secret-" (11 chars) + "x"*53 = 64 chars total
-                weak_but_valid_secret = "dev-secret-" + "x" * 53
-
-                mock_logger.reset_mock()
-                settings = Settings(
-                    environment="production",
-                    jwt_secret_key=weak_but_valid_secret,  # 64 chars, contains "dev-secret"
-                    neo4j_password="documind_neo4j_pass",  # Default password
-                    cors_origins=["*"],  # Wildcard CORS
-                    app_api_keys=[],  # Empty API keys
-                    auth_enabled=True,
-                )
-                logged_messages = [
-                    str(call) for call in mock_logger.error.call_args_list + mock_logger.warning.call_args_list
-                ]
-                assert any("JWT_SECRET_KEY" in msg or "weak" in msg.lower() for msg in logged_messages)
-                assert any("NEO4J_PASSWORD" in msg or "default" in msg.lower() for msg in logged_messages)
-                print("   ✅ Production env: warns about weak JWT, default passwords, wildcard CORS")
-
-            # -- Test 7: get_settings() cached singleton ----------------
-            print("\n📌 Test 7: get_settings() cached singleton")
-
-            get_settings.cache_clear()
-            settings1 = get_settings()
-            settings2 = get_settings()
-            assert settings1 is settings2
-            print("   ✅ get_settings: returns cached singleton (same object)")
-
-            get_settings.cache_clear()
-            settings3 = get_settings()
-            assert settings1 is not settings3
-            print("   ✅ get_settings: cache_clear() allows reload")
-
-            # -- Test 8: Computed path properties -----------------------
-            print("\n📌 Test 8: Computed path properties")
-
-            settings = Settings(data_dir="./mydata", dead_letter_dir=None)
-            expected_dead = Path("./mydata/dead_letter").resolve()
-            assert settings.effective_dead_letter_dir == expected_dead
-            print("   ✅ effective_dead_letter_dir: uses data_dir fallback")
-
-            expected_bm25 = Path(".cache/bm25_index.pkl").resolve()
-            assert settings.effective_bm25_cache_path == expected_bm25
-            print("   ✅ effective_bm25_cache_path: resolves to .cache/")
-
-            settings = Settings(bm25_cache_path="/custom/bm25.pkl")
-            assert settings.effective_bm25_cache_path == Path("/custom/bm25.pkl").resolve()
-            print("   ✅ effective_bm25_cache_path: respects explicit path")
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! Config module verified.")
-            print("\n💡 What we verified:")
-            print("   • Helper: _parse_list_value handles JSON, CSV, single values ✅")
-            print("   • Defaults: Settings loads with sensible defaults ✅")
-            print("   • Env overrides: environment variables override defaults ✅")
-            print("   • Validators: path traversal, JWT length, workspace pattern ✅")
-            print("   • Properties: database_url always returns valid asyncpg URL ✅")
-            print("   • Prod warnings: warns about weak defaults in non-dev envs ✅")
-            print("   • Caching: get_settings() returns cached singleton ✅")
-            print("\n🔐 Production: Configuration with validation & graceful defaults ready")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    success = run_tests()
-    sys.exit(0 if success else 1)

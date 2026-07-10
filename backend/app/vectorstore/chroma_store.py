@@ -1,8 +1,3 @@
-# backend/app/vectorstore/chroma_store.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, T - Atomic operations, M - Memory safety
-# OWASP-FIX: 3 - Credential safety, 9 - Input sanitization
-# ✅ FIXED: Singleton Chroma client + public API usage + per-chunk error handling
 
 from __future__ import annotations
 
@@ -15,7 +10,6 @@ from chromadb.config import Settings as ChromaSettings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
-# ✅ FIXED: Use TYPE_CHECKING for forward references
 if TYPE_CHECKING:
     from .embeddings import CachedOpenAIEmbeddings
 
@@ -35,7 +29,6 @@ logger = logging.getLogger(__name__)
 REGISTRY_COLLECTION = "document_registry"
 
 
-# ✅ FIXED: Singleton client per persist_dir using dict cache
 _chroma_clients: Dict[str, chromadb.PersistentClient] = {}
 
 
@@ -85,7 +78,6 @@ class ChromaVectorStore:
             self.registry_collection_name = f"{self.collection_name}_registry"
             self.parents_collection_name = f"{self.collection_name}_parents"
 
-        # ✅ FIXED: Lazy import embeddings to avoid circular import
         if embeddings is None:
             from .embeddings import CachedOpenAIEmbeddings
 
@@ -107,7 +99,6 @@ class ChromaVectorStore:
             f"count={self._count_public()}"
         )
 
-    # ✅ NEW: Public wrapper for count to avoid private API
     def _count_public(self) -> int:
         """Return chunk count using public API."""
         try:
@@ -116,7 +107,6 @@ class ChromaVectorStore:
             # Fallback if internal structure changes
             return len(self._store.get(ids=[]).get("ids", []))
 
-    # ✅ NEW: Document validation helper
     def _validate_documents(self, docs: List[Document], corr_id: str) -> List[Document]:
         """Validate that items are proper Document instances."""
         valid = []
@@ -245,7 +235,6 @@ class ChromaVectorStore:
         kwargs: Dict[str, Any] = {"k": k}
 
         if filter_dict:
-            # FIXED: Use centralized filter validation
             is_valid, error = validate_filter(filter_dict)
             if not is_valid:
                 logger.warning(f"[{corr_id}] Filter validation failed: {error}")
@@ -306,7 +295,6 @@ class ChromaVectorStore:
         corr_id = correlation_id or generate_vectorstore_correlation_id("chroma_doc")
         collection = self._client.get_collection(self.collection_name)
 
-        # FIXED: Use centralized key sanitization for filter
         safe_source = sanitize_chroma_key(source_file)
 
         try:
@@ -364,7 +352,6 @@ class ChromaVectorStore:
                 logger.info(f"[{corr_id}] Document registry was empty — rebuilt from existing chunks.")
                 for doc in docs:
                     sf = doc["source_file"]
-                    # FIXED: Use centralized key sanitization
                     safe_id = sanitize_chroma_key(sf, prefix="doc")
                     registry.upsert(ids=[safe_id], metadatas=[doc], documents=[sf])
             return docs
@@ -425,7 +412,6 @@ class ChromaVectorStore:
             seen_files[sf]["chunk_count"] += 1
 
         for sf, meta in seen_files.items():
-            # FIXED: Use centralized key sanitization
             safe_id = sanitize_chroma_key(sf, prefix="doc")
             registry.upsert(ids=[safe_id], metadatas=[meta], documents=[sf])
 
@@ -434,7 +420,6 @@ class ChromaVectorStore:
         corr_id = correlation_id or generate_vectorstore_correlation_id("chroma_delete")
         collection = self._client.get_collection(self.collection_name)
 
-        # FIXED: Use centralized key sanitization
         safe_source = sanitize_chroma_key(source_file)
 
         try:
@@ -492,8 +477,4 @@ __all__ = [
     "get_chroma_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

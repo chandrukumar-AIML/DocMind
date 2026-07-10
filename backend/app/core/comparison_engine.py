@@ -1,4 +1,3 @@
-# backend/app/core/comparison_engine.py
 """Batch cross-document comparison engine using LangChain/LLM."""
 
 from __future__ import annotations
@@ -241,19 +240,3 @@ async def run_comparison(job_id: str, workspace_id: str) -> None:
         logger.error(f"[{corr_id}] Comparison job {job_id} failed: {e}", exc_info=True)
         await _update_status("failed", error=str(e)[:300])
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke():
-        print("Comparison engine smoke test")
-        prompt = _build_comparison_prompt(
-            ComparisonMode.SIMILARITY,
-            {"doc1.pdf": "Contract for services.", "doc2.pdf": "Service agreement."},
-        )
-        assert "ONLY valid JSON" in prompt
-        assert "Document 1" in prompt
-        print("Prompt build OK")
-        print("Comparison engine checks passed")
-
-    asyncio.run(smoke())

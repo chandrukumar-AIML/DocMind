@@ -1,6 +1,3 @@
-# backend/app/domains/medical/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
-# OWASP-FIX: 1 - HIPAA compliance
 
 """
 Medical Domain Module: Clinical NLP, coding, and HIPAA compliance.

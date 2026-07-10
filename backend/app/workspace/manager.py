@@ -1,8 +1,4 @@
-# backend/app/workspace/manager.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, M - Memory safety
 # ACID-INDEX: E - Error handling (graceful degradation)
-# ✅ FIXED: Proper async/sync bridge + input validation + safe resource handling
 
 from __future__ import annotations
 
@@ -36,7 +32,6 @@ _PROVISION_RETRY_CONFIG: Final = RetryConfig(
     exceptions=(Exception,),
 )
 
-# ✅ NEW: Timeout for provisioning operations (seconds)
 _PROVISION_TIMEOUT: Final = 60
 
 
@@ -62,7 +57,6 @@ class WorkspaceResources:
 
     def to_dict(self) -> dict:
         """Serialize for API responses / logging."""
-        # ✅ FIXED: Safe serialization with None handling
         return {
             "workspace_id": self.workspace_id,
             "chroma_collection": self.chroma_collection,
@@ -75,7 +69,6 @@ class WorkspaceResources:
         }
 
 
-# ✅ NEW: Input validation helper
 def _validate_workspace_inputs(
     workspace_id: Optional[str],
     correlation_id: Optional[str],
@@ -193,7 +186,6 @@ class WorkspaceManager:
         # DVMELTSS-V: Validate workspace_id early
         safe_id = validate_workspace_id(workspace_id)
 
-        # ✅ FIXED: Create resources instance properly (frozen dataclass)
         resources = WorkspaceResources(
             workspace_id=safe_id,
             chroma_collection=get_chroma_collection_name(safe_id),
@@ -241,7 +233,6 @@ class WorkspaceManager:
         except Exception as e:
             logger.warning(f"[{corr_id}] BM25 provision failed (non-fatal): {e}")
 
-        # ✅ FIXED: Create new instance with updated postgres_rls (frozen dataclass)
         resources = WorkspaceResources(
             workspace_id=resources.workspace_id,
             chroma_collection=resources.chroma_collection,
@@ -328,7 +319,6 @@ class WorkspaceManager:
         safe_id = validate_workspace_id(workspace_id)
         settings = get_settings()
 
-        # FIXED: Pass collection name directly instead of mutating environment
         embeddings = CachedOpenAIEmbeddings(
             api_key=settings.openai_api_key,
             cache_dir=str(get_embeddings_cache_path(safe_id)),
@@ -415,7 +405,6 @@ class WorkspaceManager:
         from app.graph.neo4j_store import get_neo4j_store
 
         neo4j = get_neo4j_store()
-        # ✅ FIXED: Use public API if available, fallback to private
         if hasattr(neo4j, "ensure_indexes"):
             await neo4j.ensure_indexes(workspace_id=workspace_id)
         elif hasattr(neo4j, "_create_indexes"):
@@ -531,216 +520,3 @@ __all__ = [
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.workspace.manager) ---
 # ========================================================================
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
-    from pathlib import Path
-    from unittest.mock import AsyncMock, patch
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    async def run_tests():
-        print("🔍 Testing Workspace Manager module (app/workspace/manager.py)")
-        print("=" * 70)
-
-        try:
-            from app.workspace.manager import (
-                WorkspaceManager,
-                WorkspaceResources,
-                _validate_workspace_inputs,
-                get_workspace_metadata,
-            )
-            import inspect
-
-            # -- Test 1: Module metadata & constants ---------------------
-            print("\n📌 Test 1: Module metadata & constants")
-
-            metadata = get_workspace_metadata()
-            assert "provision_timeout_seconds" in metadata
-            assert metadata["provision_timeout_seconds"] == 60
-            assert "async_safe" in metadata and metadata["async_safe"] is True
-            print("   ✅ get_workspace_metadata: returns config")
-
-            # -- Test 2: WorkspaceResources dataclass --------------------
-            print("\n📌 Test 2: WorkspaceResources (frozen dataclass)")
-
-            # Create valid resources
-            resources = WorkspaceResources(
-                workspace_id="test-ws",
-                chroma_collection="docs_test-ws",
-                neo4j_namespace="ns_test-ws",
-                bm25_index_path="/tmp/bm25_test-ws",
-                embeddings_cache_path="/tmp/cache_test-ws",
-                postgres_rls=True,
-                correlation_id="test-corr",
-            )
-            assert resources.is_healthy is True
-            assert resources.workspace_id == "test-ws"
-            print(f"   ✅ WorkspaceResources: created, is_healthy={resources.is_healthy}")
-
-            # Test to_dict serialization
-            resource_dict = resources.to_dict()
-            assert "workspace_id" in resource_dict
-            assert resource_dict["is_healthy"] is True
-            print("   ✅ to_dict(): serializes correctly")
-
-            # Test with errors
-            resources_with_errors = WorkspaceResources(
-                workspace_id="bad-ws",
-                chroma_collection="",
-                neo4j_namespace="",
-                bm25_index_path="",
-                embeddings_cache_path="",
-                postgres_rls=False,
-                errors=["chroma: failed", "neo4j: timeout"],
-                correlation_id="test-corr",
-            )
-            assert resources_with_errors.is_healthy is False
-            assert len(resources_with_errors.errors) == 2
-            print(f"   ✅ Errors tracked: is_healthy={resources_with_errors.is_healthy}")
-
-            # -- Test 3: Input validation helper -------------------------
-            print("\n📌 Test 3: _validate_workspace_inputs")
-
-            # Valid inputs
-            is_valid, error = _validate_workspace_inputs("valid-ws", "corr-123", "test")
-            assert is_valid is True and error == ""
-            print("   ✅ Valid inputs accepted")
-
-            # Invalid: empty workspace_id
-            is_valid, error = _validate_workspace_inputs("", None, "test")
-            assert is_valid is False and "non-empty" in error
-            print("   ✅ Empty workspace_id rejected")
-
-            # Invalid: non-string correlation_id
-            is_valid, error = _validate_workspace_inputs("ws", 123, "test")  # type: ignore
-            assert is_valid is False and "string" in error
-            print("   ✅ Non-string correlation_id rejected")
-
-            # -- Test 4: WorkspaceManager class structure ----------------
-            print("\n📌 Test 4: WorkspaceManager class structure")
-
-            # Verify class exists and has expected methods
-            assert hasattr(WorkspaceManager, "__init__")
-            assert hasattr(WorkspaceManager, "provision_async")
-            assert hasattr(WorkspaceManager, "teardown_async")
-            assert hasattr(WorkspaceManager, "get_usage_stats_async")
-            assert hasattr(WorkspaceManager, "provision")  # sync wrapper
-            assert hasattr(WorkspaceManager, "teardown")  # sync wrapper
-            print("   ✅ WorkspaceManager: all expected methods present")
-
-            # Verify async/sync method pairs
-            assert inspect.iscoroutinefunction(WorkspaceManager.provision_async)
-            assert not inspect.iscoroutinefunction(WorkspaceManager.provision)
-            print("   ✅ Method signatures: async/sync variants correct")
-
-            # -- Test 5: Initialization & settings -----------------------
-            print("\n📌 Test 5: Initialization (mocked settings)")
-
-            with patch("app.workspace.manager.get_settings") as mock_settings:
-                mock_settings.return_value.default_workspace_id = "default"
-                mock_settings.return_value.chroma_persist_dir = "/tmp/chroma"
-                mock_settings.return_value.openai_api_key = "test-key"
-
-                manager = WorkspaceManager()
-                assert manager.settings is not None
-                print("   ✅ WorkspaceManager: initialized with settings")
-
-            # -- Test 6: Async provisioning (mocked external stores) -----
-            print("\n📌 Test 6: provision_async (mocked Chroma/Neo4j/BM25)")
-
-            with patch("app.workspace.manager.get_settings") as mock_settings, patch(
-                "app.workspace.manager.validate_workspace_id", return_value="test-ws"
-            ), patch(
-                "app.workspace.manager.get_chroma_collection_name",
-                return_value="docs_test-ws",
-            ), patch("app.workspace.manager.get_neo4j_namespace", return_value="ns_test-ws"), patch(
-                "app.workspace.manager.get_bm25_index_path",
-                return_value=Path("/tmp/bm25_test-ws"),
-            ), patch(
-                "app.workspace.manager.get_embeddings_cache_path",
-                return_value=Path("/tmp/cache_test-ws"),
-            ), patch(
-                "app.workspace.manager.generate_workspace_correlation_id",
-                return_value="test-corr",
-            ):
-                mock_settings.return_value.default_workspace_id = "default"
-                mock_settings.return_value.chroma_persist_dir = "/tmp/chroma"
-
-                # Mock private provisioning methods
-                with patch.object(WorkspaceManager, "_provision_chroma_async", new_callable=AsyncMock), patch.object(
-                    WorkspaceManager, "_provision_neo4j_async", new_callable=AsyncMock
-                ), patch.object(WorkspaceManager, "_provision_bm25_async", new_callable=AsyncMock):
-                    manager = WorkspaceManager()
-                    resources = await manager.provision_async("test-ws", correlation_id="test-corr")
-
-                    assert isinstance(resources, WorkspaceResources)
-                    assert resources.workspace_id == "test-ws"
-                    assert resources.postgres_rls is True  # Should be set to True at end
-                    print("   ✅ provision_async: returned WorkspaceResources with postgres_rls=True")
-
-            # -- Test 7: Async teardown (mocked) -------------------------
-            print("\n📌 Test 7: teardown_async (mocked cleanup)")
-
-            with patch("app.workspace.manager.get_settings") as mock_settings, patch(
-                "app.workspace.manager.validate_workspace_id", return_value="test-ws"
-            ), patch(
-                "app.workspace.manager.generate_workspace_correlation_id",
-                return_value="test-corr",
-            ):
-                mock_settings.return_value.default_workspace_id = "default"
-
-                # Mock private teardown methods
-                with patch.object(WorkspaceManager, "_teardown_chroma_async", new_callable=AsyncMock), patch.object(
-                    WorkspaceManager, "_teardown_neo4j_async", new_callable=AsyncMock
-                ), patch.object(WorkspaceManager, "_teardown_bm25_async", new_callable=AsyncMock):
-                    manager = WorkspaceManager()
-                    result = await manager.teardown_async("test-ws", correlation_id="test-corr")
-
-                    assert result is True  # Should succeed with mocked methods
-                    print("   ✅ teardown_async: returned success=True")
-
-            # -- Test 8: Sync wrappers use async bridge ------------------
-            print("\n📌 Test 8: Sync wrappers (run_async_in_task)")
-
-            # Just verify the methods exist and are callable
-            # Full testing would require mocking run_async_in_task which is complex
-            manager = WorkspaceManager()
-            assert callable(manager.provision)
-            assert callable(manager.teardown)
-            assert callable(manager.get_usage_stats)
-            print("   ✅ Sync wrappers: provision/teardown/get_usage_stats are callable")
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! Workspace Manager module verified.")
-            print("\n💡 What we verified:")
-            print("   • Metadata: get_workspace_metadata returns config ✅")
-            print("   • Dataclass: WorkspaceResources frozen, is_healthy, to_dict ✅")
-            print("   • Validation: _validate_workspace_inputs checks types ✅")
-            print("   • Class structure: async/sync method pairs ✅")
-            print("   • Provisioning: async with mocked external stores ✅")
-            print("   • Teardown: async cleanup with error handling ✅")
-            print("   • Sync wrappers: callable methods using async bridge ✅")
-            print("\n🔐 Production: Multi-tenant isolation with graceful degradation ready")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    # Run async tests
-    success = asyncio.run(run_tests())
-    sys.exit(0 if success else 1)

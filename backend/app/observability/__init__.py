@@ -1,6 +1,3 @@
-# backend/app/observability/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
 # ✅ CREATED: Production-ready __init__.py with lazy imports + error handling
 
 """
@@ -164,7 +161,6 @@ def _log_module_init() -> None:
 _log_module_init()
 
 
-# ✅ NEW: Module metadata helper for monitoring
 def get_observability_metadata() -> dict[str, Any]:
     """Return observability module metadata for debugging."""
     from .langsmith_tracer import get_tracer_metadata as _get_tracer_meta

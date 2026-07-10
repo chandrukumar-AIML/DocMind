@@ -1,8 +1,3 @@
-# backend/app/graph/graph_extractor.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, T - Batch processing, M - Memory safety
-# OWASP-FIX: 1 - Prompt injection prevention, 7 - Safe data handling
-# ✅ FIXED: Proper async LLM handling + input validation + Pydantic v2 config
 
 from __future__ import annotations
 
@@ -67,7 +62,6 @@ class ExtractionResponseSchema(BaseModel):
     entities: list[EntitySchema] = Field(default_factory=list, max_length=_MAX_ENTITIES)
     relationships: list[RelationshipSchema] = Field(default_factory=list, max_length=_MAX_RELATIONSHIPS)
 
-    # ✅ FIXED: Pydantic v2 config
     model_config = {"extra": "forbid"}
 
 
@@ -91,7 +85,6 @@ class ExtractedEntity:
     correlation_id: Optional[str] = None
 
     def __post_init__(self):
-        # FIXED: Use centralized validation
         self.entity_type = validate_entity_type(self.entity_type)
         # Sanitize name: lowercase, strip, remove dangerous sequences
         safe_name = self.name.lower().strip().replace("::", ":").replace("{", "").replace("}", "")
@@ -119,7 +112,6 @@ class ExtractedRelationship:
     correlation_id: Optional[str] = None
 
     def __post_init__(self):
-        # FIXED: Use centralized validation
         self.relationship_type = validate_relationship_type(self.relationship_type)
 
     def to_dict(self) -> dict:
@@ -200,14 +192,12 @@ class GraphExtractor:
 
     def __init__(self, model: str = "gpt-4o", max_retries: int = _MAX_RETRIES):
         settings = get_settings()
-        # FIXED: Use centralized LLM pool
         self.llm = get_llm(streaming=False, model_override=model, temperature_override=0.0)
         self.model = model
         self.max_retries = max_retries
 
         logger.info(f"GraphExtractor initialized: model={model}, async=True")
 
-    # ✅ NEW: Input validation helper
     def _validate_inputs(
         self,
         text: str,
@@ -239,7 +229,6 @@ class GraphExtractor:
         raw = f"{workspace_id}::{entity_type.lower()}::{safe_name}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
-    # ✅ FIXED: Proper async wrapper for sync LLM call
     @retry_async(
         config=RetryConfig(
             max_attempts=_MAX_RETRIES,
@@ -310,7 +299,6 @@ class GraphExtractor:
             "general": "Focus on: key people, organizations, concepts, and their relationships.",
         }
         hint = focus_hints.get(document_type, focus_hints["general"])
-        # FIXED: Use centralized prompt escaping
         safe_text = escape_graph_prompt(text[:_MAX_TEXT_LENGTH])
 
         prompt = (
@@ -554,8 +542,4 @@ __all__ = [
     "get_graph_extractor_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

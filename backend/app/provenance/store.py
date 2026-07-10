@@ -1,8 +1,4 @@
-# backend/app/provenance/store.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, M - Modular
-# ASCALE-FIX: A - Async, S - Separation, E - Error propagation
 # ACID-INDEX: C - Constraints, I - Indexes, N - N+1, D - Data types
-# ✅ FIXED: Singleton with version key + proper error handling + SQL injection prevention
 
 from __future__ import annotations
 
@@ -28,7 +24,6 @@ from .models import Base, Answer, Citation, DocumentStore
 
 logger = logging.getLogger(__name__)
 
-# ✅ NEW: Singleton cache with version key
 _engines: Dict[str, AsyncEngine] = {}
 _session_factories: Dict[str, async_sessionmaker[AsyncSession]] = {}
 
@@ -117,7 +112,6 @@ class ProvenanceStore:
     def __init__(self):
         self._session_factory = get_session_factory()
 
-    # ✅ NEW: Input validation helper
     def _validate_inputs(
         self,
         question: Optional[str],
@@ -200,7 +194,6 @@ class ProvenanceStore:
                         confidence = float(cit.get("confidence_score", cit.get("rerank_score", 0.0)))
                         highlight_color = compute_highlight_color(confidence)
 
-                        # FIXED: Safe page number conversion (handle 1-indexed input)
                         page_num_raw = cit.get("page_number", cit.get("page_display", 1))
                         page_number = int(page_num_raw) - 1 if page_num_raw else 0
 
@@ -303,7 +296,6 @@ class ProvenanceStore:
 
         try:
             async with self._session_factory() as session:
-                # ✅ FIXED: Use selectinload to eagerly load citations
                 stmt = (
                     select(Answer)
                     .where(Answer.id == answer_uuid, Answer.workspace_id == workspace_id)
@@ -353,7 +345,6 @@ class ProvenanceStore:
                 )
                 if source_file:
                     # Filter to answers that cited this document
-                    # FIXED: Use efficient join with proper index
                     stmt = stmt.join(Citation).where(Citation.source_file == source_file).distinct()
 
                 results = await asyncio.wait_for(
@@ -528,7 +519,6 @@ class ProvenanceStore:
 
         try:
             async with self._session_factory() as session:
-                # ✅ FIXED: Use parameterized query with text() to prevent SQL injection
                 stmt = text(
                     "SELECT * FROM citations WHERE workspace_id = :ws AND chunk_text ILIKE :query "
                     "ORDER BY confidence_score DESC LIMIT :lim"
@@ -577,7 +567,6 @@ class ProvenanceStore:
         try:
             async with self._session_factory() as session:
                 async with session.begin():
-                    # ✅ FIXED: Delete citations first (foreign key constraint)
                     stmt = delete(Citation).where(
                         Citation.source_file == source_file,
                         Citation.workspace_id == workspace_id,
@@ -662,8 +651,4 @@ __all__ = [
     "get_provenance_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

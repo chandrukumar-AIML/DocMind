@@ -1,6 +1,3 @@
-# backend/app/evaluation/alert_engine.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
-# ASCALE-FIX: E - Error propagation, L - Logging
 
 from __future__ import annotations
 
@@ -52,7 +49,6 @@ class AlertEngine:
     3. Console — always active
     """
 
-    # FIXED: Default thresholds as class constant (can be overridden via config)
     DEFAULT_THRESHOLDS: Final = {
         "faithfulness": {"warning": 0.75, "critical": 0.60},
         "answer_relevancy": {"warning": 0.65, "critical": 0.50},
@@ -63,7 +59,6 @@ class AlertEngine:
     def __init__(self, thresholds: Optional[dict] = None):
         settings = get_settings()
         self.settings = settings
-        # FIXED: Use config thresholds or defaults
         self.thresholds = thresholds or self.DEFAULT_THRESHOLDS
 
         ALERT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -108,7 +103,6 @@ class AlertEngine:
                 threshold = thresholds["warning"]
 
             if severity:
-                # FIXED: Scrub PII from alert message
                 safe_message = scrub_pii_for_evaluation(
                     f"[{severity.upper()}] RAGAs {threshold_key} for '{domain}' "
                     f"dropped to {value:.3f} (threshold: {threshold}) | "
@@ -128,7 +122,6 @@ class AlertEngine:
                 )
                 triggered.append(alert)
                 self._log_alert(alert)
-                # FIXED: Use async retry for email
                 import asyncio
 
                 asyncio.create_task(self._send_email_alert(alert))
@@ -203,7 +196,6 @@ class AlertEngine:
         msg["From"] = smtp_user
         msg["To"] = to_email
 
-        # FIXED: Scrub PII from email body
         safe_message = scrub_pii_for_evaluation(alert.message, domain="all")
 
         html_body = f"""
@@ -240,8 +232,4 @@ class AlertEngine:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["AlertEngine", "Alert"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

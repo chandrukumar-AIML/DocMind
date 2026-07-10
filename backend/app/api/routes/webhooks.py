@@ -1,4 +1,3 @@
-# backend/app/api/routes/webhooks.py
 """Webhook management: register, list, delete, test."""
 
 from __future__ import annotations
@@ -269,18 +268,3 @@ async def get_delivery_history(
         "correlation_id": corr_id,
     }
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke_test():
-        print("Webhook routes smoke test")
-        from app.core.webhook_dispatcher import _sign_payload
-
-        body = b'{"test":true}'
-        sig = _sign_payload(body, "my-secret")
-        assert sig.startswith("sha256="), f"Bad sig: {sig}"
-        print(f"Signature OK: {sig[:20]}...")
-        print("All webhook route checks passed")
-
-    asyncio.run(smoke_test())

@@ -1,6 +1,3 @@
-# backend/app/core/openai_errors.py
-# DVMELTSS-FIX: M - Modular, E - Error handling, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
 """
 OpenAI error classification utilities.
 
@@ -253,8 +250,4 @@ __all__ = [
     "classify_openai_error",  # ✅ NEW: Added for backward compatibility
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

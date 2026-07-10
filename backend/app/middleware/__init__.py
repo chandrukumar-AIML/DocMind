@@ -1,7 +1,3 @@
-# backend/app/rate_limiter/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
-# ✅ FIXED: Direct return in __getattr__ + error handling + idempotent logging
 
 """
 DocuMind AI - Rate Limiting Module
@@ -91,7 +87,6 @@ def _reset_caches_for_tests() -> None:
     except Exception:
         pass
 
-    # ✅ FIXED: Reset module-level singletons if loaded
     try:
         from . import rate_limiter
 
@@ -125,7 +120,6 @@ def _log_module_init() -> None:
 _log_module_init()
 
 
-# ✅ NEW: Metadata helper for monitoring
 def get_rate_limiter_metadata() -> dict[str, Any]:
     """Return rate limiter module metadata for debugging."""
     from .rate_limiter import get_rate_limiter_metadata as _get_meta

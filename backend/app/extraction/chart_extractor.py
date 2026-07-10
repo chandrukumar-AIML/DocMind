@@ -1,10 +1,3 @@
-# backend/app/extraction/chart_extractor.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, T - Exponential backoff, M - Memory safety
-# OWASP-FIX: 1 - Prompt escaping, 7 - Safe data handling
-# ✅ FIXED: Safe sync wrapper (no deadlock in FastAPI)
-# ✅ FIXED: Retry logic moved to class method for testability
-# ✅ FIXED: Safe axes conversion + input validation + memory cleanup
 
 from __future__ import annotations
 
@@ -211,19 +204,16 @@ class ChartExtractor:
     - Async-safe interface for FastAPI integration
     """
 
-    # ✅ NEW: Valid image constraints
     _VALID_DTYPES: Final = {np.uint8, np.float32}
     _VALID_CHANNELS: Final = {1, 3, 4}
 
     def __init__(self, model: str = "gpt-4o", max_retries: int = _MAX_RETRIES):
-        # FIXED: Use centralized vision LLM pool
         self.client = get_vision_llm(model_override=model, timeout=30.0)
         self.model = model
         self.max_retries = max_retries
 
         logger.info(f"ChartExtractor initialized: model={model}, async=True")
 
-    # ✅ NEW: Input validation helper
     def _validate_chart_image(self, image: np.ndarray, corr_id: str) -> np.ndarray:
         """Validate and normalize image for chart extraction."""
         if not isinstance(image, np.ndarray):
@@ -247,7 +237,6 @@ class ChartExtractor:
             raise ValueError(f"Unsupported channels: {image.shape[2]}")
         return image
 
-    # ✅ FIXED: Moved retry logic to dedicated method for testability
     @retry_async(
         config=RetryConfig(
             max_attempts=_MAX_RETRIES,
@@ -258,7 +247,6 @@ class ChartExtractor:
     )
     async def _call_vision_api(self, prompt: str, image_b64: str, corr_id: str):
         """Call vision LLM with retry logic."""
-        # ✅ FIXED: Run sync OpenAI call in thread to avoid blocking event loop
         if sys.version_info >= (3, 9):
             return await asyncio.to_thread(
                 self.client.chat.completions.create,
@@ -343,7 +331,6 @@ class ChartExtractor:
             else:
                 image_rgb = image
 
-            # FIXED: Memory safety check before processing
             if image_rgb.nbytes > _MAX_IMAGE_MEMORY_MB * 1024 * 1024:
                 logger.warning(f"[{corr_id}] Image too large ({image_rgb.nbytes / 1024 / 1024:.1f}MB) — downsampling")
                 # Progressive downsampling until under limit
@@ -384,7 +371,6 @@ class ChartExtractor:
         """DVMELTSS-E: Async LLM call with centralized retry + structured validation."""
         corr_id = correlation_id or "chart_unknown"
 
-        # FIXED: Use centralized prompt escaping
         safe_prompt = escape_prompt_content(prompt)
 
         # Token safety
@@ -450,7 +436,6 @@ class ChartExtractor:
         if not b64:
             return None
 
-        # FIXED: Use centralized prompt escaping
         prompt = escape_prompt_content(CHART_EXTRACTION_PROMPT)
 
         try:
@@ -458,7 +443,6 @@ class ChartExtractor:
             if not data:
                 return self._empty_chart(chart_id, source_file, page_number, chunk_id, corr_id)
 
-            # ✅ FIXED: Safe axes conversion (handle None/dict/Pydantic)
             axes_raw = data.get("axes")
             if axes_raw is None:
                 axes_dict = {}
@@ -469,7 +453,6 @@ class ChartExtractor:
             else:
                 axes_dict = {}
 
-            # ✅ FIXED: Slice data_points BEFORE model_dump to limit to 20
             data_points_raw = data.get("data_points", [])
             if hasattr(data_points_raw[0], "model_dump") if data_points_raw else False:
                 data_points = [dp.model_dump() for dp in data_points_raw[:20]]
@@ -559,8 +542,4 @@ class ChartExtractor:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["ChartExtractor", "ExtractedChart"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

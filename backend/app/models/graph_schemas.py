@@ -1,12 +1,10 @@
 ﻿# backend/app/models/graph_schemas.py
-# DVMELTSS-FIX: V - Validate, M - Modular, S - Security
 
 from __future__ import annotations
 
 from enum import Enum
 from typing import Any, List, Optional
 
-# ✅ FIXED: Import field_validator from pydantic
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 # DVMELTSS-M: Import centralized utilities
@@ -34,7 +32,6 @@ class GraphQueryRequest(BaseModel):
     @field_validator("query")  # ✅ Now field_validator is imported
     @classmethod
     def sanitize_query(cls, v: str) -> str:
-        # FIXED: Use centralized sanitizer
         return sanitize_text(v, max_length=2000, min_length=3)
 
 
@@ -90,9 +87,4 @@ __all__ = [
     "GraphEdge", "GraphVisualizationData", "GraphQueryResponse", "GraphSchemaResponse",
 ]
 # Local smoke test entry point. Run: python -m 
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
-
-    run_module_smoke(sys.modules[__name__], __file__)
 

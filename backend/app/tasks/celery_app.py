@@ -1,8 +1,3 @@
-# backend/app/tasks/celery_app.py
-# DVMELTSS-FIX: M - Modular, E - Error handling, L - Logging
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - True async worker lifecycle
-# ✅ FIXED: Named failure handler + config validation + proper error handling
 
 from __future__ import annotations
 
@@ -49,14 +44,12 @@ QUEUE_TIER_MAP: Final = {
 }
 
 
-# ✅ NEW: Named failure handler to avoid lambda pickling issues
 def _on_task_failure(exc: Exception, task_id: str, args: tuple, kwargs: dict, einfo: Any) -> None:
     """Log task failures with correlation_id context."""
     corr_id = kwargs.get("correlation_id", "unknown")
     logger.error(f"[{corr_id}] Task {task_id} failed: {exc}")
 
 
-# ✅ NEW: Config validation helper
 def _validate_celery_config(broker_url: str, backend_url: str) -> tuple[bool, str]:
     """Validate Celery broker and backend URLs."""
     if not broker_url or not isinstance(broker_url, str):
@@ -108,7 +101,6 @@ def create_celery_app() -> Celery:
         task_time_limit=getattr(settings, "celery_task_time_limit", 720),
         task_acks_late=True,
         task_reject_on_worker_lost=True,
-        # ✅ FIXED: Add connection timeout to prevent hangs
         broker_connection_timeout=30,
         broker_connection_retry_on_startup=True,
         broker_connection_max_retries=3,
@@ -125,7 +117,6 @@ def create_celery_app() -> Celery:
             "interval_start": 0.2,
             "interval_step": 0.5,
             "interval_max": 2.0,
-            # ✅ FIXED: Retry on connection errors specifically
             "retry_for_exceptions": [
                 "kombu.exceptions.OperationalError",
                 "redis.exceptions.ConnectionError",
@@ -134,7 +125,6 @@ def create_celery_app() -> Celery:
         # Monitoring
         worker_send_task_events=True,
         task_send_sent_event=True,
-        # ✅ FIXED: Use named function instead of lambda to avoid pickling issues
         task_annotations={
             "*": {
                 "on_failure": _on_task_failure,
@@ -161,7 +151,6 @@ def on_worker_ready(sender, **kwargs):
 
         configure_logging()
     except Exception as e:
-        # ✅ FIXED: Log error but don't crash worker
         logger.error(f"[{corr_id}] Logging config failed: {e}", exc_info=True)
     except ImportError:
         # Logging module not available — continue without config
@@ -175,7 +164,6 @@ def on_worker_shutdown(sender, **kwargs):
         logger.info(f"[{corr_id}] Celery worker shutting down.")
         # Optional: cleanup resources here
     except Exception as e:
-        # ✅ FIXED: Log error but allow shutdown to proceed
         logger.error(f"[{corr_id}] Shutdown cleanup failed: {e}", exc_info=True)
 
 
@@ -213,8 +201,4 @@ __all__ = [
     "get_celery_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

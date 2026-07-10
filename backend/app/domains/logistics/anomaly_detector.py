@@ -1,5 +1,3 @@
-# backend/app/domains/logistics/anomaly_detector.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 
 from __future__ import annotations
 
@@ -194,7 +192,6 @@ class AnomalyDetector:
             today = datetime.now(timezone.utc)
 
             if invoice.invoice_date:
-                # FIXED: Use timezone-aware parsing
                 inv_date = datetime.fromisoformat(invoice.invoice_date.replace("Z", "+00:00"))
                 if inv_date.tzinfo is None:
                     inv_date = inv_date.replace(tzinfo=timezone.utc)
@@ -260,8 +257,4 @@ class AnomalyDetector:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["AnomalyDetector", "Anomaly"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

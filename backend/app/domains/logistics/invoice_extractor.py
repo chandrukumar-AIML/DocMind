@@ -1,5 +1,3 @@
-# backend/app/domains/logistics/invoice_extractor.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 
 from __future__ import annotations
 
@@ -135,7 +133,6 @@ class InvoiceExtractor:
     """Extracts structured invoice data from document chunks."""
 
     def __init__(self, model: str = "gpt-4o"):
-        # FIXED: Use centralized LLM pool
         self.llm = get_domain_llm(streaming=False, model_override=model)
         self._llm_retry = retry_async(
             config=RetryConfig(
@@ -157,11 +154,9 @@ class InvoiceExtractor:
         # Combine first 3 chunks (invoices are usually 1-2 pages)
         text = "\n\n".join(c.page_content for c in chunks[:3])
 
-        # FIXED: Use centralized prompt builder
         prompt = build_domain_prompt(INVOICE_PROMPT, text=text[:3000])
 
         try:
-            # FIXED: Apply retry + centralized JSON parsing
             response = await self._llm_retry(lambda: self.llm.ainvoke([{"role": "user", "content": prompt}]))
             data = safe_parse_llm_json(response.content, default={})
 
@@ -221,8 +216,4 @@ class InvoiceExtractor:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["InvoiceExtractor", "ExtractedInvoice", "LineItem"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

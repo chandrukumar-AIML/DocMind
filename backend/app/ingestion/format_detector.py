@@ -1,8 +1,3 @@
-# backend/app/ingest/format_detector.py
-# DVMELTSS-FIX: V - Validate, S - Security, M - Modular
-# OWASP-FIX: 9 - File handling, 1 - Input sanitization
-# BATMAN-FIX: M - Memory safety
-# ✅ FIXED: Safe filename pattern + input validation + proper immutable pattern
 
 from __future__ import annotations
 
@@ -15,7 +10,6 @@ from typing import Final, Optional, Any
 
 logger = logging.getLogger(__name__)
 
-# ✅ FIXED: Only allow safe filename characters (no path separators)
 _SAFE_FILENAME_PATTERN: Final = re.compile(r"^[a-zA-Z0-9._\-]+$")
 
 
@@ -113,13 +107,11 @@ class DetectedFormat:
     extension: str
 
     def __post_init__(self):
-        # ✅ FIXED: Proper immutable pattern for frozen dataclass
         if not (0.0 <= self.confidence <= 1.0):
             # Use object.__setattr__ for frozen dataclass
             object.__setattr__(self, "confidence", max(0.0, min(1.0, self.confidence)))
 
 
-# ✅ NEW: Input validation helper
 def _validate_detect_inputs(
     file_bytes: Optional[bytes],
     filename: Optional[str],
@@ -146,14 +138,12 @@ class FormatDetector:
             logger.error(f"[{corr_id}] Invalid detect inputs: {error}")
             return self._build_unknown("")
 
-        # ✅ FIXED: Safe filename check (no path traversal)
         if not _SAFE_FILENAME_PATTERN.match(filename):
             logger.warning(f"[{corr_id}] Potentially unsafe filename: {filename}")
             return self._build_unknown(Path(filename).suffix.lower())
 
         suffix = Path(filename).suffix.lower()
 
-        # ✅ FIXED: Safe magic signature matching with length checks
         for magic, offset, fmt, mime in _MAGIC_SIGNATURES:
             if len(file_bytes) > offset + len(magic) and file_bytes[offset : offset + len(magic)] == magic:
                 # Handle DOCX/XLSX distinction
@@ -185,7 +175,6 @@ class FormatDetector:
 
     @staticmethod
     def _build(fmt: FileFormat, mime: str, extension: str, confidence: float) -> DetectedFormat:
-        # ✅ FIXED: Safe defaults + sanitization
         safe_mime = mime if mime and isinstance(mime, str) else "application/octet-stream"
         safe_ext = extension if extension and isinstance(extension, str) else ""
         safe_confidence = max(0.0, min(1.0, confidence))
@@ -203,7 +192,6 @@ class FormatDetector:
 
     @staticmethod
     def _build_unknown(extension: str) -> DetectedFormat:
-        # ✅ FIXED: Safe defaults
         safe_ext = extension if extension and isinstance(extension, str) else ""
         return DetectedFormat(
             format=FileFormat.UNKNOWN,
@@ -239,8 +227,4 @@ __all__ = [
     "get_format_detector_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

@@ -1,6 +1,3 @@
-# backend/app/api/routes/tasks.py
-# DVMELTSS-FIX: M/E/S + ASCALE-A + WebSockets
-# ✅ FIXED: Proper WebSocket auth + input validation + timeout handling + safe manager ops
 
 from __future__ import annotations
 
@@ -25,13 +22,11 @@ from app.tasks.models import TaskStatus
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
-# ✅ NEW: Operation timeouts (seconds)
 _MANAGER_TIMEOUT: Final = 30.0
 _WS_MAX_DURATION: Final = 600.0  # 10 minutes max WebSocket connection
 _WS_POLL_INTERVAL: Final = 2.0
 
 
-# ✅ NEW: Input validation helper
 def _validate_task_inputs(
     task_id: Optional[str],
     limit: Optional[int],
@@ -147,7 +142,6 @@ async def list_user_tasks(
 async def websocket_task_progress(
     websocket: WebSocket,
     task_id: str,
-    # ✅ FIXED: Use proper auth dependency for WebSocket
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ):
     """
@@ -262,7 +256,6 @@ async def cancel_task(
     manager = TaskManager()
 
     try:
-        # ✅ FIXED: Verify task ownership before cancellation
         task = await asyncio.wait_for(
             asyncio.to_thread(manager.get_task, task_id),
             timeout=_MANAGER_TIMEOUT,
@@ -332,8 +325,4 @@ def get_tasks_metadata() -> dict[str, Any]:
 
 __all__ = ["router", "get_tasks_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

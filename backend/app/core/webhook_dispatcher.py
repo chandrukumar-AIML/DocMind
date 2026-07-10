@@ -1,4 +1,3 @@
-# backend/app/core/webhook_dispatcher.py
 """
 Webhook dispatcher: HMAC-SHA256 signed delivery with exponential backoff retry
 and PostgreSQL dead-letter queue for failed events.

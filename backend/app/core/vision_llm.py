@@ -17,15 +17,10 @@ def get_vision_llm(
     timeout: float | None = None,
 ) -> BaseChatModel:
     """Return the configured chat model for vision/extraction tasks."""
-    # FIXED: Reuse the central LLM pool so credentials, provider fallback, and
     # retries are consistent across RAG, agent, and extraction code paths.
     return get_llm(streaming=False, model_override=model_override)
 
 
 __all__ = ["get_vision_llm"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

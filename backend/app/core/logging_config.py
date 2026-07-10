@@ -1,6 +1,3 @@
-# backend/app/core/logging_config.py
-# DVMELTSS-FIX: M - Modular, L - Logging, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
 """
 Structured logging configuration for DocuMind AI.
 
@@ -22,7 +19,6 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-# ✅ FIXED: Pylance-friendly import with fallback
 try:
     from pythonjsonlogger import jsonlogger  # type: ignore[import-untyped]
 except ImportError:
@@ -167,8 +163,4 @@ def get_request_logger(request_id: Optional[str] = None) -> logging.Logger:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["configure_logging", "get_request_logger", "CustomJsonFormatter"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

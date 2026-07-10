@@ -1,4 +1,3 @@
-# backend/app/core/compliance_checker.py
 """Regulatory compliance checker: GDPR, HIPAA, RBI, SEBI, Indian Contract Act, GST."""
 
 from __future__ import annotations
@@ -265,21 +264,3 @@ async def check_compliance(
         "correlation_id": corr_id,
     }
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke():
-        print("Compliance checker smoke test")
-        assert "GDPR" in SUPPORTED_REGULATIONS
-        assert "RBI" in SUPPORTED_REGULATIONS
-        assert "GST" in SUPPORTED_REGULATIONS
-
-        prompt = _build_compliance_prompt("Sample contract text", ["GDPR", "INDIAN_CONTRACT"])
-        assert "GDPR" in prompt
-        assert "INDIAN_CONTRACT" in prompt
-        assert "scores" in prompt
-        print("Compliance prompt build OK")
-        print("Compliance checker checks passed")
-
-    asyncio.run(smoke())

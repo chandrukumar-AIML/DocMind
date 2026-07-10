@@ -1,7 +1,3 @@
-# backend/app/finetuning/dataset_generator.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, T - Batch processing, M - Memory safety
-# OWASP-FIX: 1 - Prompt escaping, 7 - Safe data handling
 
 from __future__ import annotations
 
@@ -52,7 +48,6 @@ _RETRY_MAX_DELAY: Final = 30.0
 
 
 # DVMELTSS-V: Pydantic schemas for structured output
-# FIXED: Pydantic v2 — use model_config = ConfigDict() instead of class Config
 class QueryGenerationSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
     queries: list[str] = Field(..., min_length=1, max_length=10)
@@ -247,14 +242,12 @@ class TripletDatasetGenerator:
         settings = get_settings()
         api_key = settings.openai_api_key
 
-        # FIXED: Use centralized OpenAI client with retry config
         from app.core.llm_pool import get_llm
 
         self.llm = get_llm(streaming=False, temperature_override=0.7)
         self.model = model
         self.max_retries = max_retries
 
-        # FIXED: Centralized retry config
         self._llm_retry = retry_async(
             config=RetryConfig(
                 max_attempts=max_retries,
@@ -282,7 +275,6 @@ class TripletDatasetGenerator:
         """DVMELTSS-E: Async LLM call with centralized retry + structured validation."""
         corr_id = correlation_id
 
-        # FIXED: Use centralized prompt escaping
         safe_prompt = escape_prompt_content(prompt)
 
         if self._estimate_tokens(safe_prompt) > _MAX_PROMPT_TOKENS:
@@ -368,7 +360,6 @@ class TripletDatasetGenerator:
     ) -> list[str]:
         """Async version: Generate realistic search queries for a chunk."""
         domain_context = self.DOMAIN_CONTEXT.get(domain, domain)
-        # FIXED: Use centralized prompt escaping
         safe_chunk = escape_prompt_content(chunk_text[:_MAX_CHUNK_TEXT])
 
         prompt = QUERY_GENERATION_PROMPT.format(
@@ -435,7 +426,6 @@ class TripletDatasetGenerator:
             return candidates[0].page_content[:512]
 
         # Ask LLM to pick hardest negative
-        # FIXED: Use centralized prompt escaping
         safe_query = escape_prompt_content(query)
         safe_positive = escape_prompt_content(positive_chunk.page_content[:300])
         candidates_text = "\n\n".join(
@@ -485,7 +475,6 @@ class TripletDatasetGenerator:
         # DVMELTSS-V: Validate domain using centralized utility
         domain = validate_domain(domain, _VALID_DOMAINS)
 
-        # FIXED: _get_chunks is sync (ChromaDB) — offload to thread to avoid blocking event loop
         chunks = await asyncio.to_thread(self._get_chunks, workspace_id, domain, max_chunks, corr_id)
         if not chunks:
             logger.warning(f"[{corr_id}] No chunks found for workspace={workspace_id}, domain={domain}")
@@ -615,8 +604,4 @@ class TripletDatasetGenerator:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["TripletDatasetGenerator", "TripletDataset", "TrainingTriplet"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

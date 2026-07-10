@@ -1,8 +1,3 @@
-# backend/app/auth/jwt_handler.py
-# DVMELTSS-FIX: S - Security, E - Error handling, M - Modular
-# ASCALE-FIX: S - Separation, E - Error propagation, C - Configuration
-# ✅ FIXED: jti always present + strict password length enforcement
-
 from __future__ import annotations
 
 import logging
@@ -17,14 +12,60 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# DVMELTSS-S: Constants for token types — prevents magic strings
 _TOKEN_TYPE_ACCESS: Final = "access"
 _TOKEN_TYPE_REFRESH: Final = "refresh"
 _TOKEN_TYPE_SSO_STATE: Final = "sso_state"
 _SSO_STATE_TTL_MINUTES: Final = 10
-
-# bcrypt has a 72-byte limit for passwords
 _BCRYPT_MAX_BYTES: Final = 72
+
+# Redis key prefix for the JTI revocation blacklist
+# Must match the key prefix used in app/api/routes/auth.py _revoke_access_token_blacklist
+_REVOKE_PREFIX: Final = "revoked:access:"
+
+
+def _get_redis() -> Optional[object]:
+    """Return a sync Redis client for revocation checks, or None if unavailable."""
+    try:
+        import redis as _redis
+
+        settings = get_settings()
+        url = getattr(settings, "redis_url", None)
+        if not url:
+            return None
+        return _redis.from_url(url, decode_responses=True, socket_connect_timeout=1)
+    except Exception:
+        return None
+
+
+def revoke_token(jti: str, ttl_seconds: int) -> bool:
+    """
+    Blacklist a JTI in Redis so it cannot be reused even before expiry.
+
+    Called on logout and on admin account disable. Returns True on success,
+    False if Redis is unavailable (fail-open — token expires naturally).
+    """
+    r = _get_redis()
+    if r is None:
+        logger.warning("Token revocation skipped: Redis unavailable")
+        return False
+    try:
+        r.setex(f"{_REVOKE_PREFIX}{jti}", ttl_seconds, "1")
+        logger.info(f"Token JTI revoked: {jti[:8]}… (ttl={ttl_seconds}s)")
+        return True
+    except Exception as e:
+        logger.warning(f"Token revocation failed: {e}")
+        return False
+
+
+def is_token_revoked(jti: str) -> bool:
+    """Return True if the JTI is on the Redis blacklist."""
+    r = _get_redis()
+    if r is None:
+        return False
+    try:
+        return bool(r.exists(f"{_REVOKE_PREFIX}{jti}"))
+    except Exception:
+        return False
 
 
 # DVMELTSS-S: Private helpers — not exposed at module level
@@ -36,7 +77,6 @@ def _get_jwt_secret() -> str:
     Use environment variables or secrets manager exclusively.
     """
     settings = get_settings()
-    # FIXED: Direct attribute access so Pydantic raises AttributeError on misconfiguration
     # instead of silently returning None when the attribute name is wrong
     secret = settings.jwt_secret_key if hasattr(settings, "jwt_secret_key") else None
 
@@ -85,7 +125,6 @@ def hash_password(password: str) -> str:
             "Please use a shorter password."
         )
 
-    # FIXED: Use bcrypt directly. Passlib's bcrypt backend can fail with
     # modern bcrypt package versions during backend feature detection.
     return bcrypt.hashpw(password_bytes, bcrypt.gensalt(rounds=12)).decode("utf-8")
 
@@ -106,7 +145,6 @@ def verify_password(plain: str, hashed: str) -> bool:
     """
     plain_bytes = plain.encode("utf-8")
 
-    # FIXED: Return False instead of raising — raising ValueError locks out existing users
     # whose passwords were set before the 72-byte limit was enforced (bcrypt silently
     # truncated them). Returning False preserves backward compat: they simply fail auth
     # and are prompted to reset via the password-reset flow.
@@ -243,21 +281,22 @@ def decode_token(
 def verify_access_token(token: str) -> Optional[dict]:
     """
     Verify an access token and return its claims.
-    Returns None if invalid — does not raise (caller handles HTTPException).
 
-    DVMELTSS-E: Clear contract — None = invalid, dict = valid.
-
-    Args:
-        token: JWT access token string
-
-    Returns:
-        Decoded payload dict if valid, None if invalid
+    Returns None if the token is invalid, expired, or has been explicitly
+    revoked via revoke_token(). Caller is responsible for raising HTTPException.
     """
     try:
-        return decode_token(token, expected_type=_TOKEN_TYPE_ACCESS)
+        payload = decode_token(token, expected_type=_TOKEN_TYPE_ACCESS)
     except JWTError as e:
         logger.debug(f"JWT access token verification failed: {e}")
         return None
+
+    jti = payload.get("jti")
+    if jti and is_token_revoked(jti):
+        logger.warning(f"Rejected revoked token JTI: {jti[:8]}…")
+        return None
+
+    return payload
 
 
 def create_sso_state_token(workspace_id: str, code_verifier: str, nonce: str) -> str:
@@ -294,262 +333,3 @@ def verify_sso_state_token(token: str) -> Optional[dict]:
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.auth.jwt_handler) -----
 # ========================================================================
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
-    import os
-    from pathlib import Path
-    from datetime import datetime, timedelta, timezone
-    from jose import JWTError
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    # Set test JWT secret if not in env
-    if not os.getenv("JWT_SECRET_KEY"):
-        os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-local-testing-only-do-not-use-in-prod-1234567890"
-
-    async def run_tests():
-        print("🔍 Testing JWT Handler module (app/auth/jwt_handler.py)")
-        print("=" * 70)
-
-        try:
-            from app.auth.jwt_handler import (
-                hash_password,
-                verify_password,
-                create_access_token,
-                create_refresh_token,
-                decode_token,
-                verify_access_token,
-                _TOKEN_TYPE_ACCESS,
-                _TOKEN_TYPE_REFRESH,
-            )
-
-            # -- Test 1: Password hashing (real bcrypt) -------------------
-            print("\n📌 Test 1: Password hashing (bcrypt) + verification")
-
-            plain = "SecurePass123!"
-            hashed = hash_password(plain)
-            assert hashed.startswith("$2b$"), "Should be bcrypt hash"
-            assert verify_password(plain, hashed) is True
-            assert verify_password("WrongPass", hashed) is False
-            print(f"   ✅ Password hashed: {hashed[:20]}... | verify=True")
-
-            # Test bcrypt length limit
-            try:
-                hash_password("A" * 100)
-                print("   ❌ Should reject long password")
-            except ValueError as e:
-                if "exceeds maximum length" in str(e):
-                    print("   ✅ Long password rejected (bcrypt 72-byte limit)")
-
-            # -- Test 2: Access token creation & decoding -----------------
-            print("\n📌 Test 2: Access token lifecycle (create -> decode -> verify)")
-
-            # Create access token
-            access_token = create_access_token(
-                user_id="user-123",
-                email="test@docmind.ai",
-                workspace_id="ws-456",
-                role="editor",
-                expires_delta=timedelta(minutes=15),
-            )
-            assert access_token.count(".") == 2, "Should be valid JWT format"
-            print(f"   ✅ Access token created: {access_token[:30]}...")
-
-            # Decode and verify claims
-            payload = decode_token(access_token, expected_type=_TOKEN_TYPE_ACCESS)
-            assert payload["sub"] == "user-123"
-            assert payload["email"] == "test@docmind.ai"
-            assert payload["workspace_id"] == "ws-456"
-            assert payload["role"] == "editor"
-            assert payload["type"] == _TOKEN_TYPE_ACCESS
-            assert "exp" in payload and "iat" in payload
-            assert "jti" in payload and "family_id" in payload
-            print(f"   ✅ Token decoded: sub={payload['sub']}, role={payload['role']}, type={payload['type']}")
-
-            # Verify with helper function
-            verified = verify_access_token(access_token)
-            assert verified is not None, "Should verify valid token"
-            assert verified["sub"] == "user-123"
-            print("   ✅ verify_access_token: returned valid payload")
-
-            # -- Test 3: Token expiration handling ------------------------
-            print("\n📌 Test 3: Token expiration (expired vs valid)")
-
-            # Create expired token
-            expired_token = create_access_token(
-                user_id="user-123",
-                email="test@docmind.ai",
-                workspace_id="ws-456",
-                role="editor",
-                expires_delta=timedelta(seconds=-1),  # Already expired
-            )
-
-            # decode_token should raise JWTError for expired token
-            try:
-                decode_token(expired_token, expected_type=_TOKEN_TYPE_ACCESS)
-                print("   ❌ Should reject expired token")
-            except JWTError as e:
-                if "expired" in str(e).lower() or "Signature has expired" in str(e):
-                    print("   ✅ Expired token rejected: JWTError")
-
-            # verify_access_token should return None for expired token
-            result = verify_access_token(expired_token)
-            assert result is None, "Should return None for invalid/expired token"
-            print("   ✅ verify_access_token: returned None for expired token")
-
-            # -- Test 4: Refresh token creation & validation --------------
-            print("\n📌 Test 4: Refresh token lifecycle")
-
-            refresh_token = create_refresh_token(user_id="user-123", workspace_id="ws-456", family_id="fam-abc123")
-            assert refresh_token.count(".") == 2
-            print(f"   ✅ Refresh token created: {refresh_token[:30]}...")
-
-            # Decode refresh token
-            refresh_payload = decode_token(refresh_token, expected_type=_TOKEN_TYPE_REFRESH)
-            assert refresh_payload["type"] == _TOKEN_TYPE_REFRESH
-            assert refresh_payload["sub"] == "user-123"
-            assert refresh_payload["family_id"] == "fam-abc123"
-            assert "jti" in refresh_payload
-            print(
-                f"   ✅ Refresh token decoded: type={refresh_payload['type']}, family_id={refresh_payload['family_id']}"
-            )
-
-            # Type mismatch should fail
-            try:
-                decode_token(refresh_token, expected_type=_TOKEN_TYPE_ACCESS)
-                print("   ❌ Should reject type mismatch")
-            except JWTError as e:
-                if "type mismatch" in str(e).lower() or "Token type mismatch" in str(e):
-                    print("   ✅ Type mismatch rejected: access vs refresh")
-
-            # -- Test 5: Claims validation & security ---------------------
-            print("\n📌 Test 5: Claims validation & security checks")
-
-            # Token with missing required claims should fail decode
-            from jose import jwt
-            from app.auth.jwt_handler import _get_jwt_secret, _get_jwt_algorithm
-
-            # Create token with missing 'sub' claim
-            bad_payload = {
-                "email": "test@docmind.ai",
-                "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
-                "type": _TOKEN_TYPE_ACCESS,
-            }
-            bad_token = jwt.encode(
-                bad_payload,
-                _get_jwt_secret(),
-                algorithm=_get_jwt_algorithm(),
-            )
-
-            # decode_token should succeed (it doesn't validate claims, just signature+exp)
-            # But our app logic should check for required claims
-            payload = decode_token(bad_token, expected_type=_TOKEN_TYPE_ACCESS)
-            assert "sub" not in payload, "Bad token should be missing sub"
-            print("   ✅ decode_token: decodes signature-valid tokens (app validates claims)")
-
-            # Test wrong secret key fails
-            try:
-                jwt.decode(
-                    access_token,
-                    "wrong-secret-key",
-                    algorithms=[_get_jwt_algorithm()],
-                )
-                print("   ❌ Should reject wrong secret")
-            except JWTError:
-                print("   ✅ Wrong secret key rejected: JWTError")
-
-            # -- Test 6: Token metadata (jti, family_id) ------------------
-            print("\n📌 Test 6: Token metadata (jti for revocation, family_id for rotation)")
-
-            token1 = create_access_token(
-                user_id="user-123",
-                email="test@docmind.ai",
-                workspace_id="ws-456",
-                role="editor",
-                family_id="fam-xyz789",
-            )
-            payload1 = decode_token(token1)
-
-            token2 = create_access_token(
-                user_id="user-123",
-                email="test@docmind.ai",
-                workspace_id="ws-456",
-                role="editor",
-                family_id="fam-xyz789",  # Same family
-            )
-            payload2 = decode_token(token2)
-
-            # jti should be unique per token
-            assert payload1["jti"] != payload2["jti"], "jti should be unique per token"
-            # family_id should be preserved if provided
-            assert payload1["family_id"] == payload2["family_id"] == "fam-xyz789"
-
-            print(f"   ✅ jti unique: {payload1['jti'][:8]}... != {payload2['jti'][:8]}...")
-            print(f"   ✅ family_id preserved: {payload1['family_id']}")
-
-            # -- Test 7: Helper functions & config ------------------------
-            print("\n📌 Test 7: Helper functions & configuration")
-
-            from app.auth.jwt_handler import _get_jwt_secret, _get_jwt_algorithm
-
-            secret = _get_jwt_secret()
-            assert len(secret) >= 32, "JWT secret should be at least 32 chars for HS256"
-            print(f"   ✅ JWT secret: {len(secret)} chars (secure)")
-
-            algo = _get_jwt_algorithm()
-            assert algo in ["HS256", "HS384", "HS512"], "Should use HMAC-SHA algorithm"
-            print(f"   ✅ JWT algorithm: {algo}")
-
-            # -- Test 8: Error handling patterns -------------------------
-            print("\n📌 Test 8: Error handling (JWTError vs ValueError)")
-
-            # Invalid token format
-            try:
-                decode_token("not.a.valid.token")
-                print("   ❌ Should reject invalid format")
-            except JWTError:
-                print("   ✅ Invalid format rejected: JWTError")
-
-            # Missing expected type
-            try:
-                decode_token(access_token, expected_type="invalid_type")
-                print("   ❌ Should reject type mismatch")
-            except JWTError:
-                print("   ✅ Type mismatch rejected: JWTError")
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! JWT Handler module verified.")
-            print("\n💡 What we verified:")
-            print("   • Password hashing: bcrypt with 12 rounds ✅")
-            print("   • Access tokens: create/decode/verify with claims ✅")
-            print("   • Refresh tokens: longer TTL, family_id tracking ✅")
-            print("   • Expiration: expired tokens rejected ✅")
-            print("   • Security: secret key validation, algorithm safety ✅")
-            print("   • Metadata: jti for revocation, family_id for rotation ✅")
-            print("\n🔧 For integration tests:")
-            print("   • Test full auth flow: register -> login -> query")
-            print("   • Run: python -m app.api.routes.auth")
-            print("\n🔐 Security: JWT signed with HS256, secrets from env vars")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    # Run async tests
-    success = asyncio.run(run_tests())
-    sys.exit(0 if success else 1)

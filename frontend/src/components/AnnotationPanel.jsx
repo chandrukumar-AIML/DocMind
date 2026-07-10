@@ -109,12 +109,13 @@ export function AnnotationPanel({ sourceFile, workspaceId }) {
 
       <form className="panel-form" onSubmit={handleCreate}>
         <div style={{ display: "flex", gap: 6 }}>
-          <select className="input" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} style={{ flex: "0 0 120px" }}>
+          <select aria-label="Annotation type" className="input" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} style={{ flex: "0 0 120px" }}>
             {ANN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
-          <input className="input" style={{ flex: "0 0 60px" }} type="number" min="1" value={form.page_number} onChange={e => setForm(f => ({ ...f, page_number: e.target.value }))} placeholder="Page" />
+          <input aria-label="Page number" className="input" style={{ flex: "0 0 60px" }} type="number" min="1" value={form.page_number} onChange={e => setForm(f => ({ ...f, page_number: e.target.value }))} placeholder="Page" />
         </div>
         <textarea
+          aria-label="Annotation content"
           className="input"
           style={{ marginTop: 6, minHeight: 60, resize: "vertical" }}
           value={form.content}
@@ -151,8 +152,8 @@ export function AnnotationPanel({ sourceFile, workspaceId }) {
                 </div>
                 {!ann.resolved && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 4, marginLeft: 8 }}>
-                    <button className="btn-sm" onClick={() => handleResolve(ann.id)}>✓</button>
-                    <button className="btn-sm danger" onClick={() => handleDelete(ann.id)}>×</button>
+                    <button aria-label="Resolve annotation" className="btn-sm" onClick={() => handleResolve(ann.id)}>✓</button>
+                    <button aria-label="Delete annotation" className="btn-sm danger" onClick={() => handleDelete(ann.id)}>×</button>
                   </div>
                 )}
               </div>

@@ -1,7 +1,3 @@
-# backend/app/rag/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - Async-safe initialization
 """
 DocuMind AI - RAG (Retrieval-Augmented Generation) Module
 Provides core RAG pipeline components:

@@ -1,7 +1,3 @@
-# backend/app/observability/langsmith_config.py
-# DVMELTSS-FIX: M - Modular, S - Security, L - Logging
-# ASCALE-FIX: S - Separation, C - Coupling
-# ✅ FIXED: Proper cache key handling + input validation + safe SDK re-init
 
 from __future__ import annotations
 
@@ -26,7 +22,6 @@ _LANGSMITH_PROJECT: Final = "LANGCHAIN_PROJECT"
 _LANGSMITH_DATASET: Final = "LANGCHAIN_DATASET"
 
 
-# ✅ NEW: Input validation helper
 def _validate_metadata_inputs(
     source_file: Optional[str],
     document_type: Optional[str],
@@ -79,7 +74,6 @@ def configure_langsmith(correlation_id: Optional[str] = None) -> bool:
     if settings.langchain_dataset_name:
         os.environ.setdefault(_LANGSMITH_DATASET, settings.langchain_dataset_name)
 
-    # ✅ FIXED: Re-init LangSmith SDK to pick up new env vars
     try:
         from langsmith import Client
 
@@ -148,7 +142,6 @@ def get_run_metadata(
         # Return minimal safe metadata
         return {**_get_base_metadata(), "error": error}
 
-    # FIXED: Get base metadata (without correlation_id in cache)
     metadata = {**_get_base_metadata()}
 
     # Add correlation_id separately (not cached)
@@ -173,7 +166,6 @@ def get_run_metadata(
 
     # Merge extra metadata (user-provided overrides allowed)
     if extra:
-        # ✅ FIXED: Safe type conversion + PII scrubbing + truncate
         def _safe_str(v: Any, max_len: int = 500) -> str:
             if v is None:
                 return ""
@@ -215,7 +207,6 @@ def get_dataset_metadata(dataset_name: str, correlation_id: Optional[str] = None
 
     settings = get_settings()
 
-    # ✅ FIXED: Get base metadata without caching correlation_id
     base_meta = _get_base_metadata()
 
     return {
@@ -253,8 +244,4 @@ __all__ = [
     "get_langsmith_config_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

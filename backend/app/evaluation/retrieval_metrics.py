@@ -1,6 +1,3 @@
-# backend/app/evaluation/retrieval_metrics.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
-# ✅ FIXED: Proper async handling + input validation + safe aggregation
 
 from __future__ import annotations
 
@@ -52,7 +49,6 @@ class RetrievalResult:
     @property
     def precision_at_k(self) -> float:
         """Precision@K: fraction of retrieved docs that are relevant."""
-        # ✅ FIXED: Safe division
         if not self.retrieved_ids or self.k <= 0:
             return 0.0
         hits = sum(1 for cid in self.retrieved_ids[: self.k] if cid in self.relevant_ids)
@@ -61,7 +57,6 @@ class RetrievalResult:
     @property
     def recall_at_k(self) -> float:
         """Recall@K: fraction of relevant docs that were retrieved."""
-        # ✅ FIXED: Safe division
         if not self.relevant_ids:
             return 1.0
         hits = sum(1 for cid in self.retrieved_ids[: self.k] if cid in self.relevant_ids)
@@ -115,7 +110,6 @@ class RetrievalEvalSuite:
     @property
     def mean_precision_at_k(self) -> float:
         """Mean Precision@K across all queries."""
-        # ✅ FIXED: Safe mean calculation
         if not self.results:
             return 0.0
         return float(np.mean([r.precision_at_k for r in self.results]))
@@ -151,7 +145,6 @@ class RetrievalEvalSuite:
                 f"results not statistically reliable. Minimum recommended: {self.MIN_SAMPLES_FOR_VALID_EVAL}."
             )
 
-        # ✅ FIXED: Safe aggregation with fallback
         precision_values = [r.precision_at_k for r in self.results]
         recall_values = [r.recall_at_k for r in self.results]
         mrr_values = [r.reciprocal_rank for r in self.results]
@@ -201,7 +194,6 @@ class RetrievalEvalSuite:
         return orphaned
 
 
-# ✅ NEW: Input validation helper
 def _validate_eval_inputs(
     ground_truth: List[dict],
     retrieve_fn: Callable,
@@ -257,7 +249,6 @@ class RetrievalEvaluator:
                 relevant_ids = set(item.get("relevant_chunk_ids", []))
 
                 try:
-                    # ✅ FIXED: Check if retrieve_fn is async and handle accordingly
                     if inspect.iscoroutinefunction(retrieve_fn):
                         retrieved_docs = await asyncio.wait_for(
                             retrieve_fn(query=query, k=k),
@@ -311,7 +302,6 @@ class RetrievalEvaluator:
 
         tasks = [evaluate_query(item) for item in ground_truth]
 
-        # ✅ FIXED: Handle per-task exceptions without stopping all
         for coro in asyncio.as_completed(tasks):
             try:
                 result = await coro
@@ -354,8 +344,4 @@ __all__ = [
     "get_retrieval_metrics_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

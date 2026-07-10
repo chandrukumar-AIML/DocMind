@@ -1,6 +1,3 @@
-# backend/app/core/schema_utils.py
-# DVMELTSS-FIX: M - Modular, V - Validate, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
 """
 Shared Pydantic utilities for DocuMind AI request/response models.
 
@@ -216,8 +213,4 @@ __all__ = [
     "dataclass_to_pydantic",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

@@ -1,6 +1,3 @@
-# backend/app/tasks/priority.py
-# DVMELTSS-FIX: V - Validate, M - Modular, S - Security
-# ✅ FIXED: Input validation + immutable configs + safe instance returns
 
 from __future__ import annotations
 
@@ -41,7 +38,6 @@ class QueueConfig:
         return replace(self, **overrides)
 
 
-# ✅ FIXED: Use MappingProxyType for immutable tier configs
 _TIER_CONFIGS: Final = MappingProxyType(
     {
         "high": QueueConfig(queue="high_priority", priority=9),
@@ -51,7 +47,6 @@ _TIER_CONFIGS: Final = MappingProxyType(
 )
 
 
-# ✅ NEW: Workspace ID validation helper
 def _validate_workspace_id(workspace_id: str, corr_id: str = "priority") -> tuple[bool, str]:
     """Validate workspace_id format."""
     if not isinstance(workspace_id, str) or not workspace_id.strip():
@@ -144,8 +139,4 @@ def get_priority_metadata() -> dict[str, Any]:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["QueueConfig", "get_queue_config", "get_priority_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

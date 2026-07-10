@@ -1,6 +1,3 @@
-# backend/app/auth/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Logging/Metadata
-# ASCALE-FIX: S - Separation, C - Coupling, A - Async-safe startup
 
 """
 DocuMind AI - Authentication & Authorization Module

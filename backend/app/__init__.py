@@ -1,7 +1,3 @@
-# backend/app/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Logging/Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - Async-safe initialization
 """
 DocuMind AI — Multi-Domain Document Intelligence Platform
 

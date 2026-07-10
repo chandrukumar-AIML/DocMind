@@ -1,7 +1,3 @@
-# backend/app/core/versioning_utils.py
-# DVMELTSS-FIX: M - Modular, V - Validate, S - Security, A - Async
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - True async for diff operations
 """
 Shared utilities for document versioning module.
 
@@ -189,8 +185,4 @@ __all__ = [
     "validate_version_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

@@ -1,4 +1,3 @@
-# backend/app/core/audit_logger.py
 """
 Audit logger — records all security-relevant actions with workspace, user,
 IP, and request context. Fire-and-forget (never raises).
@@ -210,22 +209,3 @@ async def export_audit_csv(workspace_id: str) -> str:
         writer.writerow({k: str(v) if v is not None else "" for k, v in r.items()})
     return buf.getvalue()
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def _test():
-        print("Testing audit_logger…")
-        await ensure_audit_schema()
-        print("  Schema ensured.")
-        # Verify fire-and-forget doesn't raise
-        await log_event(
-            action=A_USER_LOGIN,
-            workspace_id="00000000-0000-0000-0000-000000000001",
-            user_id=None,
-            ip_address="127.0.0.1",
-        )
-        print("  Event logged (or silently suppressed).")
-        print("Done.")
-
-    asyncio.run(_test())

@@ -1,4 +1,3 @@
-# backend/app/core/annotation_store.py
 """Collaborative annotation store with PostgreSQL persistence."""
 
 from __future__ import annotations
@@ -176,20 +175,3 @@ async def delete_annotation(
         )
     return result.rowcount > 0
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def smoke():
-        print("Annotation store smoke test")
-        assert "highlight" in _VALID_TYPES
-        assert "comment" in _VALID_TYPES
-        assert "risk_flag" in _VALID_TYPES
-        try:
-            await create_annotation("ws", "test.pdf", "u1", "Alice", "invalid_type", "note", None, None)
-            assert False, "Should have raised"
-        except ValueError:
-            print("Invalid type rejection OK")
-        print("Annotation store checks passed")
-
-    asyncio.run(smoke())

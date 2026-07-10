@@ -1,8 +1,4 @@
 # backend/Dockerfile
-# DVMELTSS-FIX: S - Security, M - Modular, E - Error handling
-# ASCALE-FIX: L - Layered, S - Separation
-# BATMAN-FIX: M - Memory safety, A - Async-ready
-
 # ════════════════════════════════════════════════════════════════
 # Stage 1: Builder — Install deps + pre-download models
 # ════════════════════════════════════════════════════════════════
@@ -99,8 +95,10 @@ COPY --from=builder /opt/hf_models /opt/hf_models
 
 WORKDIR /app
 
-# Copy application code
+# Copy application code and migrations
 COPY app/ ./app/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./alembic.ini
 COPY __init__.py ./__init__.py
 
 # Create data directories with proper permissions
@@ -121,13 +119,7 @@ HEALTHCHECK \
     --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Production uvicorn command with SSE support
-CMD ["uvicorn", "app.main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "1", \
-     "--loop", "uvloop", \
-     "--http", "httptools", \
-     "--log-level", "info", \
-     "--timeout-keep-alive", "300", \
-     "--timeout-graceful-shutdown", "30"]
+COPY entrypoint.sh ./entrypoint.sh
+
+# Production: run migrations then start uvicorn
+CMD ["sh", "entrypoint.sh"]

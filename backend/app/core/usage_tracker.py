@@ -1,4 +1,3 @@
-# backend/app/core/usage_tracker.py
 """
 Usage tracker — logs workspace actions, enforces plan limits,
 provides aggregates for billing.
@@ -284,14 +283,3 @@ async def get_workspace_monthly_usage(workspace_id: str, month: str) -> dict[str
         )
         return dict(row) if row else {}
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def _test():
-        print("Testing usage_tracker…")
-        ok, msg = await check_doc_limit("00000000-0000-0000-0000-000000000000")
-        print(f"  Limit check: ok={ok} msg={msg}")
-        print("Done.")
-
-    asyncio.run(_test())

@@ -1,6 +1,3 @@
-# backend/app/api/routes/health.py
-# DVMELTSS-FIX: E/M/S + ASCALE-A/E + K8s best practices
-# ✅ FIXED: Proper async handling + input validation + safe Prometheus formatting
 
 from __future__ import annotations
 
@@ -21,7 +18,6 @@ from app.models import ErrorResponse
 logger = logging.getLogger(__name__)
 
 
-# [OK] FIXED: Replaced module-level get_settings() call with a lazy proxy.
 # Accessing settings.X now calls get_settings() at request time, not at import time,
 # preventing crashes when env vars are not configured during tests/CI.
 class _LazySettings:
@@ -76,7 +72,6 @@ async def _check_vector_store(request: Request) -> ComponentHealth:
                 error="VectorStoreManager not initialized",
             )
 
-        # ✅ FIXED: Proper async handling for property access
         async def _get_stats():
             # If stats is a simple property, access directly
             # If it does I/O, run in thread
@@ -137,7 +132,6 @@ async def _check_ocr_pipeline(request: Request) -> ComponentHealth:
                 )
             return ComponentHealth(status="error", error="OCR pipeline not initialized")
 
-        # ✅ FIXED: Safe attribute checks
         has_model = False
         try:
             has_model = (
@@ -171,7 +165,6 @@ async def _check_rag_chain(request: Request) -> ComponentHealth:
                 )
             return ComponentHealth(status="error", error="RAG chain not initialized")
 
-        # ✅ FIXED: Safe attribute checks
         try:
             if not hasattr(rag_chain, "llm") or rag_chain.llm is None:
                 return ComponentHealth(status="degraded", error="LLM client not available")
@@ -230,7 +223,6 @@ async def _check_cache(request: Request) -> ComponentHealth:
     start_ts = time.perf_counter()
 
     try:
-        # ✅ FIXED: Check Redis config BEFORE calling get_cache() to avoid unnecessary connection
         redis_url = getattr(settings, "redis_url", None)
         if not redis_url:
             logger.info("ℹ️ Redis not configured (optional) — skipping cache health check")
@@ -246,7 +238,6 @@ async def _check_cache(request: Request) -> ComponentHealth:
 
         cache = await get_cache()
 
-        # ✅ FIXED: Handle cache being None
         if cache is None:
             return ComponentHealth(
                 status="degraded",
@@ -454,7 +445,6 @@ async def readiness_probe(request: Request) -> JSONResponse:
         if store is None or ocr_pipeline is None or rag_chain is None:
             raise RuntimeError("Critical component not initialized")
 
-        # ✅ FIXED: Proper async handling for property access
         async def _check_store_stats():
             return store.stats
 
@@ -540,7 +530,6 @@ async def metrics_endpoint(request: Request) -> Response:
     try:
         from app.monitoring.metrics_collector import get_prometheus_metrics
 
-        # ✅ FIXED: Add timeout to metrics collection
         metrics_text = await asyncio.wait_for(
             asyncio.to_thread(
                 lambda: get_prometheus_metrics(
@@ -610,7 +599,6 @@ def _get_fallback_prometheus_metrics(
     """Generate basic Prometheus metrics when advanced collection fails."""
     import time
 
-    # ✅ FIXED: Determine if service is actually healthy for documind_ai_up metric
     # If we're generating fallback due to error, mark as degraded (0)
     health_status = 0 if error else 1
 
@@ -659,7 +647,6 @@ def _get_fallback_prometheus_metrics(
         )
 
     if error:
-        # ✅ FIXED: Proper escaping for Prometheus label format
         safe_error = error[:200].replace('"', '\\"').replace("\n", "\\n").replace("\r", "").replace("\\", "\\\\")
         lines.extend(
             [
@@ -686,8 +673,4 @@ def get_health_metadata() -> dict[str, Any]:
 
 __all__ = ["router", "get_health_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

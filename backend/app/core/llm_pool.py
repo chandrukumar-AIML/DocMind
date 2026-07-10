@@ -1,6 +1,3 @@
-# backend/app/core/llm_pool.py
-# DVMELTSS-FIX: M - Modular, S - Scalability, L - Logging
-# ASCALE-FIX: S - Separation, C - Coupling
 """
 Shared LLM instance pool for DocuMind AI agent system.
 
@@ -32,7 +29,6 @@ from langchain_core.language_models import BaseChatModel
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
-# FIXED: Removed module-level settings = get_settings() — calling get_settings() at import
 # time causes import-time crashes when env vars aren't set (common in tests/CI), and
 # produces a stale reference if settings change between calls. get_llm() now calls
 # get_settings() inline so LRU cache always uses current config.
@@ -76,7 +72,6 @@ def get_llm(
     Raises:
         RuntimeError: If no valid provider can be initialized.
     """
-    # FIXED: Call get_settings() inline — not at module level — so tests can mock env
     # vars before importing, and settings changes are always reflected
     _settings = get_settings()
 
@@ -291,151 +286,3 @@ __all__ = ["get_llm", "get_llm_for_workspace", "clear_llm_cache", "_recreate_llm
 # -- LOCAL TESTING ENTRY POINT (Run: python -m app.core.llm_pool) -------
 # ========================================================================
 
-if __name__ == "__main__":
-    import sys
-    from pathlib import Path
-    from unittest.mock import patch
-
-    # 🔧 ROBUST PATH SETUP
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if parent.name == "backend" and (parent / "requirements.txt").exists():
-            backend_root = parent
-            break
-    else:
-        backend_root = current_file.parents[2]
-
-    if str(backend_root) not in sys.path:
-        sys.path.insert(0, str(backend_root))
-
-    def run_tests():
-        print("🔍 Testing LLM Pool module (app/core/llm_pool.py)")
-        print("=" * 70)
-
-        try:
-            from app.core.llm_pool import (
-                get_llm,
-                clear_llm_cache,
-                _recreate_llm_for_test,
-                _get_mock_llm,
-            )
-            from langchain_core.language_models import BaseChatModel
-            import inspect
-
-            # -- Test 1: Module structure & helpers ---------------------
-            print("\n📌 Test 1: Module structure & helpers")
-
-            assert callable(get_llm)
-            assert callable(clear_llm_cache)
-            assert callable(_recreate_llm_for_test)
-            assert callable(_get_mock_llm)
-            print("   ✅ All public functions present")
-
-            assert not inspect.iscoroutinefunction(get_llm)
-            print("   ✅ get_llm: sync function (correct for LRU cache)")
-
-            # -- Test 2: Mock LLM helper -------------------------------
-            print("\n📌 Test 2: _get_mock_llm (offline development)")
-
-            mock_llm = _get_mock_llm()
-            assert isinstance(mock_llm, BaseChatModel)
-            assert hasattr(mock_llm, "responses")
-            assert len(mock_llm.responses) > 0
-            print("   ✅ _get_mock_llm: returns BaseChatModel with mock responses")
-
-            # -- Test 3: LRU cache behavior ----------------------------
-            print("\n📌 Test 3: get_llm LRU cache (maxsize=4)")
-
-            clear_llm_cache()
-
-            with patch("app.core.llm_pool.get_settings") as mock_settings:
-                mock_settings.return_value.llm_provider = "mock"
-                mock_settings.return_value.openai_api_key = None
-
-                llm1 = get_llm(streaming=False)
-                llm2 = get_llm(streaming=False)
-                assert llm1 is llm2
-                print("   ✅ LRU cache: same args -> same instance")
-
-                llm3 = get_llm(streaming=True)
-                assert llm1 is not llm3
-                print("   ✅ LRU cache: different args -> new instance")
-
-                cache_info = get_llm.cache_info()
-                assert cache_info.currsize >= 1
-                print(f"   ✅ Cache info: currsize={cache_info.currsize}, maxsize={cache_info.maxsize}")
-
-            # -- Test 4: Return type verification ----------------------
-            print("\n📌 Test 4: Return type (always BaseChatModel)")
-
-            clear_llm_cache()
-
-            # Test with mock provider (guaranteed to work)
-            with patch("app.core.llm_pool.get_settings") as mock_settings:
-                mock_settings.return_value.llm_provider = "mock"
-                mock_settings.return_value.openai_api_key = None
-
-                llm = get_llm(streaming=False)
-                assert isinstance(llm, BaseChatModel)
-                print("   ✅ Return type: BaseChatModel (mock provider)")
-
-            # Test fallback when no provider is available
-            clear_llm_cache()
-            with patch("app.core.llm_pool.get_settings") as mock_settings:
-                mock_settings.return_value.llm_provider = "openai"
-                mock_settings.return_value.openai_api_key = None  # No API key
-
-                llm = get_llm(streaming=False)
-                assert isinstance(llm, BaseChatModel)
-                assert hasattr(llm, "responses")  # FakeListChatModel attribute
-                print("   ✅ Fallback: returns BaseChatModel when no provider available")
-
-            # -- Test 5: Cache clearing & test helper ------------------
-            print("\n📌 Test 5: clear_llm_cache & _recreate_llm_for_test")
-
-            with patch("app.core.llm_pool.get_settings") as mock_settings:
-                mock_settings.return_value.llm_provider = "mock"
-                mock_settings.return_value.openai_api_key = None
-
-                _ = get_llm(streaming=False)
-                _ = get_llm(streaming=True)
-
-                cache_info_before = get_llm.cache_info()
-                clear_llm_cache()
-                cache_info_after = get_llm.cache_info()
-
-                assert cache_info_after.currsize == 0
-                print("   ✅ clear_llm_cache: cleared LRU cache")
-
-            # ✅ FIX: _recreate_llm_for_test only accepts streaming and provider
-            with patch("app.core.llm_pool.get_settings") as mock_settings:
-                mock_settings.return_value.llm_provider = "mock"
-
-                # Use different streaming values to get different instances
-                llm1 = _recreate_llm_for_test(streaming=False, provider="mock")
-                llm2 = _recreate_llm_for_test(streaming=True, provider="mock")
-                assert llm1 is not llm2
-                print("   ✅ _recreate_llm_for_test: bypasses cache for testing")
-
-            print("\n" + "=" * 70)
-            print("✅ ALL TESTS PASSED! LLM Pool module verified.")
-            print("\n💡 What we verified:")
-            print("   • Structure: get_llm, clear_llm_cache, helpers present ✅")
-            print("   • Mock LLM: _get_mock_llm returns BaseChatModel ✅")
-            print("   • Caching: LRU cache with maxsize=4 works correctly ✅")
-            print("   • Return type: Always returns BaseChatModel instance ✅")
-            print("   • Fallback: Graceful degradation to mock LLM when no provider ✅")
-            print("   • Testing: clear_llm_cache & _recreate_llm_for_test ✅")
-            print("\n🔐 Production: Centralized LLM pooling with graceful degradation ready")
-            return True
-
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    # Run tests (sync, no async needed for this module)
-    success = run_tests()
-    sys.exit(0 if success else 1)

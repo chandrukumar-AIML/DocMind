@@ -1,5 +1,3 @@
-# backend/app/domains/logistics/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
 
 """
 Logistics Domain Module: Invoicing, PO matching, and anomaly detection.

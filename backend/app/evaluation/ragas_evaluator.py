@@ -1,8 +1,3 @@
-# backend/app/evaluation/ragas_evaluator.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async, M - Modular
-# BATMAN-FIX: A - True async, T - Concurrent execution
-# ASCALE-FIX: L - Layered, E - Error propagation
-# ✅ FIXED: Proper async embedding handling + input validation + per-metric error logging
 
 from __future__ import annotations
 
@@ -24,7 +19,6 @@ from app.core.pii_utils import scrub_pii_for_evaluation
 
 logger = logging.getLogger(__name__)
 
-# ✅ NEW: Per-metric timeout (seconds)
 _METRIC_TIMEOUT: Final = 60.0
 
 
@@ -166,7 +160,6 @@ class RAGAsEvaluator:
         eval_model: str = "gpt-4o",
     ):
         settings = get_settings()
-        # FIXED: Use centralized LLM pool instead of creating new client
         self.llm = get_llm(streaming=False, model_override=eval_model, temperature_override=0.0)
         self.model = model
         self.eval_model = eval_model
@@ -178,7 +171,6 @@ class RAGAsEvaluator:
             cache_dir=".cache/eval_embeddings",
         )
 
-    # ✅ NEW: Sample validation helper
     def _validate_sample(self, sample: RAGAsSample, corr_id: str) -> tuple[bool, str]:
         """Validate sample inputs before evaluation."""
         if not isinstance(sample.question, str) or not sample.question.strip():
@@ -269,7 +261,6 @@ class RAGAsEvaluator:
                 try:
                     return await self.evaluate_sample(s, correlation_id=corr_id)
                 except Exception as e:
-                    # ✅ FIXED: Handle per-task exceptions without stopping all
                     logger.error(f"[{corr_id}] Failed to evaluate sample: {e}")
                     s.error = str(e)
                     return s
@@ -307,7 +298,6 @@ class RAGAsEvaluator:
         if not sample.answer or not sample.contexts:
             return 0.0
 
-        # FIXED: Use centralized PII scrubbing
         context_text = "\n\n".join(scrub_pii_for_evaluation(c[:300], domain="all") for c in sample.contexts[:5])
         scrubbed_answer = scrub_pii_for_evaluation(sample.answer[:800], domain="all")
 
@@ -329,7 +319,6 @@ Return ONLY valid JSON:
 }}"""
 
         try:
-            # FIXED: Use centralized async LLM call with retry
             data = await call_llm_with_retry(
                 prompt=prompt,
                 model=self.eval_model,
@@ -348,7 +337,6 @@ Return ONLY valid JSON:
             supported = int(data.get("supported_count", 0))
             sample.faithfulness_claims = data.get("claims", [])
 
-            # ✅ FIXED: Safe division
             if total == 0:
                 return 1.0
             return min(supported / total, 1.0)
@@ -372,7 +360,6 @@ Answer: {scrubbed_answer}
 Return ONLY valid JSON: {{"questions": ["q1", "q2", "q3"]}}"""
 
         try:
-            # FIXED: Use centralized async LLM call
             data = await call_llm_with_retry(
                 prompt=prompt,
                 model=self.eval_model,
@@ -394,7 +381,6 @@ Return ONLY valid JSON: {{"questions": ["q1", "q2", "q3"]}}"""
             # Embed original question and generated questions
             all_texts = [sample.question] + gen_questions
 
-            # ✅ FIXED: Check if embed_documents is async and handle accordingly
             if inspect.iscoroutinefunction(self._embedder.embed_documents):
                 embeddings = await self._embedder.embed_documents(all_texts)
             else:
@@ -472,7 +458,6 @@ Return ONLY valid JSON:
             useful = int(data.get("useful_count", 0))
             sample.precision_verdicts = data.get("verdicts", [])
 
-            # ✅ FIXED: Safe division
             if total == 0:
                 return 1.0
             return min(useful / total, 1.0)
@@ -538,7 +523,6 @@ Return ONLY valid JSON:
             attributed = int(data.get("attributed_count", 0))
             sample.recall_attributions = data.get("attributions", [])
 
-            # ✅ FIXED: Safe division
             if total == 0:
                 return 1.0
             return min(attributed / total, 1.0)
@@ -577,8 +561,4 @@ __all__ = [
     "get_evaluator_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

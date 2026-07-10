@@ -1,6 +1,3 @@
-# backend/app/api/routes/evaluation.py
-# DVMELTSS-FIX: E/M/S + ASCALE-A/E + BATMAN-M
-# ✅ FIXED: Proper workspace scoping + input validation + safe async handling + timeout
 
 from __future__ import annotations
 
@@ -25,7 +22,6 @@ from app.monitoring.metrics_collector import record_evaluation_run
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/evaluation", tags=["evaluation"])
 
-# ✅ NEW: Evaluation operation timeout (seconds)
 _EVAL_TIMEOUT: Final = 120.0
 
 
@@ -86,7 +82,6 @@ class DatasetCreateRequest(BaseModel):
     workspace_id: Optional[str] = Field(default=None, max_length=64)
 
 
-# ✅ NEW: Input validation helper
 def _validate_evaluation_inputs(
     question: Optional[str],
     answer: Optional[str],
@@ -117,12 +112,10 @@ async def _build_rag_fn(
     correlation_id: str,
 ) -> Callable[[str], Any]:
     """Build RAG function for evaluation pipeline with proper workspace scoping."""
-    # ✅ FIXED: Lazy import to avoid circular deps + proper workspace scoping
     from app.agent.agent_chain import AgentRAGChain
 
     async def rag_fn(question: str) -> tuple[str, list[str]]:
         try:
-            # ✅ FIXED: Use workspace_id from closure, not global state
             agent = AgentRAGChain(workspace_id=workspace_id)
             result = await asyncio.wait_for(
                 agent.query(
@@ -195,7 +188,6 @@ async def evaluate_sample(
     start_ts = time.perf_counter()
 
     try:
-        # ✅ FIXED: Add timeout to evaluation
         result = await asyncio.wait_for(
             evaluator.evaluate_sample(sample, correlation_id=corr_id),
             timeout=_EVAL_TIMEOUT,
@@ -270,7 +262,6 @@ async def run_evaluation_pipeline(
     rag_fn = await _build_rag_fn(workspace_id, corr_id)
 
     try:
-        # ✅ FIXED: Add timeout to pipeline run
         run = await asyncio.wait_for(
             pipeline.run(
                 rag_fn=rag_fn,
@@ -281,7 +272,6 @@ async def run_evaluation_pipeline(
 
         summary = run.summary()
 
-        # ✅ FIXED: Safe background task with exception handling
         def _safe_send_alerts():
             try:
                 if run.alerts:
@@ -502,8 +492,4 @@ def get_evaluation_metadata() -> dict[str, Any]:
 
 __all__ = ["router", "get_evaluation_metadata"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

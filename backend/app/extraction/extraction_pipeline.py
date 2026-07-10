@@ -1,7 +1,3 @@
-# backend/app/extraction/extraction_pipeline.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, A - Async orchestration
-# BATMAN-FIX: A - True async, M - Memory safe, T - Concurrency control
-# ✅ FIXED: Pylance-compatible type hints + proper syntax
 
 from __future__ import annotations
 
@@ -458,15 +454,10 @@ def get_extraction_metadata() -> dict[str, Any]:
 
 
 # DVMELTSS-M: Explicit module exports
-# ✅ FIXED: Properly closed list (no stray brace)
 __all__ = [
     "ExtractionPipeline",
     "ExtractionBundle",
     "get_extraction_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

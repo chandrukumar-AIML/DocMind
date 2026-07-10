@@ -1,5 +1,3 @@
-# backend/app/domains/legal/risk_scorer.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, M - Modular, S - Scalability
 
 from __future__ import annotations
 
@@ -7,7 +5,6 @@ import logging
 from dataclasses import dataclass
 from typing import Final, Optional
 
-# FIXED: Move numpy import to module level
 import numpy as np
 
 # DVMELTSS-M: Import centralized utilities
@@ -100,7 +97,6 @@ class RiskScorer:
     Evaluates each clause independently then aggregates to document level.
     """
 
-    # FIXED: Move weights to class level constant
     _WEIGHTS: Final = {
         "liability_cap": 2.0,
         "indemnification": 2.0,
@@ -111,7 +107,6 @@ class RiskScorer:
     }
 
     def __init__(self, model: str = "gpt-4o"):
-        # FIXED: Use centralized LLM pool
         self.llm = get_domain_llm(streaming=False, model_override=model)
         self._llm_retry = retry_async(
             config=RetryConfig(
@@ -138,7 +133,6 @@ class RiskScorer:
         )
 
         try:
-            # FIXED: Apply retry + centralized JSON parsing
             response = await self._llm_retry(lambda: self.llm.ainvoke([{"role": "user", "content": prompt}]))
             data = safe_parse_llm_json(response.content, default={})
 
@@ -280,8 +274,4 @@ Be concise and use plain English. Focus on business impact.""",
 # DVMELTSS-M: Explicit module exports
 __all__ = ["RiskScorer", "ClauseRiskReport", "DocumentRiskReport"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

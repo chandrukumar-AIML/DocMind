@@ -1,6 +1,3 @@
-# backend/app/core/pii_utils.py
-# DVMELTSS-FIX: S - Security, V - Validate, M - Modular
-# OWASP-FIX: 1 - PII protection, 9 - Safe logging
 # HIPAA-FIX: Redact before external calls
 """
 Domain-aware PII scrubbing utilities for evaluation and logging.
@@ -191,8 +188,4 @@ def is_pii_present(text: str, domain: DomainType = "all") -> bool:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["scrub_pii_for_evaluation", "is_pii_present"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

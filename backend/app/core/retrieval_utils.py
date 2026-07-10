@@ -1,7 +1,3 @@
-# backend/app/core/retrieval_utils.py
-# DVMELTSS-FIX: M - Modular, V - Validate, A - Async
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - True async, M - Memory safety
 """
 Shared utilities for retrieval modules.
 
@@ -156,8 +152,4 @@ __all__ = [
     "validate_top_k",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

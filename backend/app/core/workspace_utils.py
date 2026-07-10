@@ -1,6 +1,3 @@
-# backend/app/core/workspace_utils.py
-# DVMELTSS-FIX: M - Modular, V - Validate, S - Security
-# ASCALE-FIX: S - Separation, C - Coupling
 """
 Shared utilities for workspace management in DocuMind AI.
 
@@ -76,7 +73,6 @@ def get_bm25_index_path(workspace_id: str, persist_dir: Optional[str] = None) ->
     """
     safe_id = validate_workspace_id(workspace_id)
     settings = get_settings()
-    # FIXED: Older Settings builds expose data_dir/bm25_cache_path but not cache_dir.
     base_dir = Path(persist_dir) if persist_dir else Path(getattr(settings, "cache_dir", None) or ".cache")
     return base_dir / "bm25" / f"bm25_{safe_id}.pkl"
 
@@ -85,7 +81,6 @@ def get_embeddings_cache_path(workspace_id: str, persist_dir: Optional[str] = No
     """Generate embeddings cache directory path for workspace."""
     safe_id = validate_workspace_id(workspace_id)
     settings = get_settings()
-    # FIXED: Older Settings builds expose data_dir/bm25_cache_path but not cache_dir.
     base_dir = Path(persist_dir) if persist_dir else Path(getattr(settings, "cache_dir", None) or ".cache")
     return base_dir / "embeddings" / safe_id
 
@@ -123,8 +118,4 @@ __all__ = [
     "generate_workspace_correlation_id",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

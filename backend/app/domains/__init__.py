@@ -1,6 +1,3 @@
-# backend/app/domains/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
 
 """
 DocuMind AI - Domain Specific Modules

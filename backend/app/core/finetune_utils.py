@@ -1,7 +1,3 @@
-# backend/app/core/finetune_utils.py
-# DVMELTSS-FIX: M - Modular, S - Security, A - Async
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - True async for ML tasks
 """
 Shared utilities for fine-tuning modules.
 
@@ -23,7 +19,6 @@ from pathlib import Path
 from typing import Final, Callable, Any
 
 
-# ✅ FIXED: Added missing import for generate_correlation_id
 from app.core.ids import generate_correlation_id
 
 logger = logging.getLogger(__name__)
@@ -151,7 +146,6 @@ async def hf_api_with_retry(
 
 def generate_finetune_correlation_id(prefix: str = "finetune") -> str:
     """Generate correlation ID for fine-tuning operations."""
-    # ✅ FIXED: Now generate_correlation_id is imported and defined
     return f"{prefix}_{generate_correlation_id()}"
 
 
@@ -172,8 +166,4 @@ __all__ = [
     "validate_domain",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

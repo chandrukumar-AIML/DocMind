@@ -1,4 +1,3 @@
-# backend/app/ocr/ocr_with_fallback.py
 """
 OCR with automatic fallback chain:
   1. PaddleOCR (local, free, primary)

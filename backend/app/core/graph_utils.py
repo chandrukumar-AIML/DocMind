@@ -1,7 +1,3 @@
-# backend/app/core/graph_utils.py
-# DVMELTSS-FIX: M - Modular, S - Security, A - Async
-# ASCALE-FIX: S - Separation, C - Coupling
-# OWASP-FIX: 9 - Cypher injection prevention
 """
 Shared utilities for graph modules (Neo4j, Cypher, extraction).
 
@@ -21,7 +17,6 @@ import re
 from typing import Final
 
 
-# ✅ FIXED: Added missing import for generate_correlation_id
 from app.core.ids import generate_correlation_id
 
 # DVMELTSS-S: Valid graph schema elements
@@ -99,7 +94,6 @@ def contains_dangerous_cypher(cypher: str) -> bool:
 
 def generate_graph_correlation_id(prefix: str = "graph") -> str:
     """Generate correlation ID for graph operations."""
-    # ✅ FIXED: Now generate_correlation_id is imported and defined
     return f"{prefix}_{generate_correlation_id()}"
 
 
@@ -118,8 +112,4 @@ __all__ = [
     "escape_graph_prompt",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

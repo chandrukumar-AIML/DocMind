@@ -1,7 +1,3 @@
-# backend/app/evaluation/text_utils.py
-# DVMELTSS-FIX: V - Validate, M - Modular, T - Time complexity
-# ASCALE-FIX: S - Separation
-# ✅ FIXED: None handling + regex safety + input validation
 
 from __future__ import annotations
 
@@ -35,7 +31,6 @@ def levenshtein_distance(seq1: SequenceType, seq2: SequenceType) -> int:
         >>> levenshtein_distance(["hello", "world"], ["hello", "there"])
         1
     """
-    # ✅ FIXED: Handle None inputs
     if seq1 is None:
         return len(seq2) if seq2 is not None else 0
     if seq2 is None:
@@ -46,7 +41,6 @@ def levenshtein_distance(seq1: SequenceType, seq2: SequenceType) -> int:
     if not seq2:
         return len(seq1)
 
-    # FIXED: Early exit for exact match
     if seq1 == seq2:
         return 0
 
@@ -94,11 +88,9 @@ def normalize_text_for_ocr(text: str) -> str:
         >>> normalize_text_for_ocr("  Hello\\u200b  World  ")
         'hello world'
     """
-    # ✅ FIXED: Handle None/empty early
     if not text:
         return ""
 
-    # ✅ FIXED: Early return for very long text to avoid regex overhead
     if len(text) > 1_000_000:  # 1MB limit
         # Just lowercase and strip for huge texts
         return text.lower().strip()
@@ -145,7 +137,6 @@ def tokenize_for_wer(text: str) -> list[str]:
         if re.fullmatch(r"[^\w\s]+", token, re.UNICODE):
             result.append(token)
             continue
-        # ✅ FIXED: Use non-backtracking regex pattern
         # Original pattern could cause catastrophic backtracking on malformed input
         cleaned = re.findall(r"[\w']+(?:[-'][\w']+)*|[^\w\s]", token, re.UNICODE)
         result.extend([t for t in cleaned if t.strip()])
@@ -174,7 +165,6 @@ def compute_exact_match(pred: str, gt: str, normalize: bool = True) -> bool:
         >>> compute_exact_match("Hello", "World", normalize=False)
         False
     """
-    # ✅ FIXED: Handle None inputs safely
     if pred is None and gt is None:
         return True
     if pred is None or gt is None:
@@ -204,7 +194,6 @@ def compute_f1_from_counts(tp: int, fp: int, fn: int) -> float:
         >>> compute_f1_from_counts(0, 0, 0)
         0.0
     """
-    # ✅ FIXED: Validate inputs are non-negative
     if tp < 0 or fp < 0 or fn < 0:
         raise ValueError("tp, fp, and fn must be non-negative integers")
 
@@ -241,8 +230,4 @@ __all__ = [
     "get_text_utils_metadata",
 ]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

@@ -1,6 +1,3 @@
-# backend/app/finetuning/embedding_updater.py
-# DVMELTSS-FIX: V - Validate, E - Error handling, S - Security, A - Async
-# BATMAN-FIX: A - True async, M - Memory safety, T - Batch processing
 # ACID-INDEX: E - Error handling (backup before destructive ops)
 
 from __future__ import annotations
@@ -205,7 +202,6 @@ class EmbeddingUpdater:
             # Validate model path
             safe_path = self._validate_model_path(model_path)
 
-            # FIXED: Use centralized safe model loader
             logger.info(f"[{corr_id}] Loading fine-tuned model: {safe_path}")
             ft_model = await load_model_safe(safe_path, max_dim=_MAX_EMBEDDING_DIM)
             ft_dim = ft_model.get_sentence_embedding_dimension()
@@ -308,7 +304,6 @@ class EmbeddingUpdater:
             store.faiss._rebuild_from_chroma()
             logger.info(f"[{corr_id}] FAISS rebuilt.")
 
-            # FIXED: frozen=True dataclass requires dataclasses.replace() instead of mutation
             result = dataclasses.replace(
                 result,
                 chunks_processed=processed,
@@ -317,15 +312,12 @@ class EmbeddingUpdater:
 
         except Exception as e:
             logger.error(f"[{corr_id}] Re-embedding failed: {e}", exc_info=True)
-            # FIXED: frozen dataclass — use replace()
             result = dataclasses.replace(result, error=str(e))
             # Optional: restore from backup on failure
             # self._restore_from_backup(backup_path)
 
-        # FIXED: frozen dataclass — use replace()
         result = dataclasses.replace(result, duration_seconds=time.perf_counter() - start_time)
 
-        # FIXED: Log re-embedding metrics to MLflow (was missing entirely)
         try:
             from app.observability.mlflow_logger import MLflowLogger
 
@@ -384,8 +376,4 @@ class EmbeddingUpdater:
 # DVMELTSS-M: Explicit module exports
 __all__ = ["EmbeddingUpdater", "ReembedResult"]
 # Local smoke test entry point. Run: python -m
-if __name__ == "__main__":
-    import sys
-    from app.core.module_smoke import run_module_smoke
 
-    run_module_smoke(sys.modules[__name__], __file__)

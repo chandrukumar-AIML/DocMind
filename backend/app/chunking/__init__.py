@@ -1,8 +1,3 @@
-# backend/app/chunking/__init__.py
-# DVMELTSS-FIX: M - Modular, T - Testing, L - Logging/Metadata
-# ASCALE-FIX: S - Separation, C - Coupling
-# BATMAN-FIX: A - Async-safe initialization
-# ✅ FINAL FIX: Clean lazy imports + correct singleton + test-safe reset
 
 """
 DocuMind AI - Document Chunking Module
