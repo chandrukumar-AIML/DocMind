@@ -1,0 +1,9 @@
+[bandit]
+targets = app
+recursive = true
+skips = B101,B601
+# B101 — assert statements are used in test helpers and type-narrowing guards
+# B601 — paramiko shell=True; not used here but triggered by subprocess patterns in scripts
+severity = medium
+confidence = medium
+exclude_dirs = app/tests,alembic

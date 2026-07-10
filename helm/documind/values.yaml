@@ -28,10 +28,11 @@ backend:
     OCR_USE_GPU: "false"
   envSecret: documind-backend-secret   # must contain DATABASE_URL, JWT_SECRET_KEY, OPENAI_API_KEY, etc.
   autoscaling:
-    enabled: false
+    enabled: true
     minReplicas: 2
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
   persistence:
     enabled: true
     size: 10Gi
@@ -72,6 +73,11 @@ celery:
       memory: "4Gi"
   queues: "high_priority,default,bulk"
   concurrency: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 75
 
 # ── Ingress ────────────────────────────────────────────────────────────────
 ingress:

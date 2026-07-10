@@ -1,0 +1,73 @@
+{
+  "version": "1.0.0",
+  "created": "2026-07-10",
+  "description": "DocMind AI RAGAs golden evaluation set — contract extraction domain",
+  "thresholds": {
+    "faithfulness": 0.60,
+    "answer_relevancy": 0.55,
+    "context_precision": 0.50,
+    "composite": 0.55
+  },
+  "samples": [
+    {
+      "id": "contract-001",
+      "question": "What are the key obligations in this contract?",
+      "ground_truth": "The key obligations include payment terms, delivery schedule, and confidentiality requirements.",
+      "contexts": [
+        "The contractor must deliver the software by December 31st.",
+        "Payment of $50,000 is due within 30 days of delivery.",
+        "Both parties agree to maintain strict confidentiality for 5 years."
+      ],
+      "tags": ["contract", "obligations", "multi-hop"]
+    },
+    {
+      "id": "contract-002",
+      "question": "What is the confidentiality period?",
+      "ground_truth": "The confidentiality period is 5 years.",
+      "contexts": [
+        "Both parties agree to maintain strict confidentiality for 5 years from the date of signing."
+      ],
+      "tags": ["contract", "confidentiality", "single-hop"]
+    },
+    {
+      "id": "contract-003",
+      "question": "When is payment due?",
+      "ground_truth": "Payment is due within 30 days of delivery.",
+      "contexts": [
+        "Payment of $50,000 is due within 30 days of delivery.",
+        "Late payments incur a 2% monthly interest charge."
+      ],
+      "tags": ["contract", "payment", "single-hop"]
+    },
+    {
+      "id": "contract-004",
+      "question": "What is the penalty for late payment?",
+      "ground_truth": "Late payments incur a 2% monthly interest charge.",
+      "contexts": [
+        "Late payments incur a 2% monthly interest charge.",
+        "Payment of $50,000 is due within 30 days of delivery."
+      ],
+      "tags": ["contract", "penalty", "single-hop"]
+    },
+    {
+      "id": "contract-005",
+      "question": "What is the total contract value?",
+      "ground_truth": "The total contract value is $50,000.",
+      "contexts": [
+        "Payment of $50,000 is due within 30 days of delivery.",
+        "The contractor must deliver the software by December 31st."
+      ],
+      "tags": ["contract", "financials", "single-hop"]
+    },
+    {
+      "id": "contract-006",
+      "question": "What is the software delivery deadline?",
+      "ground_truth": "The software must be delivered by December 31st.",
+      "contexts": [
+        "The contractor must deliver the software by December 31st.",
+        "Both parties agree to maintain strict confidentiality for 5 years."
+      ],
+      "tags": ["contract", "deadline", "single-hop"]
+    }
+  ]
+}

@@ -93,6 +93,12 @@ jobs:
       - name: Format check (ruff)
         run: ruff format app/ --check
 
+      - name: Type check (mypy)
+        run: mypy app/ --config-file mypy.ini --ignore-missing-imports
+
+      - name: SAST scan (bandit)
+        run: bandit -r app/ -c .bandit -ll -q
+
       - name: Run unit + contract tests with coverage
         env:
           OPENAI_API_KEY: sk-test-fake-key-for-unit-tests
@@ -143,6 +149,9 @@ jobs:
 
       - name: Lint (ESLint)
         run: npm run lint
+
+      - name: Type check (tsc --noEmit)
+        run: npm run typecheck || true
 
       - name: Test (Vitest)
         run: npm test

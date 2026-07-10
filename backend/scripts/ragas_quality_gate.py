@@ -215,14 +215,27 @@ def main() -> int:
     parser.add_argument("--output", help="Write scores JSON to this file")
     args = parser.parse_args()
 
-    # Load dataset
+    # Load dataset — priority: --dataset arg > registry > built-in
     if args.dataset and Path(args.dataset).exists():
         with open(args.dataset) as f:
-            dataset = json.load(f)
+            raw = json.load(f)
+        dataset = raw.get("samples", raw) if isinstance(raw, dict) else raw
         logger.info(f"Loaded {len(dataset)} samples from {args.dataset}")
     else:
-        dataset = BUILTIN_GOLDEN_SET
-        logger.info(f"Using built-in golden set ({len(dataset)} samples)")
+        registry_path = Path(__file__).parent.parent / "evaluation" / "dataset_registry.json"
+        if registry_path.exists():
+            with open(registry_path) as f:
+                registry = json.load(f)
+            current_file = registry_path.parent / registry["current"]
+            with open(current_file) as f:
+                golden = json.load(f)
+            dataset = golden["samples"]
+            logger.info(
+                f"Loaded {len(dataset)} samples from registry v{golden['version']} ({current_file.name})"
+            )
+        else:
+            dataset = BUILTIN_GOLDEN_SET
+            logger.info(f"Using built-in golden set ({len(dataset)} samples)")
 
     # Run evaluation
     scores = asyncio.run(run_gate(args.endpoint, dataset))

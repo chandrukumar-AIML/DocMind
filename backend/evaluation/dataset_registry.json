@@ -1,0 +1,14 @@
+{
+  "current": "golden_set_v1.json",
+  "versions": [
+    {
+      "version": "1.0.0",
+      "file": "golden_set_v1.json",
+      "date": "2026-07-10",
+      "samples": 6,
+      "domain": "contract-extraction",
+      "changelog": "Initial golden set — contract domain: obligations, payment, confidentiality, deadlines"
+    }
+  ],
+  "retired": []
+}
