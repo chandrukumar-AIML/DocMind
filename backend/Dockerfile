@@ -42,7 +42,15 @@ RUN pip install -r requirements.txt && \
 
 # Explicit install of critical runtime tools in a separate layer so they are
 # never silently absent due to a stale cache on the requirements layer above.
-RUN pip install "alembic>=1.13.0,<2.0.0" "uvicorn[standard]>=0.29.0,<0.30.0" --upgrade
+RUN pip install \
+    "alembic>=1.13.0,<2.0.0" \
+    "uvicorn[standard]>=0.29.0,<0.30.0" \
+    "pydantic>=2.7.0,<3.0.0" \
+    "pydantic-settings>=2.2.0,<3.0.0" \
+    "sqlalchemy>=2.0.30,<3.0.0" \
+    "asyncpg>=0.29.0,<0.30.0" \
+    "python-jose[cryptography]>=3.3.0,<4.0.0" \
+    --upgrade
 
 # Skip PaddleOCR model pre-download at build time — Render's build servers
 # lack AVX2 support required by PaddlePaddle 2.6.2, causing a SIGSEGV (exit 139).
