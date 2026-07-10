@@ -40,6 +40,10 @@ RUN pip install -r requirements.txt && \
     pip uninstall -y multipart || true && \
     pip install "python-multipart>=0.0.9,<0.1.0" --force-reinstall
 
+# Explicit install of critical runtime tools in a separate layer so they are
+# never silently absent due to a stale cache on the requirements layer above.
+RUN pip install "alembic>=1.13.0,<2.0.0" "uvicorn[standard]>=0.29.0,<0.30.0" --upgrade
+
 # Skip PaddleOCR model pre-download at build time — Render's build servers
 # lack AVX2 support required by PaddlePaddle 2.6.2, causing a SIGSEGV (exit 139).
 # Models are downloaded on first OCR request at runtime from /data (persistent disk).

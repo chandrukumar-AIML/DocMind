@@ -1,6 +1,6 @@
 # ═══════════════════════════════════════════════════════════════
 # DOCUMIND AI — WINDOWS-SAFE + CONFLICT-FREE + PRODUCTION READY
-# Generated: April 2026 — Fresh Start Edition
+# Generated: April 2026 — Fresh Start Edition (cache-bust: 2026-07-10)
 # ═══════════════════════════════════════════════════════════════
 #
 # RESOLVES:
