@@ -1,14 +1,22 @@
 import { useState, useCallback } from "react";
 import { api } from "../api/client";
 
-/**
- * Fetches a 2-3 sentence brief for the selected document via RAG query.
- * Shown as a banner after upload or document selection.
- */
-export function useDocBrief() {
-  const [docBrief, setDocBrief] = useState(null);
+interface DocBrief {
+  file: string;
+  summary: string | null;
+  loading: boolean;
+}
 
-  const triggerDocBrief = useCallback(async (sourceFile, workspaceId) => {
+interface UseDocBriefReturn {
+  docBrief: DocBrief | null;
+  triggerDocBrief: (sourceFile: string, workspaceId: string) => Promise<void>;
+  dismissDocBrief: () => void;
+}
+
+export function useDocBrief(): UseDocBriefReturn {
+  const [docBrief, setDocBrief] = useState<DocBrief | null>(null);
+
+  const triggerDocBrief = useCallback(async (sourceFile: string, workspaceId: string) => {
     if (!sourceFile) return;
     setDocBrief({ file: sourceFile, summary: null, loading: true });
     try {
@@ -20,7 +28,7 @@ export function useDocBrief() {
         top_k_rerank: 2,
         stream: false,
       });
-      const summary = result.answer || result.content || "";
+      const summary: string = result.answer ?? result.content ?? "";
       setDocBrief({
         file: sourceFile,
         summary: summary.replace(/^(Extractive answer|OpenAI unavailable)[^:]*:\s*/i, ""),

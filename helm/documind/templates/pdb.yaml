@@ -1,0 +1,31 @@
+{{- if gt (int .Values.backend.replicaCount) 1 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "documind.fullname" . }}-backend
+  labels:
+    {{- include "documind.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "documind.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+{{- end }}
+---
+{{- if gt (int .Values.celery.replicaCount) 1 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "documind.fullname" . }}-celery
+  labels:
+    {{- include "documind.labels" . | nindent 4 }}
+    app.kubernetes.io/component: celery
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "documind.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: celery
+{{- end }}

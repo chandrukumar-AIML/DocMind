@@ -151,7 +151,7 @@ jobs:
         run: npm run lint
 
       - name: Type check (tsc --noEmit)
-        run: npm run typecheck || true
+        run: npm run typecheck
 
       - name: Test (Vitest)
         run: npm test

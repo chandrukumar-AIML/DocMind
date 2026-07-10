@@ -1,11 +1,30 @@
 import { useState, useEffect } from "react";
 
-/**
- * Accumulates agent reasoning steps during a streaming agent-mode query.
- * Steps are reset when the session changes and marked "done" when streaming ends.
- */
-export function useAgentSteps({ queryMode, isStreaming, lastStatusStep, sessionId }) {
-  const [agentSteps, setAgentSteps] = useState([]);
+type StepStatus = "running" | "done";
+
+interface AgentStep {
+  node: string;
+  status: StepStatus;
+}
+
+interface UseAgentStepsProps {
+  queryMode: string;
+  isStreaming: boolean;
+  lastStatusStep: string | undefined;
+  sessionId: string;
+}
+
+interface UseAgentStepsReturn {
+  agentSteps: AgentStep[];
+}
+
+export function useAgentSteps({
+  queryMode,
+  isStreaming,
+  lastStatusStep,
+  sessionId,
+}: UseAgentStepsProps): UseAgentStepsReturn {
+  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
 
   useEffect(() => {
     if (queryMode !== "agent" || !lastStatusStep || !isStreaming) return;
@@ -17,7 +36,7 @@ export function useAgentSteps({ queryMode, isStreaming, lastStatusStep, sessionI
 
   useEffect(() => {
     if (!isStreaming && agentSteps.length > 0) {
-      setAgentSteps(prev => prev.map(s => ({ ...s, status: "done" })));
+      setAgentSteps(prev => prev.map(s => ({ ...s, status: "done" as StepStatus })));
     }
   }, [isStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
