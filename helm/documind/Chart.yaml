@@ -1,0 +1,17 @@
+apiVersion: v2
+name: documind
+description: DocMind AI — Enterprise Document Intelligence Platform
+type: application
+version: 1.0.0
+appVersion: "2.0.0"
+keywords:
+  - ai
+  - rag
+  - document-intelligence
+  - llm
+home: https://github.com/chandrukumar-AIML/DocMind
+sources:
+  - https://github.com/chandrukumar-AIML/DocMind
+maintainers:
+  - name: DocMind Team
+    email: terazionservices@gmail.com

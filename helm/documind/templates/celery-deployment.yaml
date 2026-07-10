@@ -1,0 +1,56 @@
+{{- if .Values.celery.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "documind.fullname" . }}-celery
+  labels:
+    {{- include "documind.labels" . | nindent 4 }}
+    app.kubernetes.io/component: celery-worker
+spec:
+  replicas: {{ .Values.celery.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "documind.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: celery-worker
+  template:
+    metadata:
+      labels:
+        {{- include "documind.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: celery-worker
+    spec:
+      serviceAccountName: {{ include "documind.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: celery-worker
+          image: "{{ .Values.celery.image.repository }}:{{ .Values.celery.image.tag }}"
+          command:
+            - celery
+            - -A
+            - app.tasks.celery_app
+            - worker
+            - --loglevel=info
+            - --concurrency={{ .Values.celery.concurrency }}
+            - --queues={{ .Values.celery.queues }}
+            - --hostname=worker@%h
+            - --max-tasks-per-child=50
+          env:
+            - name: CELERY_BROKER_URL
+              value: "redis://{{ include "documind.fullname" . }}-redis-master:6379/0"
+            - name: CELERY_RESULT_BACKEND
+              value: "redis://{{ include "documind.fullname" . }}-redis-master:6379/1"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.envSecret }}
+                  key: DATABASE_URL
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.envSecret }}
+                  key: OPENAI_API_KEY
+                  optional: true
+          resources:
+            {{- toYaml .Values.celery.resources | nindent 12 }}
+{{- end }}

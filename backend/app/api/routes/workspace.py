@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.core.ids import generate_correlation_id
-from app.auth.dependencies import get_current_user, AuthenticatedUser
+from app.auth.dependencies import get_current_user, require_workspace_admin, AuthenticatedUser
 from app.workspace.manager import WorkspaceManager
 
 logger = logging.getLogger(__name__)
@@ -235,6 +235,39 @@ def get_workspace_api_metadata() -> dict[str, Any]:
         "admin_required_for_create": False,  # Can be configured
         "workspace_isolation": True,
     }
+
+
+
+# ── Budget / Cost Governance endpoints ──────────────────────────────────────
+
+@router.get(
+    "/{workspace_id}/budget",
+    summary="Get workspace LLM budget and monthly usage",
+    tags=["budget"],
+)
+async def get_workspace_budget(
+    workspace_id: str,
+    user: Annotated[AuthenticatedUser, Depends(require_workspace_admin)],
+):
+    from app.core.cost_governor import get_cost_governor
+    governor = get_cost_governor()
+    return await governor.get_monthly_summary(workspace_id)
+
+
+@router.put(
+    "/{workspace_id}/budget",
+    summary="Set monthly token budget for workspace",
+    tags=["budget"],
+)
+async def set_workspace_budget(
+    workspace_id: str,
+    monthly_tokens: int,
+    user: Annotated[AuthenticatedUser, Depends(require_workspace_admin)],
+):
+    from app.core.cost_governor import get_cost_governor
+    governor = get_cost_governor()
+    ok = await governor.set_budget(workspace_id, monthly_tokens)
+    return {"workspace_id": workspace_id, "monthly_token_budget": monthly_tokens, "saved": ok}
 
 
 __all__ = ["router", "get_workspace_api_metadata"]

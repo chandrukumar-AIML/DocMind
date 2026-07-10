@@ -1,0 +1,48 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "documind.fullname" . }}-backup
+  labels:
+    {{- include "documind.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pg-backup
+              image: postgres:16-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  pg_dump "$DATABASE_URL" --no-owner --no-privileges \
+                    | gzip \
+                    | aws s3 cp - "${S3_BUCKET}/documind_backup_$(date +%Y%m%d_%H%M%S).sql.gz" \
+                        --region "${AWS_REGION:-us-east-1}" \
+                        --storage-class STANDARD_IA
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backend.envSecret }}
+                      key: DATABASE_URL
+                - name: S3_BUCKET
+                  value: {{ .Values.backup.s3Bucket | quote }}
+                - name: AWS_REGION
+                  value: {{ .Values.backup.awsRegion | default "us-east-1" | quote }}
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
+{{- end }}

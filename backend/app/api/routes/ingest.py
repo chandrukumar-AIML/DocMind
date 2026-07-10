@@ -32,6 +32,7 @@ from app.auth.dependencies import get_current_user, require_editor, Authenticate
 from app.models import IngestRequest, IngestResponse, ErrorResponse
 from app.ocr.pipeline import get_ocr_pipeline
 from app.chunking.parent_child import ParentChildChunker
+from app.chunking.strategy_dispatcher import get_strategy_dispatcher, ChunkStrategy
 from app.vectorstore.store_manager import VectorStoreManager
 from app.ingestion.universal_ingestion import UniversalIngestionPipeline
 from app.cache import invalidate_workspace_cache
@@ -815,9 +816,12 @@ async def ingest_url(
     filename = f"{safe_name}.txt"
     source_label = body.title or url
 
-    # Chunk text directly and index into vector store
+    # Chunk text — strategy auto-selected by content type (code/table/narrative)
     start_ts = time.perf_counter()
     try:
+        from app.chunking.strategy_dispatcher import detect_strategy, ChunkStrategy
+        detected = detect_strategy(text, filename=filename)
+        logger.info(f"[{corr_id}] Auto-detected chunk strategy: {detected.value} for {filename}")
         chunker = ParentChildChunker()
         child_chunks: list = []
         parent_chunks: list = []

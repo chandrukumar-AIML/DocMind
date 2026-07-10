@@ -1,0 +1,136 @@
+# DocMind AI — Helm values (override in values-prod.yaml)
+
+global:
+  imageRegistry: ghcr.io/chandrukumar-aiml
+  imagePullPolicy: IfNotPresent
+  storageClass: ""
+
+# ── Backend ────────────────────────────────────────────────────────────────
+backend:
+  enabled: true
+  image:
+    repository: ghcr.io/chandrukumar-aiml/documind-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+  service:
+    type: ClusterIP
+    port: 8000
+  env:
+    API_RELOAD: "false"
+    OCR_USE_GPU: "false"
+  envSecret: documind-backend-secret   # must contain DATABASE_URL, JWT_SECRET_KEY, OPENAI_API_KEY, etc.
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  persistence:
+    enabled: true
+    size: 10Gi
+    mountPath: /data
+
+# ── Frontend ───────────────────────────────────────────────────────────────
+frontend:
+  enabled: true
+  image:
+    repository: ghcr.io/chandrukumar-aiml/documind-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+  service:
+    type: ClusterIP
+    port: 80
+
+# ── Celery Worker ──────────────────────────────────────────────────────────
+celery:
+  enabled: true
+  image:
+    repository: ghcr.io/chandrukumar-aiml/documind-backend
+    tag: latest
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+  queues: "high_priority,default,bulk"
+  concurrency: 2
+
+# ── Ingress ────────────────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: app.docmind.ai
+      paths:
+        - path: /api
+          pathType: Prefix
+          backend: backend
+        - path: /
+          pathType: Prefix
+          backend: frontend
+  tls:
+    - secretName: documind-tls
+      hosts:
+        - app.docmind.ai
+
+# ── PostgreSQL (bitnami subchart, disabled if using external) ──────────────
+postgresql:
+  enabled: true
+  auth:
+    database: documind
+    existingSecret: documind-postgres-secret
+  primary:
+    persistence:
+      size: 20Gi
+    resources:
+      limits:
+        memory: 1Gi
+
+# ── Redis (bitnami subchart) ───────────────────────────────────────────────
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    persistence:
+      size: 4Gi
+    resources:
+      limits:
+        memory: 512Mi
+
+# ── Database Backup (CronJob) ──────────────────────────────────────────────
+backup:
+  enabled: false               # Set true + configure s3Bucket to enable automated backups
+  schedule: "0 2 * * *"       # Daily at 02:00 UTC
+  s3Bucket: ""                 # e.g. s3://my-company-backups/documind
+  awsRegion: "us-east-1"
+  retentionDays: 30
+
+# ── ServiceAccount ─────────────────────────────────────────────────────────
+serviceAccount:
+  create: true
+  name: "documind"
+  annotations: {}
