@@ -19,7 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
-# Copy requirements first for better layer caching
+# CACHE_BUST: change this value to force a full pip reinstall (bypasses Render's layer cache)
+ARG CACHE_BUST=2026-07-10-v2
+
 COPY requirements.txt .
 
 # Create virtual environment
@@ -33,24 +35,27 @@ RUN pip install paddlepaddle==2.6.2 \
     -f https://www.paddlepaddle.org.cn/whl/linux/mkl/avx/stable.html \
     --no-cache-dir --no-deps
 
-# Install Python requirements
-RUN pip install -r requirements.txt && \
-    # litestar (transitive dep) installs 'multipart' which conflicts with
-    # FastAPI's 'python-multipart'. Uninstall the bad one and keep the right one.
+# Install Python requirements — CACHE_BUST arg invalidates this layer when changed
+RUN echo "Cache bust: ${CACHE_BUST}" && \
+    pip install -r requirements.txt && \
     pip uninstall -y multipart || true && \
     pip install "python-multipart>=0.0.9,<0.1.0" --force-reinstall
 
 # Explicit install of critical runtime tools in a separate layer so they are
 # never silently absent due to a stale cache on the requirements layer above.
 RUN pip install \
-    "alembic>=1.13.0,<2.0.0" \
+    "fastapi>=0.111.0,<0.112.0" \
     "uvicorn[standard]>=0.29.0,<0.30.0" \
+    "alembic>=1.13.0,<2.0.0" \
     "pydantic>=2.7.0,<3.0.0" \
     "pydantic-settings>=2.2.0,<3.0.0" \
     "sqlalchemy>=2.0.30,<3.0.0" \
     "asyncpg>=0.29.0,<0.30.0" \
     "psycopg2-binary>=2.9.0,<3.0.0" \
     "python-jose[cryptography]>=3.3.0,<4.0.0" \
+    "python-multipart>=0.0.9,<0.1.0" \
+    "passlib[bcrypt]>=1.7.4,<2.0.0" \
+    "redis>=5.0.0,<6.0.0" \
     --upgrade
 
 # Skip PaddleOCR model pre-download at build time — Render's build servers
