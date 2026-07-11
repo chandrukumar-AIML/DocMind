@@ -133,14 +133,33 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /opt/paddle_models /opt/paddle_models
 COPY --from=builder /opt/hf_models /opt/hf_models
 
-# Re-install requirements in the runtime stage so missing packages from a
-# stale builder cache are always filled in. This layer is part of the runtime
-# image and is never served from the builder cache.
+# Re-install all app packages in the runtime stage to fill any gaps left by a
+# stale builder venv. Paddle packages are excluded — they need a special -f URL
+# and are already present in the venv copied from the builder.
+# The broad install is non-fatal (|| true); the explicit layer below guarantees
+# the packages that have historically failed via cache are definitely present.
 COPY requirements.txt /tmp/requirements.txt
-RUN /opt/venv/bin/pip install -r /tmp/requirements.txt --quiet \
-    && /opt/venv/bin/pip uninstall -y multipart || true \
+RUN grep -v "^paddlepaddle\|^paddleocr\|^albumentations" /tmp/requirements.txt \
+        > /tmp/requirements-runtime.txt \
+    && /opt/venv/bin/pip install -r /tmp/requirements-runtime.txt \
+        --quiet --no-warn-script-location || true \
+    && /opt/venv/bin/pip install \
+        "opencv-python-headless>=4.9.0,<5.0.0" \
+        "rank-bm25>=0.2.2,<0.3.0" \
+        "numpy==1.26.4" \
+        "fastapi>=0.111.0,<0.112.0" \
+        "uvicorn[standard]>=0.29.0,<0.30.0" \
+        "alembic>=1.13.0,<2.0.0" \
+        "psycopg2-binary>=2.9.9,<3.0.0" \
+        "sentence-transformers>=3.0.0,<4.0.0" \
+        "faiss-cpu>=1.8.0,<2.0.0" \
+        "chromadb>=0.5.0,<0.6.0" \
+        "langchain>=0.3.0,<0.4.0" \
+        "langgraph>=0.2.0,<0.4.0" \
+        --quiet \
+    && /opt/venv/bin/pip uninstall -y multipart 2>/dev/null || true \
     && /opt/venv/bin/pip install "python-multipart>=0.0.9,<0.1.0" --force-reinstall --quiet \
-    && rm /tmp/requirements.txt
+    && rm /tmp/requirements.txt /tmp/requirements-runtime.txt
 
 WORKDIR /app
 
