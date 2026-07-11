@@ -67,6 +67,17 @@ RUN pip install \
     "langchain>=0.3.0,<0.4.0" \
     "langchain-openai>=0.2.0,<0.4.0" \
     "prometheus-client>=0.20.0,<0.21.0" \
+    "rank-bm25>=0.2.2,<0.3.0" \
+    "sentence-transformers>=3.0.0,<4.0.0" \
+    "langchain-chroma>=0.1.0,<2.0.0" \
+    "chromadb>=0.5.0,<0.6.0" \
+    "faiss-cpu>=1.8.0,<2.0.0" \
+    "langgraph>=0.2.0,<0.4.0" \
+    "nltk>=3.8.1,<4.0.0" \
+    "tiktoken>=0.7.0,<1.0.0" \
+    "pdf2image>=1.17.0,<2.0.0" \
+    "pypdfium2>=4.29.0,<5.0.0" \
+    "Authlib>=1.3.0,<2.0.0" \
     --upgrade
 
 # Skip PaddleOCR model pre-download at build time — Render's build servers
