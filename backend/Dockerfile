@@ -139,12 +139,13 @@ COPY --from=builder /opt/hf_models /opt/hf_models
 # The broad install is non-fatal (|| true); the explicit layer below guarantees
 # the packages that have historically failed via cache are definitely present.
 COPY requirements.txt /tmp/requirements.txt
-RUN grep -v "^paddlepaddle\|^paddleocr\|^albumentations" /tmp/requirements.txt \
+RUN grep -v "^paddlepaddle\|^paddleocr" /tmp/requirements.txt \
         > /tmp/requirements-runtime.txt \
     && /opt/venv/bin/pip install -r /tmp/requirements-runtime.txt \
         --quiet --no-warn-script-location || true \
     && /opt/venv/bin/pip install \
         "opencv-python-headless>=4.9.0,<5.0.0" \
+        "albumentations>=1.4.0,<2.0.0" \
         "rank-bm25>=0.2.2,<0.3.0" \
         "numpy==1.26.4" \
         "fastapi>=0.111.0,<0.112.0" \
