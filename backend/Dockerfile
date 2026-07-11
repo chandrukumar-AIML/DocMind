@@ -56,6 +56,17 @@ RUN pip install \
     "python-multipart>=0.0.9,<0.1.0" \
     "passlib[bcrypt]>=1.7.4,<2.0.0" \
     "redis>=5.0.0,<6.0.0" \
+    "celery>=5.4.0,<6.0.0" \
+    "numpy==1.26.4" \
+    "Pillow>=10.5.0,<13.0.0" \
+    "python-json-logger>=2.0.7,<3.0.0" \
+    "httpx>=0.27.0,<1.0.0" \
+    "aiofiles>=23.0.0,<25.0.0" \
+    "python-dotenv>=1.0.0,<2.0.0" \
+    "openai>=1.30.0,<2.0.0" \
+    "langchain>=0.3.0,<0.4.0" \
+    "langchain-openai>=0.2.0,<0.4.0" \
+    "prometheus-client>=0.20.0,<0.21.0" \
     --upgrade
 
 # Skip PaddleOCR model pre-download at build time — Render's build servers
