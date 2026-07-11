@@ -8,14 +8,25 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, Final, List, Optional
 
-from neo4j import AsyncGraphDatabase, AsyncDriver
-from neo4j.exceptions import (
-    Neo4jError,
-    ServiceUnavailable,
-    SessionExpired,
-    TransientError,
-    AuthError,
-)
+try:
+    from neo4j import AsyncGraphDatabase, AsyncDriver
+    from neo4j.exceptions import (
+        Neo4jError,
+        ServiceUnavailable,
+        SessionExpired,
+        TransientError,
+        AuthError,
+    )
+    _NEO4J_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    AsyncGraphDatabase = None  # type: ignore[assignment,misc]
+    AsyncDriver = None  # type: ignore[assignment,misc]
+    Neo4jError = Exception  # type: ignore[assignment,misc]
+    ServiceUnavailable = Exception  # type: ignore[assignment,misc]
+    SessionExpired = Exception  # type: ignore[assignment,misc]
+    TransientError = Exception  # type: ignore[assignment,misc]
+    AuthError = Exception  # type: ignore[assignment,misc]
+    _NEO4J_AVAILABLE = False
 
 # DVMELTSS-M: Import centralized utilities
 from app.config import get_settings

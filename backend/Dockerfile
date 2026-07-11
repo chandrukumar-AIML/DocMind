@@ -156,7 +156,27 @@ RUN grep -v "^paddlepaddle\|^paddleocr" /tmp/requirements.txt \
         "faiss-cpu>=1.8.0,<2.0.0" \
         "chromadb>=0.5.0,<0.6.0" \
         "langchain>=0.3.0,<0.4.0" \
+        "langchain-community>=0.3.0,<0.4.0" \
+        "langchain-openai>=0.2.0,<0.4.0" \
+        "langchain-chroma>=0.1.0,<2.0.0" \
         "langgraph>=0.2.0,<0.4.0" \
+        "neo4j>=5.18.0,<6.0.0" \
+        "networkx>=3.2.0,<4.0.0" \
+        "openai>=1.30.0,<2.0.0" \
+        "tiktoken>=0.7.0,<1.0.0" \
+        "celery>=5.4.0,<6.0.0" \
+        "redis>=5.0.0,<6.0.0" \
+        "stripe>=9.0.0,<10.0.0" \
+        "boto3>=1.34.0,<2.0.0" \
+        "pdf2image>=1.17.0,<2.0.0" \
+        "pypdfium2>=4.29.0,<5.0.0" \
+        "python-docx>=1.1.0,<2.0.0" \
+        "pandas>=2.2.0,<3.0.0" \
+        "openpyxl>=3.1.2,<4.0.0" \
+        "aiofiles>=23.0.0,<25.0.0" \
+        "Authlib>=1.3.0,<2.0.0" \
+        "Jinja2>=3.1.0,<4.0.0" \
+        "duckduckgo-search>=6.1.0,<7.0.0" \
         --quiet \
     && /opt/venv/bin/pip uninstall -y multipart 2>/dev/null || true \
     && /opt/venv/bin/pip install "python-multipart>=0.0.9,<0.1.0" --force-reinstall --quiet \
