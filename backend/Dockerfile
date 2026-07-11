@@ -133,6 +133,15 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /opt/paddle_models /opt/paddle_models
 COPY --from=builder /opt/hf_models /opt/hf_models
 
+# Re-install requirements in the runtime stage so missing packages from a
+# stale builder cache are always filled in. This layer is part of the runtime
+# image and is never served from the builder cache.
+COPY requirements.txt /tmp/requirements.txt
+RUN /opt/venv/bin/pip install -r /tmp/requirements.txt --quiet \
+    && /opt/venv/bin/pip uninstall -y multipart || true \
+    && /opt/venv/bin/pip install "python-multipart>=0.0.9,<0.1.0" --force-reinstall --quiet \
+    && rm /tmp/requirements.txt
+
 WORKDIR /app
 
 # Copy application code and migrations
