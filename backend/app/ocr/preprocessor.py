@@ -6,13 +6,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Optional, Union
 
-import cv2
+# Lazy imports — missing packages degrade OCR gracefully instead of crashing startup.
+try:
+    import cv2
+except ImportError:  # pragma: no cover
+    cv2 = None  # type: ignore[assignment]
+
 import numpy as np
 from PIL import Image
 
-# Albumentations for augmentations only (no normalization for OCR)
-import albumentations as A
-from albumentations.core.composition import Compose
+try:
+    import albumentations as A
+    from albumentations.core.composition import Compose
+    _ALBUMENTATIONS_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    A = None  # type: ignore[assignment]
+    Compose = None  # type: ignore[assignment]
+    _ALBUMENTATIONS_AVAILABLE = False
 
 from app.core.ocr_utils import generate_ocr_correlation_id
 
@@ -62,13 +72,22 @@ class DocumentPreprocessor:
     _VALID_CHANNELS: Final = {1, 3}  # Grayscale or BGR
 
     def __init__(self, target_dpi: int = _DEFAULT_TARGET_DPI):
+        if cv2 is None:
+            raise RuntimeError(
+                "opencv-python-headless is not installed. "
+                "Run: pip install opencv-python-headless"
+            )
+        if not _ALBUMENTATIONS_AVAILABLE:
+            raise RuntimeError(
+                "albumentations is not installed. "
+                "Run: pip install albumentations"
+            )
         self.target_dpi = target_dpi
         self.pipeline: Compose = A.Compose(
             [
                 A.GaussianBlur(blur_limit=(3, 3), p=0.5),
                 A.CLAHE(clip_limit=4.0, tile_grid_size=(8, 8), p=1.0),
                 A.Sharpen(alpha=(0.2, 0.4), lightness=(0.8, 1.2), p=0.7),
-                # ✅ REMOVED: A.Normalize(...) — breaks OCR models
             ]
         )
         logger.info(f"DocumentPreprocessor initialized: target_dpi={target_dpi}")
