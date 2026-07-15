@@ -416,6 +416,7 @@ def create_app() -> FastAPI:
         llm_settings,
         billing,
         sso,
+        mfa,
     )
     from app.api.routes import razorpay
     from app.api.routes import gst_invoice
@@ -457,6 +458,7 @@ def create_app() -> FastAPI:
     app.include_router(razorpay.router, prefix=api_prefix, tags=["razorpay"])
     app.include_router(gst_invoice.router, prefix=api_prefix, tags=["gst-invoice"])
     app.include_router(sso.router, prefix=api_prefix, tags=["sso"])
+    app.include_router(mfa.router, prefix=api_prefix, tags=["mfa"])
 
     # Backward-compatible auth aliases used by earlier tests and Swagger clients.
     app.add_api_route(f"{api_prefix}/verify-email", auth.verify_email, methods=["POST"], tags=["auth"])

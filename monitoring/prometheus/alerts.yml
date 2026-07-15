@@ -1,0 +1,154 @@
+groups:
+  # ── API Availability ────────────────────────────────────────────────────────
+  - name: api_availability
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(http_requests_total{status=~"5.."}[5m])
+            /
+            rate(http_requests_total[5m])
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "High HTTP 5xx error rate on {{ $labels.instance }}"
+          description: "{{ $value | humanizePercentage }} of requests are returning 5xx errors. Investigate backend logs immediately."
+          runbook: "https://docs.internal/runbooks/high-error-rate"
+
+      - alert: ServiceDown
+        expr: up{job="documind-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "DocMind backend is DOWN"
+          description: "The backend scrape target {{ $labels.instance }} has been unreachable for >1 min."
+          runbook: "https://docs.internal/runbooks/service-down"
+
+  # ── Latency / SLA ───────────────────────────────────────────────────────────
+  - name: latency
+    rules:
+      - alert: HighP99Latency
+        expr: |
+          histogram_quantile(
+            0.99,
+            rate(http_request_duration_seconds_bucket[5m])
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "P99 request latency > 5 s on {{ $labels.instance }}"
+          description: "99th-percentile latency is {{ $value | humanizeDuration }}. Query or retrieval pipeline may be degraded."
+
+      - alert: RAGQuerySlow
+        expr: |
+          histogram_quantile(
+            0.95,
+            rate(rag_query_duration_seconds_bucket[10m])
+          ) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "RAG P95 query latency > 10 s"
+          description: "Vector search or LLM generation is unusually slow. Check OpenAI API status and ChromaDB health."
+
+  # ── LLM / AI Circuit Breaker ────────────────────────────────────────────────
+  - name: llm_health
+    rules:
+      - alert: LLMCircuitBreakerOpen
+        expr: rag_llm_circuit_breaker_open == 1
+        for: 1m
+        labels:
+          severity: critical
+          team: ai
+        annotations:
+          summary: "LLM circuit breaker is OPEN — RAG answers degraded"
+          description: "The RAG LLM circuit breaker has tripped. New queries will return degraded/no answers until the breaker resets."
+
+      - alert: OpenAIQuotaExceeded
+        expr: increase(openai_quota_errors_total[15m]) > 0
+        labels:
+          severity: critical
+          team: ai
+        annotations:
+          summary: "OpenAI quota exceeded"
+          description: "One or more OpenAI quota errors in the past 15 min. Check billing dashboard."
+
+  # ── Rate Limiter ─────────────────────────────────────────────────────────────
+  - name: rate_limiter
+    rules:
+      - alert: RateLimiterFailOpen
+        expr: increase(rate_limiter_fail_open_total[5m]) > 0
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Rate limiter failing open (Redis may be down)"
+          description: "Rate limiting bypassed {{ $value }} times in 5 min because Redis was unreachable. All requests are passing through unchecked."
+
+  # ── Database ─────────────────────────────────────────────────────────────────
+  - name: database
+    rules:
+      - alert: PostgresConnectionPoolExhausted
+        expr: pg_stat_database_numbackends / pg_settings_max_connections > 0.85
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "PostgreSQL connection pool is {{ $value | humanizePercentage }} full"
+          description: "Connection exhaustion imminent. Scale the connection pool or add PgBouncer."
+
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Redis is DOWN"
+          description: "Redis has been unreachable for >1 min. Rate limiting, caching, and token revocation are all impaired."
+
+  # ── Celery Workers ───────────────────────────────────────────────────────────
+  - name: celery
+    rules:
+      - alert: CeleryQueueBacklog
+        expr: celery_queue_length > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Celery queue backlog > 100 tasks"
+          description: "Document ingestion tasks are piling up. Consider scaling workers."
+
+      - alert: CeleryNoWorkers
+        expr: celery_workers == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "No Celery workers running"
+          description: "All Celery workers appear to be down. Document ingestion is completely stopped."
+
+  # ── Disk / Storage ───────────────────────────────────────────────────────────
+  - name: storage
+    rules:
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) < 0.15
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Disk space < 15% on {{ $labels.mountpoint }}"
+          description: "Available disk on {{ $labels.instance }}:{{ $labels.mountpoint }} is {{ $value | humanizePercentage }}. Upload capacity may be affected."

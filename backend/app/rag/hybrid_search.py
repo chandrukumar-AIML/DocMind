@@ -1,6 +1,6 @@
 from __future__ import annotations
+import json
 import logging
-import pickle
 from pathlib import Path
 from typing import Any, Optional, List, Tuple
 
@@ -147,15 +147,34 @@ class HybridSearcher:
         self._persist_bm25_cache()
 
     def _persist_bm25_cache(self):
-        """Save BM25 index to disk with atomic write."""
+        """Save BM25 index to disk with atomic write using safe JSON serialization.
+
+        SECURITY: Never use pickle — BM25 state is pure numeric data (ints, floats,
+        dicts, lists) that serialises cleanly to JSON without code execution risk.
+        """
         if self._bm25 is None:
             return
         try:
             cache_path = self._bm25_cache_path or _get_bm25_cache_path()
+            # Use .json extension — old .pkl files are left in place until explicitly cleared
+            cache_path = cache_path.with_suffix(".json")
             cache_path.parent.mkdir(parents=True, exist_ok=True)
-            temp_path = cache_path.with_suffix(".tmp")
-            with open(temp_path, "wb") as f:
-                pickle.dump(self._bm25, f)
+            temp_path = cache_path.with_suffix(".tmp.json")
+
+            state = {
+                "version": 1,
+                "corpus_size": self._bm25.corpus_size,
+                "avgdl": self._bm25.avgdl,
+                "doc_len": list(self._bm25.doc_len),
+                # doc_freqs: list of Counter → list of plain dict
+                "doc_freqs": [dict(df) for df in self._bm25.doc_freqs],
+                "idf": dict(self._bm25.idf),
+                "k1": float(self._bm25.k1),
+                "b": float(self._bm25.b),
+                "epsilon": float(self._bm25.epsilon),
+            }
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False)
             temp_path.replace(cache_path)
             logger.debug(f"BM25 index cached to {cache_path}")
         except OSError as e:
@@ -164,31 +183,67 @@ class HybridSearcher:
             logger.warning(f"BM25 cache unexpected error: {e}")
 
     def _load_bm25_from_cache(self) -> bool:
-        """Load BM25 index from disk cache."""
+        """Load BM25 index from safe JSON disk cache.
+
+        SECURITY: JSON deserialization cannot execute arbitrary code, unlike pickle.
+        Legacy .pkl files are intentionally ignored — they must be rebuilt from ChromaDB.
+        """
         cache_path = self._bm25_cache_path or _get_bm25_cache_path()
-        if cache_path.exists():
-            try:
-                with open(cache_path, "rb") as f:
-                    self._bm25 = pickle.load(f)
-                logger.info(f"BM25 index loaded from cache: {cache_path}")
-                return True
-            except Exception as e:
-                logger.warning(f"BM25 cache load failed: {e}")
-                try:
-                    cache_path.unlink()
-                except OSError:
-                    pass
+        json_path = cache_path.with_suffix(".json")
+
+        if not json_path.exists():
+            # Warn if an old unsafe pickle file is present so operators can clean it up
+            pkl_path = cache_path.with_suffix(".pkl") if cache_path.suffix != ".pkl" else cache_path
+            if cache_path.exists() or pkl_path.exists():
+                logger.warning(
+                    "Legacy BM25 .pkl cache found but ignored for security (RCE risk). "
+                    "The index will be rebuilt from ChromaDB automatically. "
+                    f"Remove the old file manually: {cache_path}"
+                )
+            return False
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+
+            if state.get("version") != 1:
+                logger.warning(f"BM25 cache version mismatch: {state.get('version')} — rebuilding")
+                json_path.unlink(missing_ok=True)
+                return False
+
+            # Reconstruct BM25Okapi from serialized state without calling fit()
+            bm25 = BM25Okapi.__new__(BM25Okapi)
+            bm25.corpus_size = int(state["corpus_size"])
+            bm25.avgdl = float(state["avgdl"])
+            bm25.doc_len = list(state["doc_len"])
+            bm25.doc_freqs = [dict(df) for df in state["doc_freqs"]]
+            bm25.idf = {k: float(v) for k, v in state["idf"].items()}
+            bm25.k1 = float(state.get("k1", 1.5))
+            bm25.b = float(state.get("b", 0.75))
+            bm25.epsilon = float(state.get("epsilon", 0.25))
+            # nd: number of documents each term appears in (derived from doc_freqs)
+            bm25.nd = {term: sum(1 for df in bm25.doc_freqs if term in df) for term in bm25.idf}
+
+            self._bm25 = bm25
+            logger.info(f"BM25 index loaded from JSON cache: {json_path} ({bm25.corpus_size} docs)")
+            return True
+        except (KeyError, ValueError, TypeError) as e:
+            logger.warning(f"BM25 JSON cache corrupt: {e} — rebuilding")
+            json_path.unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning(f"BM25 cache load failed: {e}")
         return False
 
     def clear_cache(self):
-        """Clear BM25 cache file."""
+        """Clear BM25 cache files (JSON and any legacy pkl)."""
         cache_path = self._bm25_cache_path or _get_bm25_cache_path()
-        if cache_path.exists():
-            try:
-                cache_path.unlink()
-                logger.info(f"BM25 cache cleared: {cache_path}")
-            except OSError as e:
-                logger.warning(f"Failed to clear BM25 cache: {e}")
+        for path in (cache_path.with_suffix(".json"), cache_path, cache_path.with_suffix(".pkl")):
+            if path.exists():
+                try:
+                    path.unlink()
+                    logger.info(f"BM25 cache cleared: {path}")
+                except OSError as e:
+                    logger.warning(f"Failed to clear BM25 cache {path}: {e}")
 
     def _semantic_search(self, query: str, k: int, filter_dict=None) -> List[Document]:
         """Delegate semantic search to vector store manager."""

@@ -155,17 +155,21 @@ def build_safe_context(
         source_marker = f"[SOURCE: {source}, page {page + 1}]"
 
         context_parts.append(f"{source_marker}\n{safe_content}")
-        citations.append(
-            {
-                "source_file": source,
-                "page_number": page,
-                "page_display": page + 1,
-                "block_type": block_type,
-                "chunk_text": doc.page_content[:_MAX_CITATION_TEXT],
-                "rerank_score": round(score, 4),
-                "chunk_id": chunk_id,
-            }
-        )
+        citation: dict = {
+            "source_file": source,
+            "page_number": page,
+            "page_display": page + 1,
+            "block_type": block_type,
+            "chunk_text": doc.page_content[:_MAX_CITATION_TEXT],
+            "rerank_score": round(score, 4),
+            "chunk_id": chunk_id,
+        }
+        if source.startswith("web:"):
+            # Web search results carry a URL, not a file path — include extras
+            # so Citation.from_metadata / WebCitation can render them correctly.
+            citation["url"] = source[4:]
+            citation["title"] = meta.get("title", source[4:])
+        citations.append(citation)
 
     context_body = "\n\n---\n\n".join(context_parts)
     context = f"<document_context>\n{context_body}\n</document_context>"

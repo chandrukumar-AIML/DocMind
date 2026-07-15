@@ -22,6 +22,7 @@ from app.core.rag_utils import (
 )
 from app.core.openai_errors import is_insufficient_quota_error
 from app.core.exceptions import RAGChainError
+from app.core.circuit_breaker import CircuitBreaker, CircuitBreakerOpen
 
 from .hyde import HyDEExpander
 from .hybrid_search import HybridSearcher
@@ -32,10 +33,15 @@ logger = logging.getLogger(__name__)
 
 _MAX_ANSWER_LENGTH: int = 8000  # ~2000 tokens max
 
+# Module-level circuit breakers — shared across all AdvancedRAGChain instances.
+# Opens after 5 consecutive LLM/embedding failures; probes again after 60 s.
+_llm_breaker = CircuitBreaker(name="rag-llm", failure_threshold=5, reset_timeout_s=60.0)
+_embedding_breaker = CircuitBreaker(name="rag-embedding", failure_threshold=5, reset_timeout_s=60.0)
+
 
 @dataclass
 class Citation:
-    """Structured citation for RAG responses."""
+    """Structured citation for RAG responses from local document chunks."""
 
     source_file: str
     page_number: int
@@ -48,6 +54,7 @@ class Citation:
     def to_dict(self) -> dict:
         """Convert to API-friendly dict with truncated text."""
         return {
+            "type": "document",
             "source_file": self.source_file,
             "page_number": self.page_number + 1,  # 1-indexed for UI
             "block_type": self.block_type,
@@ -70,13 +77,67 @@ class Citation:
             correlation_id=correlation_id or data.get("correlation_id"),
         )
 
+    @classmethod
+    def from_metadata(cls, metadata: dict, chunk_text: str = "", rerank_score: float = 0.0,
+                      correlation_id: Optional[str] = None) -> "Citation":
+        """Build a Citation from document chunk metadata. Returns WebCitation for web: sources."""
+        source = metadata.get("source_file", "unknown")
+        if source.startswith("web:"):
+            url = source[4:]  # strip "web:" prefix
+            return WebCitation(  # type: ignore[return-value]
+                url=url,
+                title=metadata.get("title", url),
+                chunk_text=chunk_text[:200],
+                rerank_score=rerank_score,
+                chunk_id=metadata.get("chunk_id"),
+                correlation_id=correlation_id,
+            )
+        return cls(
+            source_file=source,
+            page_number=int(metadata.get("page_number", 0)),
+            block_type=metadata.get("block_type", "text"),
+            chunk_text=chunk_text,
+            rerank_score=rerank_score,
+            chunk_id=metadata.get("chunk_id"),
+            correlation_id=correlation_id,
+        )
+
+
+@dataclass
+class WebCitation:
+    """
+    Citation for web search results — distinct from document citations.
+
+    Web results do not have page numbers or PDF highlights; they carry a URL
+    and an optional page title. Keeping them separate prevents the UI from
+    trying to render non-existent PDF anchors for web-sourced answers.
+    """
+
+    url: str
+    title: str
+    chunk_text: str
+    rerank_score: float
+    chunk_id: Optional[str] = None
+    correlation_id: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "type": "web",
+            "url": self.url,
+            "title": self.title,
+            "chunk_text": self.chunk_text[:200] + ("..." if len(self.chunk_text) > 200 else ""),
+            "rerank_score": round(self.rerank_score, 4),
+            "chunk_id": self.chunk_id,
+            "correlation_id": self.correlation_id,
+        }
+
 
 @dataclass
 class RAGResponse:
     """Complete RAG response with metadata for monitoring."""
 
     answer: str
-    citations: List[Citation]
+    citations: List[Union[Citation, "WebCitation"]]
     hyde_hypothesis: str
     retrieved_count: int
     reranked_count: int
@@ -197,12 +258,13 @@ class AdvancedRAGChain:
         logger.info(f"[{self.correlation_id}] BM25 rebuilt for {source_file or 'all documents'}")
 
     async def _stream_llm(self, messages: List[BaseMessage]) -> AsyncIterator[Any]:
-        """Stream LLM response with retry logic."""
-        async for chunk in self.llm.astream(messages):  # ✅ FIXED: No await on async iterator
-            yield chunk
+        """Stream LLM response through circuit breaker."""
+        async with _llm_breaker:
+            async for chunk in self.llm.astream(messages):
+                yield chunk
 
     async def _invoke_llm(self, messages: List[BaseMessage]) -> Any:
-        """Invoke LLM. Skips immediately if quota exceeded globally."""
+        """Invoke LLM through circuit breaker. Skips immediately if quota exceeded or circuit open."""
         from app.core.openai_errors import (
             is_openai_available,
             is_authentication_error,
@@ -212,16 +274,17 @@ class AdvancedRAGChain:
 
         if not is_openai_available():
             raise RuntimeError("LLM skipped — OpenAI quota/auth previously exceeded")
-        try:
-            return await asyncio.wait_for(self.llm.ainvoke(messages), timeout=15.0)
-        except Exception as e:
-            if is_insufficient_quota_error(e):
-                mark_openai_quota_exceeded()
-                raise RuntimeError(f"LLM quota exceeded: {e}") from e
-            if is_authentication_error(e):
-                mark_openai_auth_failed()
-                raise RuntimeError(f"LLM auth failed: {e}") from e
-            raise
+        async with _llm_breaker:
+            try:
+                return await asyncio.wait_for(self.llm.ainvoke(messages), timeout=15.0)
+            except Exception as e:
+                if is_insufficient_quota_error(e):
+                    mark_openai_quota_exceeded()
+                    raise RuntimeError(f"LLM quota exceeded: {e}") from e
+                if is_authentication_error(e):
+                    mark_openai_auth_failed()
+                    raise RuntimeError(f"LLM auth failed: {e}") from e
+                raise
 
     async def stream(
         self,
@@ -456,19 +519,20 @@ class AdvancedRAGChain:
         hypothesis = await loop.run_in_executor(None, self.hyde.expand, standalone_q)
         timings["hyde_ms"] = round((time.perf_counter() - t1) * 1000)
 
-        # Stage 3: Hybrid search
+        # Stage 3: Hybrid search (vector embedding via circuit-breaker-guarded path)
         t2 = time.perf_counter()
-        candidates = await loop.run_in_executor(
-            None,
-            partial(
-                searcher.search,
-                query=standalone_q,
-                k=top_k_retrieve,
-                filter_dict=filter_dict,
-                hyde_query=hypothesis,
-                correlation_id=correlation_id,
-            ),
-        )
+        async with _embedding_breaker:
+            candidates = await loop.run_in_executor(
+                None,
+                partial(
+                    searcher.search,
+                    query=standalone_q,
+                    k=top_k_retrieve,
+                    filter_dict=filter_dict,
+                    hyde_query=hypothesis,
+                    correlation_id=correlation_id,
+                ),
+            )
         timings["search_ms"] = round((time.perf_counter() - t2) * 1000)
 
         candidate_docs = [doc for doc, _ in candidates]
@@ -511,7 +575,14 @@ class AdvancedRAGChain:
             context, citation_dicts = build_safe_context(reranked)
             # ✅ Convert dicts to Citation objects safely
             citations = [
-                Citation.from_dict(c, correlation_id=correlation_id) for c in citation_dicts if isinstance(c, dict)
+                Citation.from_metadata(
+                    metadata=c,
+                    chunk_text=c.get("chunk_text", ""),
+                    rerank_score=float(c.get("rerank_score", 0.0)),
+                    correlation_id=correlation_id,
+                )
+                for c in citation_dicts
+                if isinstance(c, dict)
             ]
         except Exception as e:
             logger.error(f"[{correlation_id}] Context building failed: {e}")

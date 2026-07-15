@@ -272,6 +272,20 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = Field(default=60, ge=5, le=1440)
     jwt_refresh_token_expire_days: int = Field(default=30, ge=1, le=90)
 
+    # RS256 asymmetric key pair (preferred for production microservices).
+    # When both are set, RS256 is used regardless of jwt_algorithm.
+    # Generate with: openssl genrsa -out private.pem 4096
+    #                openssl rsa -in private.pem -pubout -out public.pem
+    # Set as PEM strings (with \n escaped) in JWT_PRIVATE_KEY / JWT_PUBLIC_KEY env vars.
+    jwt_private_key: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("JWT_PRIVATE_KEY", "jwt_private_key"),
+    )
+    jwt_public_key: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("JWT_PUBLIC_KEY", "jwt_public_key"),
+    )
+
     encryption_key: Optional[str] = Field(
         default=None,
         validation_alias=AliasChoices("ENCRYPTION_KEY", "encryption_key"),

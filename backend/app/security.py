@@ -6,7 +6,7 @@ import secrets
 import time
 from typing import Optional, Final
 from fastapi import Security, HTTPException, status, Request
-from fastapi.security import APIKeyHeader, APIKeyQuery, HTTPBearer
+from fastapi.security import APIKeyHeader, HTTPBearer
 
 from app.config import get_settings
 
@@ -15,22 +15,23 @@ logger = logging.getLogger(__name__)
 # -- Authentication Schemes ------------------------------------
 API_KEY_NAME: Final = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
-api_key_query = APIKeyQuery(name="api_key", auto_error=False)
 http_bearer = HTTPBearer(auto_error=False)
 
 
 # -- API Key Validation (Production-Ready) ---------------------
 def validate_api_key(
     key: Optional[str] = Security(api_key_header),
-    query_key: Optional[str] = Security(api_key_query),
     required: bool = True,
 ) -> Optional[str]:
     """
-    Validate API key from header or query param.
+    Validate API key from X-API-Key header only.
+
+    Query-param API key (?api_key=) is intentionally NOT supported — query
+    params are logged by every HTTP layer (nginx, load balancers, CDN, browser
+    history) and constitute a credential-leak vector.
 
     Args:
         key: API key from X-API-Key header
-        query_key: API key from ?api_key= query param
         required: If False, returns None instead of raising
 
     Returns:
@@ -41,8 +42,7 @@ def validate_api_key(
     """
     settings = get_settings()
 
-    # Prefer header over query param (more secure)
-    api_key = key or query_key
+    api_key = key
 
     if not api_key:
         if required:
@@ -247,7 +247,6 @@ __all__ = [
     "add_correlation_id",
     "API_KEY_NAME",
     "api_key_header",
-    "api_key_query",
     "http_bearer",
 ]
 # Local smoke test entry point. Run: python -m

@@ -25,6 +25,27 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+
+def _make_counter(name: str, description: str):
+    """Return a prometheus_client Counter, or a no-op stub if the package is absent."""
+    try:
+        from prometheus_client import Counter  # noqa: PLC0415
+
+        return Counter(name, description)
+    except Exception:
+        class _Noop:
+            def inc(self, *a, **kw):
+                pass
+        return _Noop()
+
+
+# Fires every time rate limiting is bypassed because Redis is unreachable.
+# Alert: monitoring/prometheus/alerts.yml → RateLimiterFailOpen
+_FAIL_OPEN_COUNTER = _make_counter(
+    "rate_limiter_fail_open_total",
+    "Number of times rate limiting was bypassed due to Redis unavailability",
+)
+
 # ========================================================================
 # -- CONSTANTS & CONFIG (DVMELTSS-S, BATMAN-T) -------------------------
 # ========================================================================
@@ -40,8 +61,18 @@ _DEFAULT_RATE_LIMITS: Final = {
 # Redis key prefix for rate limiting
 _REDIS_KEY_PREFIX: Final = "rate"
 
-# DVMELTSS-E: Fail-safe behavior
-_FAIL_OPEN: Final = True  # If Redis fails, allow requests (don't block legitimate traffic)
+# DVMELTSS-E: Fail-safe behavior.
+# In production the default is fail-CLOSED to prevent Redis outages from disabling
+# all rate limiting. Override with RATE_LIMITER_FAIL_OPEN=true only in dev/test.
+def _default_fail_open() -> bool:
+    settings = get_settings()
+    env = getattr(settings, "environment", "dev")
+    if env not in ("dev", "test", "development", "testing"):
+        return False  # production: fail closed
+    return True  # dev/test: fail open to avoid blocking local work
+
+
+_FAIL_OPEN: bool = _default_fail_open()
 
 _REDIS_TIMEOUT: Final = 10.0
 
@@ -244,6 +275,7 @@ class RateLimiter:
         except asyncio.TimeoutError:
             logger.error(f"[{corr_id}] Redis operation timed out after {_REDIS_TIMEOUT}s")
             if self.fail_open:
+                _FAIL_OPEN_COUNTER.inc()
                 return RateLimitResult(
                     allowed=True,
                     limit=limit,
@@ -264,7 +296,7 @@ class RateLimiter:
         except RedisError as e:
             logger.warning(f"[{corr_id}] Redis error in rate limiter: {e}")
             if self.fail_open:
-                # DVMELTSS-E: Fail open — don't block legitimate traffic
+                _FAIL_OPEN_COUNTER.inc()
                 return RateLimitResult(
                     allowed=True,
                     limit=limit,

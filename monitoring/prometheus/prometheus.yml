@@ -4,6 +4,14 @@ global:
   external_labels:
     service: documind
 
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - "alerts.yml"
+
 scrape_configs:
   - job_name: documind-backend
     static_configs:

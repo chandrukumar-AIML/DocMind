@@ -35,7 +35,17 @@ logger = logging.getLogger(__name__)
 
 
 def _get_mock_llm() -> BaseChatModel:
-    """Return a chat-compatible mock LLM for offline development."""
+    """Return a dev-only mock LLM.  Raises in production — never silently serve fake answers."""
+    settings = get_settings()
+    env = getattr(settings, "environment", "dev")
+    if env not in ("dev", "test", "development", "testing"):
+        raise RuntimeError(
+            f"No real LLM provider available in '{env}' environment. "
+            "Configure OPENAI_API_KEY, GROQ_API_KEY (via OPENAI_BASE_URL), "
+            "or a reachable Ollama endpoint (OLLAMA_BASE_URL). "
+            "FakeListChatModel is disabled outside dev/test environments."
+        )
+
     from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
     return FakeListChatModel(
@@ -152,9 +162,9 @@ def get_llm(
                 logger.info(f"Ollama+Groq unavailable — using OpenAI fallback: {llm.model_name}")
                 return llm
             except Exception as e:
-                logger.error(f"OpenAI fallback also failed: {e}. Using mock LLM.")
+                logger.error(f"OpenAI fallback also failed: {e}. Falling back to mock LLM (dev only).")
         else:
-            logger.warning("Ollama unavailable, no GROQ_API_KEY, no OPENAI_API_KEY. Using mock LLM.")
+            logger.warning("Ollama unavailable, no GROQ_API_KEY, no OPENAI_API_KEY. Falling back to mock LLM (dev only).")
         return _get_mock_llm()
 
     # -- 2. Try OpenAI or an OpenAI-compatible provider (Groq, etc.) --
@@ -183,27 +193,9 @@ def get_llm(
         else:
             logger.warning("OPENAI_API_KEY not set. Skipping OpenAI provider.")
 
-    # -- 3. Fallback: Mock LLM for development -------------------
-    logger.warning("Using mock chat LLM for development (no valid LLM provider available)")
-    try:
-        from langchain_core.language_models.fake_chat_models import FakeListChatModel
-
-        return FakeListChatModel(
-            responses=[
-                "[DEV MODE] This is a mock response. Set OPENAI_API_KEY or install Ollama for real inference.",
-                "[DEV MODE] Query received. Add billing to OpenAI or run 'ollama pull llama3.2' for real responses.",
-                "[DEV MODE] Mock answer: DocuMind AI is a document intelligence platform.",
-            ]
-        )
-    except ImportError:
-        # Last resort: minimal mock
-        logger.error("No LLM backend available. Install langchain-core fake chat models or configure a provider.")
-        raise RuntimeError(
-            "No LLM provider available. Options:\n"
-            "1. Set OPENAI_API_KEY in .env\n"
-            "2. Install & run Ollama: pip install langchain-ollama + 'ollama pull llama3.2'\n"
-            "3. Install mock fallback: pip install langchain-community"
-        )
+    # -- 3. Fallback: Mock LLM for development only -------------------
+    logger.warning("No valid LLM provider configured — falling back to mock LLM (dev/test only)")
+    return _get_mock_llm()
 
 
 def clear_llm_cache() -> None:

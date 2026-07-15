@@ -92,9 +92,47 @@ def _get_jwt_secret() -> str:
     return secret
 
 
+def _get_jwt_signing_key() -> str:
+    """
+    Return the key used to SIGN tokens.
+
+    RS256 (asymmetric, production-preferred): private key from JWT_PRIVATE_KEY env var.
+    HS256 (symmetric, dev/simple deployments): shared secret from JWT_SECRET_KEY.
+    RS256 is selected automatically when JWT_PRIVATE_KEY is configured.
+    """
+    settings = get_settings()
+    private_key = getattr(settings, "jwt_private_key", None)
+    if private_key:
+        return private_key.replace("\\n", "\n")
+    return _get_jwt_secret()
+
+
+def _get_jwt_verification_key() -> str:
+    """
+    Return the key used to VERIFY tokens.
+
+    RS256: public key (can be distributed to every service without leaking signing ability).
+    HS256: same shared secret as signing.
+    """
+    settings = get_settings()
+    public_key = getattr(settings, "jwt_public_key", None)
+    if public_key:
+        return public_key.replace("\\n", "\n")
+    return _get_jwt_secret()
+
+
 def _get_jwt_algorithm() -> str:
-    """Get JWT algorithm from settings with safe default."""
-    return getattr(get_settings(), "jwt_algorithm", "HS256")
+    """
+    Return RS256 when an RSA keypair is configured, HS256 otherwise.
+
+    RS256 is strongly preferred for production — the private key never leaves the
+    auth service, while every downstream service can verify tokens with only the
+    public key (no shared-secret exposure).
+    """
+    settings = get_settings()
+    if getattr(settings, "jwt_private_key", None):
+        return "RS256"
+    return getattr(settings, "jwt_algorithm", "HS256")
 
 
 # -- Public API (DVMELTSS-M: Clear separation) -------------------------------
@@ -204,7 +242,7 @@ def create_access_token(
     }
     return jwt.encode(
         payload,
-        _get_jwt_secret(),
+        _get_jwt_signing_key(),
         algorithm=_get_jwt_algorithm(),
     )
 
@@ -243,7 +281,7 @@ def create_refresh_token(
 
     return jwt.encode(
         payload,
-        _get_jwt_secret(),
+        _get_jwt_signing_key(),
         algorithm=_get_jwt_algorithm(),
     )
 
@@ -269,7 +307,7 @@ def decode_token(
     """
     payload = jwt.decode(
         token,
-        _get_jwt_secret(),
+        _get_jwt_verification_key(),
         algorithms=[_get_jwt_algorithm()],
     )
     required_type = token_type or expected_type
@@ -317,7 +355,7 @@ def create_sso_state_token(workspace_id: str, code_verifier: str, nonce: str) ->
         "iat": datetime.now(timezone.utc),
         "type": _TOKEN_TYPE_SSO_STATE,
     }
-    return jwt.encode(payload, _get_jwt_secret(), algorithm=_get_jwt_algorithm())
+    return jwt.encode(payload, _get_jwt_signing_key(), algorithm=_get_jwt_algorithm())
 
 
 def verify_sso_state_token(token: str) -> Optional[dict]:

@@ -210,6 +210,10 @@ class User(Base):
         onupdate=_utcnow,
     )
 
+    # TOTP / MFA
+    totp_secret = Column(String(64), nullable=True)   # base32-encoded TOTP seed; NULL = MFA not enrolled
+    mfa_enabled = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+
     # Soft-delete — prefer is_deleted over hard DELETE to preserve audit trails.
     is_deleted = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
@@ -411,6 +415,76 @@ class ApiKey(Base):
 
     def __repr__(self) -> str:
         return f"<ApiKey(prefix={self.key_prefix}, active={self.is_active})>"
+
+
+# ========================================================================
+# -- DOCUMENT-LEVEL ACL -------------------------------------------------
+# ========================================================================
+
+
+class DocumentPermission(Base):
+    """
+    Per-document access control list (ACL).
+
+    Grants a specific workspace member explicit access to a single document
+    at a named permission level (view, edit, admin).
+
+    When no rows exist for a document, fallback is the workspace-level role.
+    When rows exist, ONLY listed members (and workspace admins) can access the document.
+
+    Columns:
+        document_id  — matches the ``source_file`` identifier stored in ChromaDB / FAISS
+                       metadata (e.g. "2024-annual-report.pdf") — NOT a UUID FK so we
+                       don't create a hard dependency on a separate documents table.
+        workspace_id — scope the ACL to one workspace (tenant isolation)
+        user_id      — the workspace member being granted access
+        permission   — "view" | "edit" | "admin"
+    """
+
+    __tablename__ = "document_permissions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id = Column(String(512), nullable=False, index=True)
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    permission = Column(
+        String(20),
+        nullable=False,
+        default="view",
+        server_default="view",
+    )
+    granted_by = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    granted_at = Column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    workspace: Mapped["Workspace"] = relationship("Workspace", lazy="select", foreign_keys=[workspace_id])
+    user: Mapped["User"] = relationship("User", lazy="select", foreign_keys=[user_id])
+
+    __table_args__ = (
+        UniqueConstraint("document_id", "workspace_id", "user_id", name="uq_doc_perm_user"),
+        Index("ix_doc_perm_document_workspace", "document_id", "workspace_id"),
+        Index("ix_doc_perm_user_workspace", "user_id", "workspace_id"),
+        CheckConstraint("permission IN ('view', 'edit', 'admin')", name="chk_doc_perm_level"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<DocumentPermission(doc={self.document_id!r}, user={self.user_id}, perm={self.permission})>"
 
 
 # ========================================================================
