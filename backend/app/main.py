@@ -302,8 +302,8 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         description="DocuMind AI: Multi-domain Document Intelligence Platform",
         lifespan=lifespan,
-        docs_url="/docs" if settings.api_reload else None,
-        redoc_url="/redoc" if settings.api_reload else None,
+        docs_url="/docs",
+        redoc_url="/redoc",
     )
 
     # -- Middleware Stack ---------------------
