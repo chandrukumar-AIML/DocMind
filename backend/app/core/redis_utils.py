@@ -25,9 +25,10 @@ def sanitize_redis_key(value: str, prefix: str | None = None, max_length: int = 
 
 @lru_cache(maxsize=16)
 def _client_for(redis_url: str, db: int) -> redis.Redis:
-    return redis.from_url(
-        redis_url,
-        db=db,
+    # Upstash (rediss://) only supports DB 0 and needs relaxed TLS cert check
+    effective_db = 0 if redis_url.startswith("rediss://") else db
+    kwargs: dict = dict(
+        db=effective_db,
         decode_responses=True,
         socket_connect_timeout=5.0,
         socket_timeout=5.0,
@@ -35,6 +36,9 @@ def _client_for(redis_url: str, db: int) -> redis.Redis:
         retry_on_timeout=True,
         max_connections=20,
     )
+    if redis_url.startswith("rediss://"):
+        kwargs["ssl_cert_reqs"] = "none"
+    return redis.from_url(redis_url, **kwargs)
 
 
 async def get_async_redis(redis_url: str, db: int = 0) -> redis.Redis:
