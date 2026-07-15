@@ -99,8 +99,7 @@ class CacheStats:
 
 def _create_redis_client(redis_url: str, db: int = 2) -> redis.Redis:
     """Create async Redis client with production-safe defaults."""
-    return redis.from_url(
-        redis_url,
+    kwargs: dict = dict(
         db=db,
         decode_responses=True,
         socket_connect_timeout=5.0,
@@ -109,6 +108,10 @@ def _create_redis_client(redis_url: str, db: int = 2) -> redis.Redis:
         retry_on_timeout=True,
         max_connections=10,
     )
+    # Upstash (rediss://) uses self-signed-compatible TLS — skip cert verification
+    if redis_url.startswith("rediss://"):
+        kwargs["ssl_cert_reqs"] = "none"
+    return redis.from_url(redis_url, **kwargs)
 
 
 class QueryCache:
@@ -521,7 +524,9 @@ class QueryCache:
         if self._mode == "memory" or self._redis_failed or not self._redis:
             return True
         try:
-            return await self._with_retry(self._redis.ping) is True
+            result = await self._with_retry(self._redis.ping)
+            # redis-py returns True (bool) but Upstash/some servers return b'PONG'
+            return bool(result)
         except RedisError:
             return False
 
