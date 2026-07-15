@@ -139,51 +139,14 @@ COPY --from=builder /opt/hf_models /opt/hf_models
 # The broad install is non-fatal (|| true); the explicit layer below guarantees
 # the packages that have historically failed via cache are definitely present.
 COPY requirements.txt /tmp/requirements.txt
+# Strip paddle packages (GPU-only, already installed in builder) then install
+# everything else WITHOUT || true so any failure is visible and fatal.
 RUN grep -v "^paddlepaddle\|^paddleocr" /tmp/requirements.txt \
         > /tmp/requirements-runtime.txt \
-    && /opt/venv/bin/pip install -r /tmp/requirements-runtime.txt \
-        --quiet --no-warn-script-location || true \
     && /opt/venv/bin/pip install \
-        "opencv-python-headless>=4.9.0,<5.0.0" \
-        "albumentations>=1.4.0,<2.0.0" \
-        "rank-bm25>=0.2.2,<0.3.0" \
-        "numpy==1.26.4" \
-        "fastapi>=0.111.0,<0.112.0" \
-        "uvicorn[standard]>=0.29.0,<0.30.0" \
-        "alembic>=1.13.0,<2.0.0" \
-        "psycopg2-binary>=2.9.9,<3.0.0" \
-        "sentence-transformers>=3.0.0,<4.0.0" \
-        "faiss-cpu>=1.8.0,<2.0.0" \
-        "chromadb>=0.5.0,<0.6.0" \
-        "langchain>=0.3.0,<0.4.0" \
-        "langchain-community>=0.3.0,<0.4.0" \
-        "langchain-openai>=0.2.0,<0.4.0" \
-        "langchain-chroma>=0.1.0,<2.0.0" \
-        "langgraph>=0.2.0,<0.4.0" \
-        "neo4j>=5.18.0,<6.0.0" \
-        "networkx>=3.2.0,<4.0.0" \
-        "openai>=1.30.0,<2.0.0" \
-        "tiktoken>=0.7.0,<1.0.0" \
-        "celery>=5.4.0,<6.0.0" \
-        "redis>=5.0.0,<6.0.0" \
-        "stripe>=9.0.0,<10.0.0" \
-        "boto3>=1.34.0,<2.0.0" \
-        "pdf2image>=1.17.0,<2.0.0" \
-        "pypdfium2>=4.29.0,<5.0.0" \
-        "python-docx>=1.1.0,<2.0.0" \
-        "pandas>=2.2.0,<3.0.0" \
-        "openpyxl>=3.1.2,<4.0.0" \
-        "aiofiles>=23.0.0,<25.0.0" \
-        "Authlib>=1.3.0,<2.0.0" \
-        "Jinja2>=3.1.0,<4.0.0" \
-        "duckduckgo-search>=6.1.0,<7.0.0" \
-        "rouge-score>=0.1.2,<0.2.0" \
-        "pandas>=2.2.0,<3.0.0" \
-        "openpyxl>=3.1.2,<4.0.0" \
-        "evidently>=0.4.30,<0.5.0" \
-        "nltk>=3.8.0,<4.0.0" \
-        "scikit-learn>=1.4.0,<2.0.0" \
+        --no-warn-script-location \
         --quiet \
+        -r /tmp/requirements-runtime.txt \
     && /opt/venv/bin/pip uninstall -y multipart 2>/dev/null || true \
     && /opt/venv/bin/pip install "python-multipart>=0.0.9,<0.1.0" --force-reinstall --quiet \
     && rm /tmp/requirements.txt /tmp/requirements-runtime.txt

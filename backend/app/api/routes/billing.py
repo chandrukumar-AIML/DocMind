@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-import stripe
+try:
+    import stripe
+except ImportError:  # pragma: no cover
+    stripe = None  # type: ignore[assignment]
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
