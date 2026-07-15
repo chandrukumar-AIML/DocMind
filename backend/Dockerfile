@@ -177,6 +177,7 @@ RUN grep -v "^paddlepaddle\|^paddleocr" /tmp/requirements.txt \
         "Authlib>=1.3.0,<2.0.0" \
         "Jinja2>=3.1.0,<4.0.0" \
         "duckduckgo-search>=6.1.0,<7.0.0" \
+        "rouge-score>=0.1.2,<0.2.0" \
         --quiet \
     && /opt/venv/bin/pip uninstall -y multipart 2>/dev/null || true \
     && /opt/venv/bin/pip install "python-multipart>=0.0.9,<0.1.0" --force-reinstall --quiet \
