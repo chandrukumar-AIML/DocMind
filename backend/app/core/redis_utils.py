@@ -32,12 +32,13 @@ def _client_for(redis_url: str, db: int) -> redis.Redis:
         decode_responses=True,
         socket_connect_timeout=5.0,
         socket_timeout=5.0,
-        health_check_interval=30,
         retry_on_timeout=True,
         max_connections=20,
     )
     if redis_url.startswith("rediss://"):
         kwargs["ssl_cert_reqs"] = "none"
+    else:
+        kwargs["health_check_interval"] = 30
     return redis.from_url(redis_url, **kwargs)
 
 

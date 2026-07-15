@@ -106,13 +106,14 @@ def _create_redis_client(redis_url: str, db: int = 2) -> redis.Redis:
         decode_responses=True,
         socket_connect_timeout=5.0,
         socket_timeout=5.0,
-        health_check_interval=30,
         retry_on_timeout=True,
         max_connections=10,
     )
-    # Upstash TLS cert requires relaxed SSL verification
     if redis_url.startswith("rediss://"):
+        # Upstash: relaxed TLS cert + no background health checks (free tier connection limits)
         kwargs["ssl_cert_reqs"] = "none"
+    else:
+        kwargs["health_check_interval"] = 30
     return redis.from_url(redis_url, **kwargs)
 
 
@@ -209,7 +210,7 @@ class QueryCache:
             logger.warning(f"Redis operation failed, switching to memory mode: {e}")
             self._redis_failed = True
             await self._ensure_memory_mode()
-            return True if operation.__name__ in ["setex", "eval", "delete"] else None
+            return True if operation.__name__ in ["setex", "eval", "delete", "ping"] else None
 
     @staticmethod
     def _make_embed_key(workspace_id: str, question: str) -> str:
@@ -526,10 +527,11 @@ class QueryCache:
         if self._mode == "memory" or self._redis_failed or not self._redis:
             return True
         try:
-            result = await self._with_retry(self._redis.ping)
-            # redis-py returns True (bool) but Upstash/some servers return b'PONG'
+            # Direct ping — bypass _with_retry to avoid side effects (mode flip)
+            result = await self._redis.ping()
+            # redis-py may return True (bool) or "PONG" (str) depending on decode_responses
             return bool(result)
-        except RedisError:
+        except Exception:
             return False
 
     async def close(self) -> None:
