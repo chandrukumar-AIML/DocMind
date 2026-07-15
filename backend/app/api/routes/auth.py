@@ -554,7 +554,7 @@ async def register(
         logger.error(f"[{corr_id}] Registration failed: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Registration service temporarily unavailable",
+            detail=f"Registration failed: {type(e).__name__}: {e}",
             headers={"X-Correlation-ID": corr_id},
         )
 
