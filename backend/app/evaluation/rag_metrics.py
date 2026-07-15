@@ -8,8 +8,30 @@ from dataclasses import dataclass, field
 from typing import Final, List, Optional, Any
 
 import numpy as np
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-from rouge_score import rouge_scorer
+
+# Lazy imports — these heavy/optional packages must not crash the server at
+# startup if they are absent from the container.  They are imported inside
+# RAGMetricsCalculator.__init__ so any ImportError surfaces only when the
+# evaluation feature is actually used, not on every uvicorn boot.
+_sentence_bleu = None
+_SmoothingFunction = None
+_rouge_scorer = None
+
+
+def _load_optional_eval_deps():
+    global _sentence_bleu, _SmoothingFunction, _rouge_scorer
+    if _rouge_scorer is None:
+        try:
+            from nltk.translate.bleu_score import sentence_bleu as _sb, SmoothingFunction as _sf  # noqa: PLC0415
+            _sentence_bleu = _sb
+            _SmoothingFunction = _sf
+        except ImportError:
+            pass
+        try:
+            from rouge_score import rouge_scorer as _rs  # noqa: PLC0415
+            _rouge_scorer = _rs
+        except ImportError:
+            pass
 
 # DVMELTSS-M: Import centralized utilities
 from app.config import get_settings
@@ -145,13 +167,23 @@ class RAGMetricsCalculator:
             cache_dir=".cache/eval_embeddings",
         )
 
-        # BLEU smoothing
-        self._smoother_bleu1 = SmoothingFunction().method1
-        self._smoother_bleu4 = SmoothingFunction().method3
+        _load_optional_eval_deps()
 
-        # ROUGE with and without stemming
-        self._rouge_stemmed = rouge_scorer.RougeScorer(["rouge1", "rougeL"], use_stemmer=True)
-        self._rouge_unstemmed = rouge_scorer.RougeScorer(["rouge1", "rougeL"], use_stemmer=False)
+        # BLEU smoothing (None when nltk absent)
+        if _SmoothingFunction is not None:
+            self._smoother_bleu1 = _SmoothingFunction().method1
+            self._smoother_bleu4 = _SmoothingFunction().method3
+        else:
+            self._smoother_bleu1 = None
+            self._smoother_bleu4 = None
+
+        # ROUGE with and without stemming (None when rouge_score package absent)
+        if _rouge_scorer is not None:
+            self._rouge_stemmed = _rouge_scorer.RougeScorer(["rouge1", "rougeL"], use_stemmer=True)
+            self._rouge_unstemmed = _rouge_scorer.RougeScorer(["rouge1", "rougeL"], use_stemmer=False)
+        else:
+            self._rouge_stemmed = None
+            self._rouge_unstemmed = None
 
         self._llm_retry = retry_async(
             config=RetryConfig(
@@ -194,27 +226,28 @@ class RAGMetricsCalculator:
             correlation_id=corr_id,
         )
 
-        # === BLEU scores ===
-        reference = ground_truth.lower().split()
-        hypothesis = answer.lower().split()
+        # === BLEU scores (skipped if nltk unavailable) ===
+        if _sentence_bleu is not None and self._smoother_bleu1 is not None:
+            reference = ground_truth.lower().split()
+            hypothesis = answer.lower().split()
+            metrics.bleu_1 = _sentence_bleu(
+                [reference],
+                hypothesis,
+                weights=(1, 0, 0, 0),
+                smoothing_function=self._smoother_bleu1,
+            )
+            metrics.bleu_4 = _sentence_bleu(
+                [reference],
+                hypothesis,
+                weights=(0.25, 0.25, 0.25, 0.25),
+                smoothing_function=self._smoother_bleu4,
+            )
 
-        metrics.bleu_1 = sentence_bleu(
-            [reference],
-            hypothesis,
-            weights=(1, 0, 0, 0),
-            smoothing_function=self._smoother_bleu1,
-        )
-        metrics.bleu_4 = sentence_bleu(
-            [reference],
-            hypothesis,
-            weights=(0.25, 0.25, 0.25, 0.25),
-            smoothing_function=self._smoother_bleu4,
-        )
-
-        # === ROUGE scores ===
-        rouge_scores = self._rouge_stemmed.score(ground_truth, answer)
-        metrics.rouge_1_f = rouge_scores["rouge1"].fmeasure
-        metrics.rouge_l_f = rouge_scores["rougeL"].fmeasure
+        # === ROUGE scores (skipped if rouge_score unavailable) ===
+        if self._rouge_stemmed is not None:
+            rouge_scores = self._rouge_stemmed.score(ground_truth, answer)
+            metrics.rouge_1_f = rouge_scores["rouge1"].fmeasure
+            metrics.rouge_l_f = rouge_scores["rougeL"].fmeasure
 
         # === RAGAS-style LLM-evaluated metrics with timeout ===
         try:
