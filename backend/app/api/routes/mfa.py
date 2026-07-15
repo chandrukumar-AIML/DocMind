@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, AuthenticatedUser
-from app.database.engine import get_async_db
+from app.database.session import get_async_db
 
 logger = logging.getLogger(__name__)
 
