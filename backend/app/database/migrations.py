@@ -62,6 +62,9 @@ _COLUMN_REPAIRS: list[ColumnRepair] = [
     # soft-delete — users
     ColumnRepair("users", "deleted_at", "TIMESTAMP WITH TIME ZONE", add_index=True),
     ColumnRepair("users", "is_deleted", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    # MFA — TOTP
+    ColumnRepair("users", "totp_secret", "VARCHAR(64)"),
+    ColumnRepair("users", "mfa_enabled", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]
 
 _ENUM_REPAIRS: list[EnumValueRepair] = [
@@ -117,5 +120,20 @@ async def apply_pending_repairs() -> None:
             await conn.execute(
                 text(f"ALTER TYPE {enum_repair.enum_name} ADD VALUE IF NOT EXISTS '{enum_repair.value}'")
             )
+
+        # Create document_permissions table if missing (added for per-doc ACL)
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS document_permissions (
+                id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+                document_id VARCHAR(512) NOT NULL,
+                workspace_id VARCHAR(36) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                permission VARCHAR(16) NOT NULL DEFAULT 'view'
+                    CHECK (permission IN ('view','edit','admin')),
+                granted_by VARCHAR(36),
+                granted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                CONSTRAINT uq_doc_perm_user UNIQUE (document_id, workspace_id, user_id)
+            )
+        """))
 
     logger.info("Schema repairs complete")
