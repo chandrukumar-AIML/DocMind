@@ -178,6 +178,11 @@ RUN grep -v "^paddlepaddle\|^paddleocr" /tmp/requirements.txt \
         "Jinja2>=3.1.0,<4.0.0" \
         "duckduckgo-search>=6.1.0,<7.0.0" \
         "rouge-score>=0.1.2,<0.2.0" \
+        "pandas>=2.2.0,<3.0.0" \
+        "openpyxl>=3.1.2,<4.0.0" \
+        "evidently>=0.4.30,<0.5.0" \
+        "nltk>=3.8.0,<4.0.0" \
+        "scikit-learn>=1.4.0,<2.0.0" \
         --quiet \
     && /opt/venv/bin/pip uninstall -y multipart 2>/dev/null || true \
     && /opt/venv/bin/pip install "python-multipart>=0.0.9,<0.1.0" --force-reinstall --quiet \

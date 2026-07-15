@@ -10,8 +10,11 @@ from dataclasses import dataclass, field
 from io import StringIO
 from typing import Final, Optional, Any
 
-import pandas as pd
 import numpy as np
+try:
+    import pandas as pd
+except ImportError:  # pragma: no cover
+    pd = None  # type: ignore[assignment]
 from pydantic import BaseModel, ValidationError, Field
 
 # DVMELTSS-M: Import centralized utilities

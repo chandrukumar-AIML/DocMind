@@ -11,7 +11,11 @@ from datetime import date
 from typing import Final, Optional, Any
 
 import numpy as np
-import pandas as pd
+
+try:
+    import pandas as pd
+except ImportError:  # pragma: no cover
+    pd = None  # type: ignore[assignment]
 
 # DVMELTSS-M: Import centralized utilities
 from app.core.monitoring_utils import (
