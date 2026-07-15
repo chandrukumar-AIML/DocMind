@@ -530,8 +530,16 @@ class QueryCache:
             # Direct ping — bypass _with_retry to avoid side effects (mode flip)
             result = await self._redis.ping()
             # redis-py may return True (bool) or "PONG" (str) depending on decode_responses
-            return bool(result)
-        except Exception:
+            ok = bool(result)
+            if not ok:
+                self._last_ping_error = f"ping returned {result!r} ({type(result).__name__})"
+                logger.warning(f"Redis ping returned falsy value: {result!r}")
+            else:
+                self._last_ping_error = None
+            return ok
+        except Exception as e:
+            self._last_ping_error = f"{type(e).__name__}: {e}"
+            logger.warning(f"Redis ping exception: {type(e).__name__}: {e}")
             return False
 
     async def close(self) -> None:

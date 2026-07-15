@@ -281,10 +281,11 @@ async def _check_cache(request: Request) -> ComponentHealth:
             )
 
         if not is_healthy:
+            ping_detail = getattr(cache, "_last_ping_error", "unknown")
             return ComponentHealth(
                 status="degraded",
-                error="Redis ping returned false",
-                details={"redis_url": redis_url},
+                error=f"Redis ping failed: {ping_detail}",
+                details={"redis_url": redis_url, "mode": getattr(cache, "_mode", "?"), "redis_failed": getattr(cache, "_redis_failed", "?")},
             )
 
         try:
