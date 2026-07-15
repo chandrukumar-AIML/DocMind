@@ -148,3 +148,4 @@ numpy==1.26.4
 # Stability pins
 packaging==24.2
 setuptools>=65.0.0
+pyotp>=2.9.0,<3.0.0
