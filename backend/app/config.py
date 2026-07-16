@@ -108,6 +108,18 @@ class Settings(BaseSettings):
         description="Groq model to use as LLM fallback (llama-3.3-70b-versatile or mixtral-8x7b-32768).",
     )
 
+    # -- OpenRouter (free cloud LLM — 16+ free models, OpenAI-compatible) -
+    openrouter_api_key: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("OPENROUTER_API_KEY", "openrouter_api_key"),
+        description="OpenRouter API key (sk-or-v1-...) — gives access to 16+ free models via OpenAI-compatible API.",
+    )
+    openrouter_model: str = Field(
+        default="nvidia/nemotron-ultra-253b-v1:free",
+        validation_alias=AliasChoices("OPENROUTER_MODEL", "openrouter_model"),
+        description="OpenRouter model ID to use (default: NVIDIA Nemotron Ultra 253B, free tier).",
+    )
+
     # -- Voyage AI (free cloud embedding fallback) ---------------------
     voyage_api_key: Optional[str] = Field(
         default=None,

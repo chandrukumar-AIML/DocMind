@@ -143,7 +143,35 @@ def get_llm(
             except Exception as e:
                 logger.warning(f"Groq fallback failed: {e}. Trying OpenAI.")
 
-        # Groq failed (or no key) → try OpenAI as second cloud fallback
+        # Groq failed (or no key) → try OpenRouter (free models) as second cloud fallback
+        openrouter_key = getattr(_settings, "openrouter_api_key", None)
+        if openrouter_key:
+            try:
+                from langchain_openai import ChatOpenAI
+
+                openrouter_model = getattr(
+                    _settings, "openrouter_model", "nvidia/nemotron-ultra-253b-v1:free"
+                )
+                llm = ChatOpenAI(
+                    model=openrouter_model,
+                    api_key=openrouter_key,
+                    base_url="https://openrouter.ai/api/v1",
+                    temperature=temperature,
+                    streaming=streaming,
+                    max_retries=2,
+                    request_timeout=60,
+                    max_tokens=4096,
+                    default_headers={
+                        "HTTP-Referer": "https://docmind-backend-4ip1.onrender.com",
+                        "X-Title": "DocMind AI",
+                    },
+                )
+                logger.info(f"Using OpenRouter fallback: {openrouter_model}")
+                return llm
+            except Exception as e:
+                logger.warning(f"OpenRouter fallback failed: {e}. Trying OpenAI.")
+
+        # OpenRouter failed (or no key) → try OpenAI as third cloud fallback
         api_key = getattr(_settings, "openai_api_key", None)
         if api_key:
             try:
@@ -167,31 +195,67 @@ def get_llm(
             logger.warning("Ollama unavailable, no GROQ_API_KEY, no OPENAI_API_KEY. Falling back to mock LLM (dev only).")
         return _get_mock_llm()
 
-    # -- 2. Try OpenAI or an OpenAI-compatible provider (Groq, etc.) --
+    # -- 2. Try OpenAI / OpenRouter / any OpenAI-compatible provider --
     if provider == "openai":
         api_key = getattr(_settings, "openai_api_key", None)
+        openrouter_key = getattr(_settings, "openrouter_api_key", None)
 
+        # Prefer OPENAI_API_KEY if set
         if api_key:
             try:
                 from langchain_openai import ChatOpenAI
 
+                base_url = getattr(_settings, "openai_base_url", None)
+                extra_headers = {}
+                if base_url and "openrouter.ai" in base_url:
+                    extra_headers = {
+                        "HTTP-Referer": "https://docmind-backend-4ip1.onrender.com",
+                        "X-Title": "DocMind AI",
+                    }
                 llm = ChatOpenAI(
                     model=model,
                     api_key=api_key,
-                    base_url=getattr(_settings, "openai_base_url", None),
+                    base_url=base_url,
                     temperature=temperature,
                     streaming=streaming,
                     max_retries=3,
-                    request_timeout=getattr(_settings, "llm_request_timeout", 30),
+                    request_timeout=getattr(_settings, "llm_request_timeout", 60),
                     max_tokens=getattr(_settings, "llm_max_tokens", 4096),
+                    default_headers=extra_headers or None,
                 )
-                base_url = getattr(_settings, "openai_base_url", None)
-                logger.info(f"Using {'OpenAI-compatible' if base_url else 'OpenAI'} LLM: {model}" + (f" @ {base_url}" if base_url else ""))
+                logger.info(f"Using {'OpenRouter' if 'openrouter' in (base_url or '') else 'OpenAI-compatible' if base_url else 'OpenAI'} LLM: {model}" + (f" @ {base_url}" if base_url else ""))
                 return llm
             except Exception as e:
                 logger.error(f"OpenAI-compatible LLM initialization failed: {e}")
+
+        # Fallback to OPENROUTER_API_KEY if no OPENAI_API_KEY
+        elif openrouter_key:
+            try:
+                from langchain_openai import ChatOpenAI
+
+                openrouter_model = getattr(
+                    _settings, "openrouter_model", "nvidia/nemotron-ultra-253b-v1:free"
+                )
+                llm = ChatOpenAI(
+                    model=openrouter_model,
+                    api_key=openrouter_key,
+                    base_url="https://openrouter.ai/api/v1",
+                    temperature=temperature,
+                    streaming=streaming,
+                    max_retries=2,
+                    request_timeout=60,
+                    max_tokens=4096,
+                    default_headers={
+                        "HTTP-Referer": "https://docmind-backend-4ip1.onrender.com",
+                        "X-Title": "DocMind AI",
+                    },
+                )
+                logger.info(f"Using OpenRouter (openai provider path): {openrouter_model}")
+                return llm
+            except Exception as e:
+                logger.error(f"OpenRouter initialization failed: {e}")
         else:
-            logger.warning("OPENAI_API_KEY not set. Skipping OpenAI provider.")
+            logger.warning("OPENAI_API_KEY and OPENROUTER_API_KEY not set. Skipping openai provider.")
 
     # -- 3. Fallback: Mock LLM for development only -------------------
     logger.warning("No valid LLM provider configured — falling back to mock LLM (dev/test only)")
