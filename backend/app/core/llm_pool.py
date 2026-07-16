@@ -121,22 +121,24 @@ def get_llm(
         except Exception as e:
             logger.warning(f"Ollama unavailable: {e}. Falling back to OpenAI.")
 
-        # Ollama failed → try Gemini Flash (free, 1M context) as first cloud fallback
+        # Ollama failed → try Gemini Flash via OpenAI-compatible endpoint (no heavy SDK)
         gemini_key = getattr(_settings, "gemini_api_key", None)
         if gemini_key:
             try:
-                from langchain_google_genai import ChatGoogleGenerativeAI
+                from langchain_openai import ChatOpenAI
 
                 gemini_model = getattr(_settings, "gemini_model", "gemini-2.0-flash")
-                llm = ChatGoogleGenerativeAI(
+                llm = ChatOpenAI(
                     model=gemini_model,
-                    google_api_key=gemini_key,
+                    api_key=gemini_key,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                     temperature=temperature,
                     streaming=streaming,
                     max_retries=2,
-                    max_output_tokens=8192,
+                    request_timeout=60,
+                    max_tokens=8192,
                 )
-                logger.info(f"Ollama unavailable — using Gemini fallback: {gemini_model}")
+                logger.info(f"Ollama unavailable — using Gemini (OpenAI-compat) fallback: {gemini_model}")
                 return llm
             except Exception as e:
                 logger.warning(f"Gemini fallback failed: {e}. Trying Groq.")
@@ -215,23 +217,25 @@ def get_llm(
             logger.warning("Ollama unavailable, no GROQ_API_KEY, no OPENAI_API_KEY. Falling back to mock LLM (dev only).")
         return _get_mock_llm()
 
-    # -- 2. Try Gemini as standalone provider (LLM_PROVIDER=gemini) ------
+    # -- 2. Try Gemini via OpenAI-compatible endpoint (LLM_PROVIDER=gemini) --
     if provider == "gemini":
         gemini_key = getattr(_settings, "gemini_api_key", None)
         if gemini_key:
             try:
-                from langchain_google_genai import ChatGoogleGenerativeAI
+                from langchain_openai import ChatOpenAI
 
                 gemini_model = getattr(_settings, "gemini_model", "gemini-2.0-flash")
-                llm = ChatGoogleGenerativeAI(
+                llm = ChatOpenAI(
                     model=gemini_model,
-                    google_api_key=gemini_key,
+                    api_key=gemini_key,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                     temperature=temperature,
                     streaming=streaming,
                     max_retries=2,
-                    max_output_tokens=8192,
+                    request_timeout=60,
+                    max_tokens=8192,
                 )
-                logger.info(f"Using Gemini: {gemini_model}")
+                logger.info(f"Using Gemini (OpenAI-compat): {gemini_model}")
                 return llm
             except Exception as e:
                 logger.error(f"Gemini initialization failed: {e}")
@@ -273,21 +277,23 @@ def get_llm(
             except Exception as e:
                 logger.error(f"OpenAI-compatible LLM initialization failed: {e}")
 
-        # No OPENAI_API_KEY → try Gemini Flash (free, 1M context)
+        # No OPENAI_API_KEY → try Gemini via OpenAI-compatible endpoint
         elif gemini_key:
             try:
-                from langchain_google_genai import ChatGoogleGenerativeAI
+                from langchain_openai import ChatOpenAI
 
                 gemini_model = getattr(_settings, "gemini_model", "gemini-2.0-flash")
-                llm = ChatGoogleGenerativeAI(
+                llm = ChatOpenAI(
                     model=gemini_model,
-                    google_api_key=gemini_key,
+                    api_key=gemini_key,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                     temperature=temperature,
                     streaming=streaming,
                     max_retries=2,
-                    max_output_tokens=8192,
+                    request_timeout=60,
+                    max_tokens=8192,
                 )
-                logger.info(f"Using Gemini (openai path fallback): {gemini_model}")
+                logger.info(f"Using Gemini (OpenAI-compat, openai path): {gemini_model}")
                 return llm
             except Exception as e:
                 logger.error(f"Gemini initialization failed: {e}")
