@@ -108,6 +108,18 @@ class Settings(BaseSettings):
         description="Groq model to use as LLM fallback (llama-3.3-70b-versatile or mixtral-8x7b-32768).",
     )
 
+    # -- Google Gemini (free tier: 1M context, 15 RPM, 1500 req/day) ------
+    gemini_api_key: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("GEMINI_API_KEY", "gemini_api_key"),
+        description="Google AI Studio API key — Gemini 2.0 Flash is free, fast, 1M token context.",
+    )
+    gemini_model: str = Field(
+        default="gemini-2.0-flash",
+        validation_alias=AliasChoices("GEMINI_MODEL", "gemini_model"),
+        description="Gemini model to use (default: gemini-2.0-flash — free, 1M context).",
+    )
+
     # -- OpenRouter (free cloud LLM — 16+ free models, OpenAI-compatible) -
     openrouter_api_key: Optional[str] = Field(
         default=None,

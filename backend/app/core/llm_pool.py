@@ -121,7 +121,27 @@ def get_llm(
         except Exception as e:
             logger.warning(f"Ollama unavailable: {e}. Falling back to OpenAI.")
 
-        # Ollama failed → try Groq (free cloud) as first cloud fallback
+        # Ollama failed → try Gemini Flash (free, 1M context) as first cloud fallback
+        gemini_key = getattr(_settings, "gemini_api_key", None)
+        if gemini_key:
+            try:
+                from langchain_google_genai import ChatGoogleGenerativeAI
+
+                gemini_model = getattr(_settings, "gemini_model", "gemini-2.0-flash")
+                llm = ChatGoogleGenerativeAI(
+                    model=gemini_model,
+                    google_api_key=gemini_key,
+                    temperature=temperature,
+                    streaming=streaming,
+                    max_retries=2,
+                    max_output_tokens=8192,
+                )
+                logger.info(f"Ollama unavailable — using Gemini fallback: {gemini_model}")
+                return llm
+            except Exception as e:
+                logger.warning(f"Gemini fallback failed: {e}. Trying Groq.")
+
+        # Gemini failed (or no key) → try Groq (free cloud) as second cloud fallback
         groq_key = getattr(_settings, "groq_api_key", None)
         if groq_key:
             try:
@@ -195,10 +215,35 @@ def get_llm(
             logger.warning("Ollama unavailable, no GROQ_API_KEY, no OPENAI_API_KEY. Falling back to mock LLM (dev only).")
         return _get_mock_llm()
 
-    # -- 2. Try OpenAI / OpenRouter / any OpenAI-compatible provider --
+    # -- 2. Try Gemini as standalone provider (LLM_PROVIDER=gemini) ------
+    if provider == "gemini":
+        gemini_key = getattr(_settings, "gemini_api_key", None)
+        if gemini_key:
+            try:
+                from langchain_google_genai import ChatGoogleGenerativeAI
+
+                gemini_model = getattr(_settings, "gemini_model", "gemini-2.0-flash")
+                llm = ChatGoogleGenerativeAI(
+                    model=gemini_model,
+                    google_api_key=gemini_key,
+                    temperature=temperature,
+                    streaming=streaming,
+                    max_retries=2,
+                    max_output_tokens=8192,
+                )
+                logger.info(f"Using Gemini: {gemini_model}")
+                return llm
+            except Exception as e:
+                logger.error(f"Gemini initialization failed: {e}")
+        else:
+            logger.warning("GEMINI_API_KEY not set. Skipping gemini provider.")
+        return _get_mock_llm()
+
+    # -- 3. Try OpenAI / OpenRouter / any OpenAI-compatible provider --
     if provider == "openai":
         api_key = getattr(_settings, "openai_api_key", None)
         openrouter_key = getattr(_settings, "openrouter_api_key", None)
+        gemini_key = getattr(_settings, "gemini_api_key", None)
 
         # Prefer OPENAI_API_KEY if set
         if api_key:
@@ -228,7 +273,26 @@ def get_llm(
             except Exception as e:
                 logger.error(f"OpenAI-compatible LLM initialization failed: {e}")
 
-        # Fallback to OPENROUTER_API_KEY if no OPENAI_API_KEY
+        # No OPENAI_API_KEY → try Gemini Flash (free, 1M context)
+        elif gemini_key:
+            try:
+                from langchain_google_genai import ChatGoogleGenerativeAI
+
+                gemini_model = getattr(_settings, "gemini_model", "gemini-2.0-flash")
+                llm = ChatGoogleGenerativeAI(
+                    model=gemini_model,
+                    google_api_key=gemini_key,
+                    temperature=temperature,
+                    streaming=streaming,
+                    max_retries=2,
+                    max_output_tokens=8192,
+                )
+                logger.info(f"Using Gemini (openai path fallback): {gemini_model}")
+                return llm
+            except Exception as e:
+                logger.error(f"Gemini initialization failed: {e}")
+
+        # Fallback to OPENROUTER_API_KEY if no OPENAI_API_KEY / Gemini
         elif openrouter_key:
             try:
                 from langchain_openai import ChatOpenAI
