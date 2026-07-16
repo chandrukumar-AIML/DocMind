@@ -483,7 +483,7 @@ async def ingest_document(
     except Exception as e:
         background_tasks.add_task(record_ingest_error, user.workspace_id, corr_id, str(e), "system")
         logger.error(f"[{corr_id}] Ingest failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Document processing failed")
+        raise HTTPException(status_code=500, detail=f"Document processing failed: {type(e).__name__}: {e}")
 
 
 @router.get(
