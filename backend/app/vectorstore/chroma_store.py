@@ -7,6 +7,7 @@ from typing import Any, Iterator, Optional, Dict, List, TYPE_CHECKING
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
+from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
@@ -27,6 +28,24 @@ logger = logging.getLogger(__name__)
 
 # Internal collection for fast document listing (O(docs) not O(chunks))
 REGISTRY_COLLECTION = "document_registry"
+
+
+class _NoDownloadEF(EmbeddingFunction):
+    """Minimal embedding function for metadata-only collections.
+
+    Prevents ChromaDB from downloading the default all-MiniLM-L6-v2 ONNX model
+    (~27 second hang on Render free tier) when creating registry/parents collections
+    that don't need vector similarity search.
+    """
+
+    def __call__(self, input: Documents) -> Embeddings:
+        import hashlib
+        result = []
+        for text in input:
+            digest = hashlib.md5(text.encode("utf-8")).digest()
+            val = (int.from_bytes(digest[:4], "little") % 10000) / 10000.0
+            result.append([val])
+        return result
 
 
 _chroma_clients: Dict[str, chromadb.PersistentClient] = {}
@@ -91,8 +110,11 @@ class ChromaVectorStore:
             collection_name=self.collection_name,
             embedding_function=self.embeddings,
         )
-        # Pre-create registry collection to avoid warnings on fresh stores
-        self._client.get_or_create_collection(self.registry_collection_name)
+        # Pre-create registry collection to avoid warnings on fresh stores.
+        # Must pass embedding_function to prevent ChromaDB from downloading its default
+        # ONNX model (all-MiniLM-L6-v2) which causes a 27-second hang on Render free tier.
+        _no_dl_ef = _NoDownloadEF()
+        self._client.get_or_create_collection(self.registry_collection_name, embedding_function=_no_dl_ef)
         logger.info(
             f"ChromaDB initialized: dir={self.persist_dir}, "
             f"collection={self.collection_name}, "
@@ -196,7 +218,7 @@ class ChromaVectorStore:
         if not parents:
             return []
 
-        parent_collection = self._client.get_or_create_collection(self.parents_collection_name)
+        parent_collection = self._client.get_or_create_collection(self.parents_collection_name, embedding_function=_NoDownloadEF())
         ids, docs, metadatas = [], [], []
 
         for parent in parents:
@@ -340,7 +362,7 @@ class ChromaVectorStore:
         """
         corr_id = correlation_id or generate_vectorstore_correlation_id("chroma_list")
         try:
-            registry = self._client.get_or_create_collection(self.registry_collection_name)
+            registry = self._client.get_or_create_collection(self.registry_collection_name, embedding_function=_NoDownloadEF())
             result = registry.get(include=["metadatas"])
             metadatas = result.get("metadatas") or []
             if metadatas:
@@ -393,7 +415,7 @@ class ChromaVectorStore:
 
     def _update_document_registry(self, chunks: list[Document], correlation_id: str):
         """Update registry with new document metadata (idempotent upsert)."""
-        registry = self._client.get_or_create_collection(self.registry_collection_name)
+        registry = self._client.get_or_create_collection(self.registry_collection_name, embedding_function=_NoDownloadEF())
         seen_files: dict[str, dict] = {}
 
         for chunk in chunks:
