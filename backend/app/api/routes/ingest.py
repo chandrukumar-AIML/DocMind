@@ -235,8 +235,11 @@ async def ingest_document(
     start_ts = time.perf_counter()
 
     try:
-        # ✅ Isolated temp directory
-        with tempfile.TemporaryDirectory(dir=getattr(settings, "tmp_dir", None)) as tmp_dir:
+        # ✅ Isolated temp directory — ensure parent exists (Render ephemeral /tmp)
+        _tmp_base = getattr(settings, "tmp_dir", None)
+        if _tmp_base:
+            Path(_tmp_base).mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=_tmp_base or None) as tmp_dir:
             tmp_path = Path(tmp_dir) / f"upload{suffix}"
             tmp_path.write_bytes(content)
 
@@ -600,7 +603,10 @@ async def _ingest_via_universal(
     pipeline = UniversalIngestionPipeline()
 
     try:
-        with tempfile.TemporaryDirectory(dir=getattr(settings, "tmp_dir", None)) as tmp_dir:
+        _tmp_base2 = getattr(settings, "tmp_dir", None)
+        if _tmp_base2:
+            Path(_tmp_base2).mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=_tmp_base2 or None) as tmp_dir:
             tmp_path = Path(tmp_dir) / f"upload{suffix}"
             tmp_path.write_bytes(content)
             del content
