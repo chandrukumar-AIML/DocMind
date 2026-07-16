@@ -6,6 +6,7 @@ import { demoApi, isDemoMode } from "./demo";
 // window.location.href triggers a full page reload and drops all React state.
 // navigateTo() uses the registered React Router navigate function (set in AppRouter).
 import { navigateTo } from "../utils/navigator";
+import { clearAuth } from "../utils/authBus";
 
 // ════════════════════════════════════════════════════════════════════════
 // CONFIG (Centralized, env-driven)
@@ -131,12 +132,12 @@ apiClient.interceptors.response.use(
       localStorage.removeItem(ACCESS_TOKEN_KEY);
       localStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
       toast.error("Session expired. Please log in again.");
-      // [OK] FIXED: Use React Router navigate instead of window.location.href.
-      // Hard navigation drops React state (chat history, pending uploads).
-      // navigateTo() uses the registered navigate function from AppRouter.
-      if (window.location.pathname !== "/login") {
-        navigateTo("/login", { replace: true });
-      }
+      // Clear React auth state (setUser(null)) via the auth bus, then navigate.
+      clearAuth().finally(() => {
+        if (window.location.pathname !== "/login") {
+          navigateTo("/login", { replace: true });
+        }
+      });
     } else if (status === 403) {
       toast.error("Access denied. Check your permissions.");
     } else if (status === 404) {

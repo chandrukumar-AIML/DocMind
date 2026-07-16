@@ -10,6 +10,7 @@
 //   - Token expiry is tracked via a separate non-sensitive "token_expiry" key
 import { useState, useCallback, useEffect, useRef } from "react";
 import { demoApi, isDemoMode, DEMO_USER } from "../api/demo";
+import { setAuthClearer } from "../utils/authBus";
 
 // ════════════════════════════════════════════════════════════════════════
 // CONFIG
@@ -118,6 +119,11 @@ export function useAuth() {
       throw err;
     }
   }, [fetchMe, logout]);
+
+  // Register logout with the auth bus so axios interceptor can call it on 401
+  useEffect(() => {
+    setAuthClearer(logout);
+  }, [logout]);
 
   // Auto-refresh token before expiry
   useEffect(() => {

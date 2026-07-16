@@ -719,9 +719,15 @@ export const demoApi = {
   },
 };
 
-// Check if demo mode should be active
+// Check if demo mode should be active.
+// URL-based ?demo=true only works when VITE_ALLOW_URL_DEMO=true is set at build time —
+// prevents unauthenticated access via URL param in production deployments.
 export function isDemoMode() {
   if (import.meta.env?.VITE_DEMO_MODE === "true") return true;
-  if (typeof window !== "undefined" && window.location.search.includes("demo=true")) return true;
+  if (
+    import.meta.env?.VITE_ALLOW_URL_DEMO === "true" &&
+    typeof window !== "undefined" &&
+    window.location.search.includes("demo=true")
+  ) return true;
   return false;
 }
