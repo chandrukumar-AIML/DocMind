@@ -7,9 +7,84 @@ import PropTypes from "prop-types";
 const FIELD_TYPES = ["string", "number", "date", "boolean", "list", "email", "phone"];
 
 const BUILTIN_ICONS = {
+  // CA / Financial templates
+  gst_invoice: "🧾", itr_summary: "📊", form_16: "📋",
+  form_26as: "🏦", gst_notice: "⚠️", tds_certificate: "📄",
+  balance_sheet: "⚖️", profit_loss: "📈",
+  // General templates
   invoice: "🧾", contract: "📋", medical: "🏥",
   purchase_order: "📦", resume: "👤", bank_statement: "🏦",
 };
+
+// CA-specific templates shown inline when backend doesn't provide builtins
+const CA_QUICK_TEMPLATES = [
+  {
+    id: "gst_invoice",
+    name: "GST Tax Invoice",
+    group: "CA / GST",
+    fields: [
+      { name: "supplier_name", label: "Supplier Name", type: "string" },
+      { name: "supplier_gstin", label: "Supplier GSTIN", type: "string" },
+      { name: "buyer_name", label: "Buyer Name", type: "string" },
+      { name: "buyer_gstin", label: "Buyer GSTIN", type: "string" },
+      { name: "invoice_number", label: "Invoice Number", type: "string" },
+      { name: "invoice_date", label: "Invoice Date", type: "date" },
+      { name: "taxable_value", label: "Taxable Value (₹)", type: "number" },
+      { name: "cgst", label: "CGST (₹)", type: "number" },
+      { name: "sgst", label: "SGST (₹)", type: "number" },
+      { name: "igst", label: "IGST (₹)", type: "number" },
+      { name: "grand_total", label: "Grand Total (₹)", type: "number" },
+      { name: "hsn_sac", label: "HSN / SAC Code", type: "string" },
+    ],
+  },
+  {
+    id: "gst_notice",
+    name: "GST Notice / SCN",
+    group: "CA / GST",
+    fields: [
+      { name: "notice_type", label: "Notice Type (SCN/DRC-01/etc)", type: "string" },
+      { name: "gstin", label: "GSTIN", type: "string" },
+      { name: "period", label: "Tax Period", type: "string" },
+      { name: "demand_amount", label: "Tax Demand (₹)", type: "number" },
+      { name: "interest", label: "Interest (₹)", type: "number" },
+      { name: "penalty", label: "Penalty (₹)", type: "number" },
+      { name: "total_demand", label: "Total Demand (₹)", type: "number" },
+      { name: "reply_due_date", label: "Reply Due Date", type: "date" },
+      { name: "grounds", label: "Grounds of Demand", type: "string" },
+    ],
+  },
+  {
+    id: "itr_summary",
+    name: "ITR Summary",
+    group: "CA / ITR",
+    fields: [
+      { name: "taxpayer_name", label: "Taxpayer Name", type: "string" },
+      { name: "pan", label: "PAN", type: "string" },
+      { name: "assessment_year", label: "Assessment Year", type: "string" },
+      { name: "gross_total_income", label: "Gross Total Income (₹)", type: "number" },
+      { name: "net_taxable_income", label: "Net Taxable Income (₹)", type: "number" },
+      { name: "total_tax_liability", label: "Total Tax Liability (₹)", type: "number" },
+      { name: "tds_deducted", label: "TDS Deducted (₹)", type: "number" },
+      { name: "tax_payable", label: "Tax Payable (₹)", type: "number" },
+      { name: "tax_refund", label: "Refund Due (₹)", type: "number" },
+    ],
+  },
+  {
+    id: "form_16",
+    name: "Form 16 / TDS Certificate",
+    group: "CA / TDS",
+    fields: [
+      { name: "employee_name", label: "Employee Name", type: "string" },
+      { name: "employee_pan", label: "Employee PAN", type: "string" },
+      { name: "employer_name", label: "Employer Name", type: "string" },
+      { name: "employer_tan", label: "Employer TAN", type: "string" },
+      { name: "financial_year", label: "Financial Year", type: "string" },
+      { name: "gross_salary", label: "Gross Salary (₹)", type: "number" },
+      { name: "tds_deducted", label: "TDS Deducted (₹)", type: "number" },
+      { name: "net_salary", label: "Net Salary Paid (₹)", type: "number" },
+    ],
+  },
+];
 
 export function TemplatePanel({ selectedFile }) {
   const [builtins, setBuiltins] = useState([]);
@@ -119,8 +194,30 @@ export function TemplatePanel({ selectedFile }) {
         <div className="panel-empty">Loading…</div>
       ) : (
         <>
+          {/* CA Quick Templates — always shown, use inline field extraction */}
           <div style={{ padding: "4px 12px 0" }}>
-            <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 4 }}>Built-in Templates</div>
+            <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 700, marginBottom: 4 }}>
+              🧾 CA / GST Templates
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {CA_QUICK_TEMPLATES.map(t => (
+                <button
+                  key={t.id}
+                  className={`mode-chip${extracting === t.id ? " active" : ""}`}
+                  onClick={() => extract(t.id)}
+                  disabled={extracting === t.id}
+                  title={`${t.group} · ${t.fields.length} fields`}
+                >
+                  {BUILTIN_ICONS[t.id] || "📄"} {t.name}
+                  {extracting === t.id && " …"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {builtins.length > 0 && (
+          <div style={{ padding: "8px 12px 0" }}>
+            <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 4 }}>Other Built-in Templates</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {builtins.map(b => (
                 <button
@@ -136,6 +233,7 @@ export function TemplatePanel({ selectedFile }) {
               ))}
             </div>
           </div>
+          )}
 
           {templates.length > 0 && (
             <div style={{ padding: "8px 12px 0" }}>

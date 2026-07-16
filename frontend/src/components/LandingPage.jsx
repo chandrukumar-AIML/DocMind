@@ -143,7 +143,7 @@ const FEATURES = [
   {
     icon: "shield",
     title: "Domain Expertise",
-    desc: "Medical (ICD-10, drug interactions, PII redaction), Legal (clause extraction, risk scoring), Logistics (invoice OCR, anomaly detection).",
+    desc: "CA/GST (GSTIN validation, CGST/SGST/IGST splits, ITC, notice analyzer), Legal (clause risk scoring), Medical (ICD-10, PII redaction), Logistics (invoice OCR, anomaly detection).",
     tag: "Unique",
   },
   {
@@ -180,6 +180,20 @@ const FEATURES = [
 
 // ── Verticals ──────────────────────────────────────────────────
 const VERTICALS = [
+  {
+    emoji: "📊",
+    title: "CA & Accounting Firms",
+    color: "#0ea5e9",
+    badge: "New",
+    items: [
+      "GST invoice analysis — CGST/SGST/IGST splits, GSTIN validation",
+      "ITR & financial statement extraction — PBT, net profit, ratios",
+      "GST notice analyzer — demand amount, due dates, grounds",
+      "Form 16 / 26AS / TDS certificate data extraction",
+      "ITC eligibility check & anomaly detection",
+      "Bulk invoice processing for monthly GST filing",
+    ],
+  },
   {
     emoji: "⚖️",
     title: "Legal Firms",
@@ -222,8 +236,8 @@ const VERTICALS = [
 const STATS = [
   { value: "3", suffix: " query modes", label: "RAG · Agent · Graph" },
   { value: "9", suffix: " file types", label: "PDF, DOCX, XLSX, images, audio, URLs…" },
-  { value: "14", suffix: " features", label: "competitors don't have" },
-  { value: "3", suffix: " domains", label: "Legal · Medical · Logistics" },
+  { value: "3+", suffix: " hrs/day saved", label: "avg. for CA firms on doc review" },
+  { value: "4", suffix: " domains", label: "CA/GST · Legal · Medical · Logistics" },
 ];
 
 // ── Main Component ─────────────────────────────────────────────
@@ -306,12 +320,12 @@ export function LandingPage() {
             <span>Enterprise Document Intelligence Platform</span>
           </div>
           <h1 style={S.heroH1}>
-            The AI that truly<br />
-            <span style={S.heroGradient}>understands</span> your documents
+            Your documents,<br />
+            <span style={S.heroGradient}>instantly answered</span>
           </h1>
           <p style={S.heroSub}>
-            Not just keyword search. Not just a chatbot. DocuMind AI combines CRAG, Knowledge Graphs,
-            domain expertise, and verified accuracy scores — so you can trust every answer.
+            CA firms, legal teams, and enterprises use DocuMind AI to query GST notices, ITRs, contracts,
+            and audit reports in seconds — with citations, accuracy scores, and zero hallucination.
           </p>
           <div style={S.heroCtas}>
             <button style={S.btnHero} onClick={goToApp}>
@@ -332,28 +346,28 @@ export function LandingPage() {
             </div>
             <div style={S.mockupBody}>
               <div style={S.mockupSidebar}>
-                <div style={S.mockupSidebarItem}>📄 contract_2024.pdf</div>
-                <div style={{ ...S.mockupSidebarItem, ...S.mockupSidebarActive }}>📋 policy_docs.pdf</div>
-                <div style={S.mockupSidebarItem}>🏥 patient_records.pdf</div>
-                <div style={S.mockupSidebarItem}>📦 invoice_batch.xlsx</div>
+                <div style={{ ...S.mockupSidebarItem, ...S.mockupSidebarActive }}>🧾 gst_notice_oct24.pdf</div>
+                <div style={S.mockupSidebarItem}>📊 itr_ay2425.pdf</div>
+                <div style={S.mockupSidebarItem}>📄 purchase_invoices.pdf</div>
+                <div style={S.mockupSidebarItem}>📋 audit_report_fy24.pdf</div>
               </div>
               <div style={S.mockupChat}>
                 <div style={S.mockupMsg}>
-                  <div style={S.mockupMsgUser}>What are the key risk clauses in this contract?</div>
+                  <div style={S.mockupMsgUser}>What is the total GST demand and reply due date?</div>
                 </div>
                 <div style={S.mockupMsgAi}>
                   <div style={S.mockupAiIcon}>D</div>
                   <div style={S.mockupAiText}>
                     <div style={S.mockupAiLine} />
-                    <div style={{ ...S.mockupAiLine, width: "85%" }} />
-                    <div style={{ ...S.mockupAiLine, width: "60%" }} />
+                    <div style={{ ...S.mockupAiLine, width: "90%" }} />
+                    <div style={{ ...S.mockupAiLine, width: "65%" }} />
                     <div style={S.mockupAiBadge}>
-                      <span style={{ color: "#4ade80" }}>✓</span> 94% confidence · 3 citations
+                      <span style={{ color: "#4ade80" }}>✓</span> ₹4,82,310 demand · Reply by 15 Dec · Page 3
                     </div>
                   </div>
                 </div>
                 <div style={S.mockupInput}>
-                  <span style={S.mockupInputText}>Ask anything about your documents…</span>
+                  <span style={S.mockupInputText}>Ask anything about your GST notice…</span>
                   <div style={S.mockupSend}>→</div>
                 </div>
               </div>
@@ -411,7 +425,7 @@ export function LandingPage() {
             <h2 style={S.sectionH2}>Domain-specific AI expertise</h2>
             <p style={S.sectionSub}>
               Generic AI gives generic answers. DocuMind AI ships with deep domain knowledge
-              for three high-value verticals out of the box.
+              for four high-value verticals — starting with CA firms and their unique GST, ITR, and audit workflows.
             </p>
           </div>
           <div style={S.verticalsGrid}>
@@ -420,7 +434,14 @@ export function LandingPage() {
                 <div style={{ ...S.verticalIcon, background: v.color + "22", color: v.color }}>
                   {v.emoji}
                 </div>
-                <h3 style={S.verticalTitle}>{v.title}</h3>
+                <h3 style={S.verticalTitle}>
+                  {v.title}
+                  {v.badge && (
+                    <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, background: v.color, color: "#fff", borderRadius: 4, padding: "1px 7px", verticalAlign: "middle" }}>
+                      {v.badge}
+                    </span>
+                  )}
+                </h3>
                 <ul style={S.verticalList}>
                   {v.items.map((item) => (
                     <li key={item} style={S.verticalItem}>

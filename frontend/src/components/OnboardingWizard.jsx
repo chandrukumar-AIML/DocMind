@@ -13,7 +13,22 @@ const STEPS = [
   { id: 5, title: "You're All Set!", desc: "Your workspace is ready. Let's go!" },
 ];
 
-const DOMAINS = ["legal", "medical", "financial", "logistics", "hr", "general"];
+const DOMAINS = [
+  { id: "financial", label: "CA / Accounting", icon: "📊", desc: "GST, ITR, audit reports, TDS", badge: "Popular" },
+  { id: "legal", label: "Legal", icon: "⚖️", desc: "Contracts, clauses, risk scoring" },
+  { id: "medical", label: "Healthcare", icon: "🏥", desc: "Patient records, ICD-10, drugs" },
+  { id: "logistics", label: "Logistics", icon: "📦", desc: "Invoices, POs, supply chain" },
+  { id: "hr", label: "HR", icon: "👥", desc: "Policies, offer letters, handbooks" },
+  { id: "general", label: "General", icon: "📄", desc: "Any documents" },
+];
+
+const CA_SAMPLE_QUERIES = [
+  "What is the total GST demand in this notice?",
+  "What is the reply due date?",
+  "What are the grounds of the GST demand?",
+  "Extract the GSTIN of supplier and buyer",
+  "What is the net taxable income?",
+];
 
 export function OnboardingWizard() {
   const { user } = useAuth();
@@ -83,10 +98,14 @@ export function OnboardingWizard() {
           <div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
               {DOMAINS.map(d => (
-                <button key={d} onClick={() => setDomain(d)}
-                  className={`mode-chip${domain === d ? " active" : ""}`}
-                  style={{ textTransform: "capitalize" }}>
-                  {d}
+                <button key={d.id} onClick={() => setDomain(d.id)}
+                  className={`mode-chip${domain === d.id ? " active" : ""}`}
+                  style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", padding: "8px 12px", minWidth: 140 }}
+                  title={d.desc}>
+                  <span>{d.icon} <strong>{d.label}</strong>
+                    {d.badge && <span style={{ marginLeft: 6, fontSize: 10, background: "var(--accent)", color: "#fff", borderRadius: 3, padding: "1px 5px" }}>{d.badge}</span>}
+                  </span>
+                  <span style={{ fontSize: 10, color: "var(--text-3)", marginTop: 2 }}>{d.desc}</span>
                 </button>
               ))}
             </div>
@@ -112,11 +131,30 @@ export function OnboardingWizard() {
         )}
 
         {step === 3 && (
-          <div style={{ textAlign: "center" }}>
-            <div style={{ padding: "24px 0", color: "var(--text-3)", fontSize: 13 }}>
-              <div style={{ fontSize: 32, marginBottom: 12 }}>💬</div>
+          <div>
+            <div style={{ padding: "12px 0 16px", color: "var(--text-3)", fontSize: 13, textAlign: "center" }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>💬</div>
               Head to the main chat and ask anything about your document.
-              Try: <em>"What are the key clauses?"</em>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: "var(--text-4)", marginBottom: 6 }}>Try one of these:</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {(domain === "financial" ? CA_SAMPLE_QUERIES : [
+                  "What are the key clauses in this document?",
+                  "Summarize the main points",
+                  "What are the risks or red flags?",
+                  "Extract all dates and deadlines",
+                  "Who are the parties involved?",
+                ]).map((q, i) => (
+                  <div key={i} style={{
+                    padding: "6px 10px", borderRadius: 6, fontSize: 12,
+                    background: "var(--surface-2)", border: "1px solid var(--border-1)",
+                    cursor: "default", color: "var(--text-2)"
+                  }}>
+                    {q}
+                  </div>
+                ))}
+              </div>
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
               <button className="btn-sm" onClick={() => navigate("/")}>Go to Chat</button>

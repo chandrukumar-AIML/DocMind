@@ -444,6 +444,12 @@ const apiImpl = {
   analyzeLogistics: (sourceFiles) =>
     isDemoMode() ? demoApi.analyzeLogistics(sourceFiles)
       : apiClient.post("/api/v1/domains/logistics/analyze-invoices", { source_files: sourceFiles }).then(r => r.data),
+  analyzeGST: (sourceFile) =>
+    isDemoMode() ? demoApi.analyzeGST?.(sourceFile) ?? Promise.resolve({ summary: "Demo GST analysis", compliance_status: "compliant", anomalies: [], line_items: [], totals: {} })
+      : apiClient.post("/api/v1/domains/financial/gst", { source_file: sourceFile }).then(r => r.data),
+  analyzeITR: (sourceFile) =>
+    isDemoMode() ? demoApi.analyzeITR?.(sourceFile) ?? Promise.resolve({ summary: "Demo ITR analysis", red_flags: [], key_observations: [] })
+      : apiClient.post("/api/v1/domains/financial/itr", { source_file: sourceFile }).then(r => r.data),
 
   // Document download
   downloadDocument: (sourceFile, workspaceId) => {

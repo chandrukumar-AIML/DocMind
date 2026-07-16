@@ -706,10 +706,133 @@ async def detect_signatures(
         raise HTTPException(status_code=500, detail="Signature detection failed")
 
 
+# ========================================================================
+# FINANCIAL / CA MODULE — GST + ITR analysis
+# ========================================================================
+
+class GSTAnalysisRequest(BaseModel):
+    source_file: str = Field(..., max_length=255)
+
+
+class ITRAnalysisRequest(BaseModel):
+    source_file: str = Field(..., max_length=255)
+
+
+@router.post(
+    "/financial/gst",
+    summary="GST invoice & notice analysis: GSTIN, tax splits, ITC, anomalies",
+    responses={
+        400: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+async def analyze_gst_document(
+    request: GSTAnalysisRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+    store: VectorStoreManager = Depends(get_vector_store_manager()),
+):
+    corr_id = generate_correlation_id("gst_analyze")
+    chunks = await _get_doc_chunks(request.source_file, user.workspace_id, store, correlation_id=corr_id)
+    if not chunks:
+        raise HTTPException(status_code=404, detail=f"Document not found: {request.source_file}")
+
+    try:
+        from app.domains.financial.gst_analyzer import GSTAnalyzer
+    except ImportError as e:
+        logger.error(f"[{corr_id}] GST domain module not available: {e}")
+        raise HTTPException(status_code=501, detail="GST analysis module not installed")
+
+    try:
+        analyzer = GSTAnalyzer()
+        result = await asyncio.wait_for(
+            analyzer.analyze(chunks, request.source_file, correlation_id=corr_id),
+            timeout=_EXECUTOR_TIMEOUT,
+        )
+        return {
+            "source_file": request.source_file,
+            "workspace_id": user.workspace_id,
+            "correlation_id": corr_id,
+            "document_type": result.document_type,
+            "supplier": result.supplier,
+            "buyer": result.buyer,
+            "invoice_details": result.invoice_details,
+            "line_items": result.line_items,
+            "totals": result.totals,
+            "anomalies": result.anomalies,
+            "gst_notice_details": result.gst_notice_details,
+            "compliance_status": result.compliance_status,
+            "summary": result.summary,
+            "raw_gstins": result.raw_gstins,
+        }
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=408, detail="GST analysis timed out")
+    except Exception as e:
+        logger.error(f"[{corr_id}] GST analysis failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="GST analysis failed")
+
+
+@router.post(
+    "/financial/itr",
+    summary="ITR / financial statement analysis: income, tax, ratios, red flags",
+    responses={
+        400: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+async def analyze_itr_document(
+    request: ITRAnalysisRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+    store: VectorStoreManager = Depends(get_vector_store_manager()),
+):
+    corr_id = generate_correlation_id("itr_analyze")
+    chunks = await _get_doc_chunks(request.source_file, user.workspace_id, store, correlation_id=corr_id)
+    if not chunks:
+        raise HTTPException(status_code=404, detail=f"Document not found: {request.source_file}")
+
+    try:
+        from app.domains.financial.itr_analyzer import ITRAnalyzer
+    except ImportError as e:
+        logger.error(f"[{corr_id}] ITR domain module not available: {e}")
+        raise HTTPException(status_code=501, detail="ITR analysis module not installed")
+
+    try:
+        analyzer = ITRAnalyzer()
+        result = await asyncio.wait_for(
+            analyzer.analyze(chunks, request.source_file, correlation_id=corr_id),
+            timeout=_EXECUTOR_TIMEOUT,
+        )
+        return {
+            "source_file": request.source_file,
+            "workspace_id": user.workspace_id,
+            "correlation_id": corr_id,
+            "document_type": result.document_type,
+            "assessment_year": result.assessment_year,
+            "pan": result.pan,
+            "taxpayer_name": result.taxpayer_name,
+            "filing_status": result.filing_status,
+            "income_summary": result.income_summary,
+            "tax_computation": result.tax_computation,
+            "balance_sheet": result.balance_sheet,
+            "profit_loss": result.profit_loss,
+            "financial_ratios": result.financial_ratios,
+            "tds_summary": result.tds_summary,
+            "key_observations": result.key_observations,
+            "red_flags": result.red_flags,
+            "summary": result.summary,
+        }
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=408, detail="ITR analysis timed out")
+    except Exception as e:
+        logger.error(f"[{corr_id}] ITR analysis failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="ITR analysis failed")
+
+
 def get_domains_metadata() -> dict[str, Any]:
-    """✅ NEW: Return domains API metadata for monitoring."""
+    """Return domains API metadata for monitoring."""
     return {
-        "supported_domains": ["legal", "medical", "logistics"],
+        "supported_domains": ["legal", "medical", "logistics", "financial"],
         "executor_timeout_seconds": _EXECUTOR_TIMEOUT,
         "max_invoices_per_request": 20,
         "hipaa_compliant": True,

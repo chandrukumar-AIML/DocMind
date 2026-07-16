@@ -5,12 +5,14 @@ import toast from "react-hot-toast";
 import PropTypes from "prop-types";
 
 const DOMAIN_TYPES = [
-  { id: "legal",      label: "Legal",    icon: "⚖️",  desc: "Clauses, risk & obligations" },
-  { id: "medical",    label: "Medical",  icon: "🏥",  desc: "ICD-10, drugs & interactions" },
-  { id: "logistics",  label: "Invoices", icon: "📦",  desc: "Invoice fields & anomalies" },
-  { id: "bills",      label: "Bills",    icon: "🧾",  desc: "Merge & calculate multiple bills" },
-  { id: "forms",      label: "Forms",    icon: "📋",  desc: "Extract form fields via Vision AI" },
-  { id: "signature",  label: "Sign",     icon: "✍️",  desc: "Detect handwritten signatures" },
+  { id: "gst",        label: "GST",      icon: "🧾",  desc: "GSTIN, CGST/SGST/IGST splits, ITC eligibility, anomalies", group: "ca" },
+  { id: "itr",        label: "ITR/FS",   icon: "📊",  desc: "ITR, Balance Sheet, P&L, Form 16/26AS, TDS analysis", group: "ca" },
+  { id: "legal",      label: "Legal",    icon: "⚖️",  desc: "Clauses, risk & obligations", group: "other" },
+  { id: "medical",    label: "Medical",  icon: "🏥",  desc: "ICD-10, drugs & interactions", group: "other" },
+  { id: "logistics",  label: "Invoices", icon: "📦",  desc: "Invoice fields & anomalies", group: "other" },
+  { id: "bills",      label: "Bills",    icon: "💰",  desc: "Merge & calculate multiple bills (INR)", group: "ca" },
+  { id: "forms",      label: "Forms",    icon: "📋",  desc: "Extract form fields via Vision AI", group: "other" },
+  { id: "signature",  label: "Sign",     icon: "✍️",  desc: "Detect handwritten signatures", group: "other" },
 ];
 
 function RiskBadge({ level }) {
@@ -280,6 +282,326 @@ function LogisticsResult({ data }) {
   );
 }
 
+function ComplianceBadge({ status }) {
+  const map = {
+    compliant: { color: "#10B981", label: "COMPLIANT" },
+    has_issues: { color: "#F59E0B", label: "HAS ISSUES" },
+    critical_issues: { color: "#EF4444", label: "CRITICAL" },
+  };
+  const s = map[status] || { color: "#94A3B8", label: (status || "UNKNOWN").toUpperCase() };
+  return (
+    <span className="risk-badge" style={{ background: `${s.color}22`, color: s.color, borderColor: `${s.color}55` }}>
+      {s.label}
+    </span>
+  );
+}
+
+function MoneyRow({ label, value, bold, highlight }) {
+  if (value == null || value === 0) return null;
+  return (
+    <div className="domain-result-row" style={highlight ? { background: "var(--bg-3)", borderRadius: 4, padding: "2px 6px" } : {}}>
+      <span className="domain-result-label">{label}</span>
+      <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: bold ? 700 : 400, color: value < 0 ? "var(--red, #EF4444)" : "inherit" }}>
+        ₹{Math.abs(value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        {value < 0 ? " (CR)" : ""}
+      </span>
+    </div>
+  );
+}
+
+function GSTResult({ data }) {
+  const anomalies = data.anomalies || [];
+  const critical = anomalies.filter(a => a.severity === "high");
+  const lineItems = data.line_items || [];
+  const totals = data.totals || {};
+  const supplier = data.supplier || {};
+  const buyer = data.buyer || {};
+  const notice = data.gst_notice_details || {};
+
+  return (
+    <div className="domain-result">
+      {/* Header */}
+      <div className="domain-result-section">
+        <div className="domain-result-row">
+          <span className="domain-result-label">Document Type</span>
+          <span style={{ textTransform: "capitalize", fontSize: 12 }}>{(data.document_type || "unknown").replace(/_/g, " ")}</span>
+        </div>
+        <div className="domain-result-row">
+          <span className="domain-result-label">Compliance</span>
+          <ComplianceBadge status={data.compliance_status} />
+        </div>
+        {data.summary && <p className="domain-summary">{data.summary}</p>}
+      </div>
+
+      {/* Anomalies — show first if critical */}
+      {anomalies.length > 0 && (
+        <div className="domain-result-section">
+          <div className="domain-section-title">
+            {critical.length > 0 ? `⚠ ${critical.length} Critical Issue${critical.length > 1 ? "s" : ""}` : "Issues Found"} ({anomalies.length})
+          </div>
+          {anomalies.map((a, i) => (
+            <div key={i} className="domain-list-item">
+              <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                <RiskBadge level={a.severity === "high" ? "critical" : a.severity} />
+                <div>
+                  <div className="domain-list-title" style={{ fontSize: 11 }}>{a.type?.replace(/_/g, " ").toUpperCase()}</div>
+                  <div className="domain-list-sub">{a.description}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Supplier / Buyer */}
+      {(supplier.name || buyer.name) && (
+        <div className="domain-result-section">
+          <div className="domain-section-title">Parties</div>
+          <div className="invoice-grid">
+            {supplier.name && <div><span>Supplier</span>{supplier.name}</div>}
+            {supplier.gstin && <div><span>Supplier GSTIN</span><code style={{ fontSize: 11 }}>{supplier.gstin}</code></div>}
+            {buyer.name && <div><span>Buyer</span>{buyer.name}</div>}
+            {buyer.gstin && <div><span>Buyer GSTIN</span><code style={{ fontSize: 11 }}>{buyer.gstin}</code></div>}
+            {data.invoice_details?.invoice_number && <div><span>Invoice #</span>{data.invoice_details.invoice_number}</div>}
+            {data.invoice_details?.invoice_date && <div><span>Date</span>{data.invoice_details.invoice_date}</div>}
+            {data.invoice_details?.supply_type && <div><span>Supply Type</span>{data.invoice_details.supply_type.replace(/_/g, " ")}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* Tax Totals */}
+      {totals.grand_total > 0 && (
+        <div className="domain-result-section">
+          <div className="domain-section-title">GST Summary</div>
+          <MoneyRow label="Taxable Value" value={totals.taxable_value} />
+          <MoneyRow label="CGST" value={totals.cgst} />
+          <MoneyRow label="SGST" value={totals.sgst} />
+          <MoneyRow label="IGST" value={totals.igst} />
+          {totals.cess > 0 && <MoneyRow label="Cess" value={totals.cess} />}
+          <MoneyRow label="Grand Total" value={totals.grand_total} bold highlight />
+          {totals.total_itc_eligible > 0 && <MoneyRow label="ITC Eligible" value={totals.total_itc_eligible} />}
+        </div>
+      )}
+
+      {/* GST Notice details */}
+      {notice.total_demand > 0 && (
+        <div className="domain-result-section">
+          <div className="domain-section-title" style={{ color: "var(--red, #EF4444)" }}>
+            GST Demand Notice — {notice.notice_type}
+          </div>
+          <MoneyRow label="Tax Demand" value={notice.demand_amount} />
+          <MoneyRow label="Interest" value={notice.interest} />
+          <MoneyRow label="Penalty" value={notice.penalty} />
+          <MoneyRow label="Total Demand" value={notice.total_demand} bold highlight />
+          {notice.reply_due_date && (
+            <div className="domain-result-row">
+              <span className="domain-result-label">Reply Due</span>
+              <span style={{ color: "var(--red, #EF4444)", fontWeight: 600 }}>{notice.reply_due_date}</span>
+            </div>
+          )}
+          {notice.period_from && (
+            <div className="domain-result-row">
+              <span className="domain-result-label">Period</span>
+              <span>{notice.period_from} – {notice.period_to}</span>
+            </div>
+          )}
+          {(notice.grounds || []).length > 0 && (
+            <div className="domain-list">
+              {notice.grounds.map((g, i) => (
+                <div key={i} className="domain-list-item">
+                  <div className="domain-list-sub">• {g}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Line items summary */}
+      {lineItems.length > 0 && (
+        <div className="domain-result-section">
+          <div className="domain-section-title">Line Items ({lineItems.length})</div>
+          <div className="domain-list">
+            {lineItems.slice(0, 6).map((item, i) => (
+              <div key={i} className="domain-list-item">
+                <div className="domain-list-title" style={{ fontSize: 11 }}>
+                  {item.description?.slice(0, 60)}
+                  {item.hsn_sac && <span className="primary-chip" style={{ marginLeft: 4 }}>HSN {item.hsn_sac}</span>}
+                  {item.gst_rate > 0 && <span className="icd-code" style={{ marginLeft: 4 }}>{item.gst_rate}%</span>}
+                </div>
+                <div className="domain-list-sub">
+                  Taxable: ₹{(item.taxable_value || 0).toLocaleString("en-IN")} &nbsp;|&nbsp;
+                  GST: ₹{((item.cgst || 0) + (item.sgst || 0) + (item.igst || 0)).toLocaleString("en-IN")}
+                  {item.itc_eligible === false && <span style={{ color: "var(--red, #EF4444)", marginLeft: 6 }}>ITC blocked</span>}
+                </div>
+              </div>
+            ))}
+            {lineItems.length > 6 && <div className="domain-list-sub">+{lineItems.length - 6} more items</div>}
+          </div>
+        </div>
+      )}
+
+      {/* Raw GSTINs found */}
+      {(data.raw_gstins || []).length > 0 && (
+        <div className="domain-result-section">
+          <div className="domain-section-title">GSTINs Detected</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {data.raw_gstins.map((g, i) => (
+              <code key={i} style={{ fontSize: 11, background: "var(--bg-3)", padding: "2px 6px", borderRadius: 4 }}>{g}</code>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ITRResult({ data }) {
+  const income = data.income_summary || {};
+  const tax = data.tax_computation || {};
+  const bs = data.balance_sheet || {};
+  const pl = data.profit_loss || {};
+  const ratios = data.financial_ratios || {};
+  const redFlags = data.red_flags || [];
+  const obs = data.key_observations || [];
+
+  return (
+    <div className="domain-result">
+      {/* Header */}
+      <div className="domain-result-section">
+        <div className="domain-result-row">
+          <span className="domain-result-label">Document</span>
+          <span style={{ textTransform: "capitalize", fontSize: 12 }}>{(data.document_type || "unknown").replace(/_/g, " ")}</span>
+        </div>
+        {data.taxpayer_name && (
+          <div className="domain-result-row">
+            <span className="domain-result-label">Taxpayer</span>
+            <span style={{ fontWeight: 600 }}>{data.taxpayer_name}</span>
+          </div>
+        )}
+        {data.pan && (
+          <div className="domain-result-row">
+            <span className="domain-result-label">PAN</span>
+            <code style={{ fontSize: 11 }}>{data.pan}</code>
+          </div>
+        )}
+        {data.assessment_year && (
+          <div className="domain-result-row">
+            <span className="domain-result-label">Assessment Year</span>
+            <span>{data.assessment_year}</span>
+          </div>
+        )}
+        {data.summary && <p className="domain-summary">{data.summary}</p>}
+      </div>
+
+      {/* Red Flags */}
+      {redFlags.length > 0 && (
+        <div className="domain-result-section">
+          <div className="domain-section-title">⚠ Red Flags ({redFlags.length})</div>
+          {redFlags.map((f, i) => (
+            <div key={i} className="domain-list-item">
+              <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                <RiskBadge level={f.severity === "high" ? "critical" : f.severity} />
+                <div className="domain-list-sub">{f.description}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Income Summary */}
+      {income.gross_total_income > 0 && (
+        <div className="domain-result-section">
+          <div className="domain-section-title">Income Summary</div>
+          <MoneyRow label="Salary Income" value={income.salary_income} />
+          <MoneyRow label="Business Income" value={income.business_income} />
+          <MoneyRow label="Capital Gains (STCG)" value={income.capital_gains_short} />
+          <MoneyRow label="Capital Gains (LTCG)" value={income.capital_gains_long} />
+          <MoneyRow label="Other Income" value={income.other_income} />
+          <MoneyRow label="Gross Total Income" value={income.gross_total_income} bold />
+          <MoneyRow label="Deductions (80C etc)" value={income.deductions_80c + (income.deductions_other || 0)} />
+          <MoneyRow label="Net Taxable Income" value={income.net_taxable_income} bold highlight />
+        </div>
+      )}
+
+      {/* Tax Computation */}
+      {tax.total_tax_liability > 0 && (
+        <div className="domain-result-section">
+          <div className="domain-section-title">Tax Computation</div>
+          <MoneyRow label="Tax on Income" value={tax.tax_on_income} />
+          <MoneyRow label="Surcharge" value={tax.surcharge} />
+          <MoneyRow label="Health & Ed. Cess" value={tax.health_education_cess} />
+          <MoneyRow label="Total Tax Liability" value={tax.total_tax_liability} bold />
+          <MoneyRow label="TDS Deducted" value={tax.tds_deducted} />
+          <MoneyRow label="Advance Tax Paid" value={tax.advance_tax_paid} />
+          {tax.tax_refund > 0
+            ? <MoneyRow label="Refund Due" value={tax.tax_refund} bold highlight />
+            : <MoneyRow label="Tax Payable" value={tax.tax_payable} bold highlight />
+          }
+        </div>
+      )}
+
+      {/* P&L */}
+      {pl.total_revenue > 0 && (
+        <div className="domain-result-section">
+          <div className="domain-section-title">Profit & Loss</div>
+          <MoneyRow label="Total Revenue" value={pl.total_revenue} />
+          <MoneyRow label="COGS" value={pl.cost_of_goods_sold} />
+          <MoneyRow label="Gross Profit" value={pl.gross_profit} bold />
+          <MoneyRow label="EBITDA" value={pl.ebitda} />
+          <MoneyRow label="PBT" value={pl.profit_before_tax} />
+          <MoneyRow label="Net Profit" value={pl.net_profit} bold highlight />
+        </div>
+      )}
+
+      {/* Financial Ratios */}
+      {(ratios.net_profit_margin > 0 || ratios.current_ratio > 0) && (
+        <div className="domain-result-section">
+          <div className="domain-section-title">Key Ratios</div>
+          {ratios.gross_profit_margin > 0 && (
+            <div className="domain-result-row">
+              <span className="domain-result-label">Gross Margin</span>
+              <span>{ratios.gross_profit_margin.toFixed(1)}%</span>
+            </div>
+          )}
+          {ratios.net_profit_margin > 0 && (
+            <div className="domain-result-row">
+              <span className="domain-result-label">Net Margin</span>
+              <span>{ratios.net_profit_margin.toFixed(1)}%</span>
+            </div>
+          )}
+          {ratios.current_ratio > 0 && (
+            <div className="domain-result-row">
+              <span className="domain-result-label">Current Ratio</span>
+              <span style={{ color: ratios.current_ratio < 1 ? "var(--red, #EF4444)" : "inherit" }}>
+                {ratios.current_ratio.toFixed(2)}
+              </span>
+            </div>
+          )}
+          {ratios.debt_equity_ratio > 0 && (
+            <div className="domain-result-row">
+              <span className="domain-result-label">D/E Ratio</span>
+              <span>{ratios.debt_equity_ratio.toFixed(2)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Key Observations */}
+      {obs.length > 0 && (
+        <div className="domain-result-section">
+          <div className="domain-section-title">CA Notes</div>
+          {obs.map((o, i) => (
+            <div key={i} className="domain-list-item">
+              <div className="domain-list-sub">• {o}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function buildReportHtml(domain, data, sourceFile) {
   const domainMeta = DOMAIN_TYPES.find(d => d.id === domain) || {};
   const now = new Date().toLocaleString();
@@ -502,7 +824,9 @@ export function DomainPanel({ selectedFile, documents, workspaceId }) {
     const toastId = toast.loading(`Running ${activeDomain} analysis…`);
     try {
       let data;
-      if (activeDomain === "legal") data = await api.analyzeLegal(selectedFile);
+      if (activeDomain === "gst") data = await api.analyzeGST(selectedFile);
+      else if (activeDomain === "itr") data = await api.analyzeITR(selectedFile);
+      else if (activeDomain === "legal") data = await api.analyzeLegal(selectedFile);
       else if (activeDomain === "medical") data = await api.analyzeMedical(selectedFile);
       else if (activeDomain === "logistics") data = await api.analyzeLogistics([selectedFile]);
       else if (activeDomain === "bills") data = await api.calculateBills(billFiles, billCurrency, workspaceId);
@@ -661,6 +985,8 @@ export function DomainPanel({ selectedFile, documents, workspaceId }) {
           </button>
         </div>
       )}
+      {result && resultDomain === "gst" && <GSTResult data={result} />}
+      {result && resultDomain === "itr" && <ITRResult data={result} />}
       {result && resultDomain === "legal" && <LegalResult data={result} />}
       {result && resultDomain === "medical" && <MedicalResult data={result} />}
       {result && resultDomain === "logistics" && <LogisticsResult data={result} />}
