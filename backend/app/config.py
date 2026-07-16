@@ -499,7 +499,25 @@ class _LazySettings:
 # Module-level singleton — import once, use everywhere.
 lazy_settings = _LazySettings()
 
-__all__ = ["Settings", "get_settings", "lazy_settings"]
+
+def has_llm_configured() -> bool:
+    """Return True if any LLM provider key is configured (Gemini, Groq, OpenRouter, OpenAI, or Ollama)."""
+    s = get_settings()
+    provider = getattr(s, "llm_provider", "openai")
+    if provider == "ollama":
+        return True  # Ollama needs no key; connectivity checked at call time
+    if provider == "gemini":
+        return bool(getattr(s, "gemini_api_key", None))
+    # openai provider — accept any of: openai / gemini / groq / openrouter
+    return bool(
+        getattr(s, "openai_api_key", None)
+        or getattr(s, "gemini_api_key", None)
+        or getattr(s, "groq_api_key", None)
+        or getattr(s, "openrouter_api_key", None)
+    )
+
+
+__all__ = ["Settings", "get_settings", "lazy_settings", "has_llm_configured"]
 
 
 # ========================================================================

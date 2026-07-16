@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from app.config import (
     lazy_settings as settings,
+    has_llm_configured,
 )  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.ids import generate_correlation_id
 from app.core.exceptions import ValidationError, ServiceUnavailableError
@@ -281,10 +282,10 @@ async def query_documents(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     background_tasks: BackgroundTasks,
 ) -> StreamingResponse | QueryResponse:
-    if not settings.openai_api_key:
+    if not has_llm_configured():
         raise HTTPException(
             status_code=503,
-            detail="LLM service unavailable: OPENAI_API_KEY not configured",
+            detail="LLM service unavailable: configure GEMINI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY",
         )
 
     corr_id = body.correlation_id or request.headers.get("X-Correlation-ID") or generate_correlation_id("query")

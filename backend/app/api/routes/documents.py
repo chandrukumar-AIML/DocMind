@@ -148,7 +148,7 @@ async def _list_documents(
         raise HTTPException(status_code=408, detail="Request timed out")
     except Exception as e:
         logger.error(f"[{correlation_id}] List failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve documents")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve documents: {type(e).__name__}: {e}")
 
 
 async def _delete_document(

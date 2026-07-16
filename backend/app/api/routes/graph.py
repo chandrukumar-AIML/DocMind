@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from app.config import (
     lazy_settings as settings,
+    has_llm_configured,
 )  # [OK] FIXED: lazy proxy avoids import-time crash
 from app.core.ids import generate_correlation_id
 from app.auth.dependencies import get_current_user, AuthenticatedUser
@@ -278,10 +279,10 @@ async def graph_query(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     background_tasks: BackgroundTasks,
 ) -> GraphQueryResponse:
-    if not settings.openai_api_key:
+    if not has_llm_configured():
         raise HTTPException(
             status_code=503,
-            detail="LLM service unavailable: OPENAI_API_KEY not configured",
+            detail="LLM service unavailable: configure GEMINI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY",
         )
 
     corr_id = generate_correlation_id("graph_query")
@@ -426,10 +427,10 @@ async def get_graph_schema(
     workspace_id: Optional[str] = Query(default=None, max_length=64),
 ) -> GraphSchemaResponse:
     """Returns node and relationship counts for the current workspace."""
-    if not settings.openai_api_key:
+    if not has_llm_configured():
         raise HTTPException(
             status_code=503,
-            detail="Graph service unavailable: OPENAI_API_KEY not configured",
+            detail="Graph service unavailable: configure GEMINI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY",
         )
 
     corr_id = generate_correlation_id("graph_schema")
