@@ -109,7 +109,7 @@ class VectorStoreManager:
                 self.faiss = None
 
             # Validate FAISS index dimension matches expected
-            if self.faiss._store is not None:
+            if self.faiss is not None and self.faiss._store is not None:
                 actual_dim = self.faiss._store.index.d
                 if actual_dim != EMBEDDING_DIM:
                     raise VectorStoreError(
@@ -197,14 +197,13 @@ class VectorStoreManager:
             ),
             timeout=timeout_seconds,
         )
-        faiss_task = asyncio.wait_for(
-            loop.run_in_executor(
-                self._executor,
-                self.faiss.add_chunks,
-                child_chunks,
-                corr_id,
-            ),
-            timeout=timeout_seconds,
+        faiss_task = (
+            asyncio.wait_for(
+                loop.run_in_executor(self._executor, self.faiss.add_chunks, child_chunks, corr_id),
+                timeout=timeout_seconds,
+            )
+            if self.faiss is not None
+            else asyncio.sleep(0)
         )
         parent_task = (
             asyncio.wait_for(
@@ -259,7 +258,8 @@ class VectorStoreManager:
 
         # Write to both stores
         self.chroma.add_chunks(child_chunks, correlation_id=corr_id)
-        self.faiss.add_chunks(child_chunks, correlation_id=corr_id)
+        if self.faiss is not None:
+            self.faiss.add_chunks(child_chunks, correlation_id=corr_id)
         if parent_chunks:
             self.chroma.add_parent_chunks(parent_chunks, correlation_id=corr_id)
 
@@ -331,6 +331,10 @@ class VectorStoreManager:
             # ✅ Ensure return type is list[tuple[Document, float]]
             return [(d, s) for d, s in docs] if docs else []
         else:
+            if self.faiss is None:
+                # FAISS unavailable — fall back to Chroma
+                docs = self.chroma.similarity_search_with_scores(query=query, k=k, correlation_id=corr_id)
+                return [(d, s) for d, s in docs] if docs else []
             # FAISS may return list[Document] or list[tuple[Document, float]]
             results = self.faiss.similarity_search(query=query, k=k, correlation_id=corr_id)
             # ✅ Normalize to list[tuple[Document, float]]
@@ -447,9 +451,9 @@ class VectorStoreManager:
         """Delete document from both stores; rebuild FAISS if needed."""
         corr_id = correlation_id or generate_vectorstore_correlation_id("vsm_delete")
         chroma_deleted = self.chroma.delete_document(source_file, correlation_id=corr_id)
-        if chroma_deleted > 0:
+        if chroma_deleted > 0 and self.faiss is not None:
             self.faiss._rebuild_from_chroma(corr_id)
-        return {"deleted_chunks": chroma_deleted, "faiss_rebuilt": chroma_deleted > 0}
+        return {"deleted_chunks": chroma_deleted, "faiss_rebuilt": chroma_deleted > 0 and self.faiss is not None}
 
     def delete_documents(self, source_files: list[str], correlation_id: Optional[str] = None) -> dict:
         """Batch delete multiple documents."""
@@ -457,7 +461,7 @@ class VectorStoreManager:
         total_deleted = 0
         for sf in source_files:
             total_deleted += self.chroma.delete_document(sf, correlation_id=corr_id)
-        if total_deleted > 0:
+        if total_deleted > 0 and self.faiss is not None:
             self.faiss._rebuild_from_chroma(corr_id)
         return {"deleted_chunks": total_deleted, "faiss_rebuilt": total_deleted > 0}
 
@@ -466,7 +470,7 @@ class VectorStoreManager:
         corr_id = correlation_id or generate_vectorstore_correlation_id("vsm_stats")
         return {
             "chroma_chunks": self.chroma.count(),
-            "faiss_vectors": self.faiss._count(),
+            "faiss_vectors": self.faiss._count() if self.faiss is not None else 0,
             "documents": len(self.chroma.list_documents(corr_id)),
             "cache_stats": self.embeddings.cache_stats(corr_id),
             "correlation_id": corr_id,
