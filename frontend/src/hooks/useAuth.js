@@ -135,8 +135,8 @@ export function useAuth() {
     fetchMe()
       .then((data) => { setupRefresh(); setLoading(false); return data; })
       .catch(() => {
-        // No valid session — clear any stale localStorage metadata
         localStorage.removeItem(TOKEN_EXPIRY_KEY);
+        setUser(null);
         setLoading(false);
       });
 
