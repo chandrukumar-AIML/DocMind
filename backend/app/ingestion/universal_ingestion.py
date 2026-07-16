@@ -35,6 +35,7 @@ _EXTENSION_FALLBACK: Final = {
     ".png": FileFormat.PNG,
     ".jpg": FileFormat.JPEG,
     ".jpeg": FileFormat.JPEG,
+    ".txt": FileFormat.TXT,
 }
 
 _HANDLER_TIMEOUT: Final = 300  # 5 minutes
@@ -182,6 +183,11 @@ class UniversalIngestionPipeline:
                     self._ingest_audio_async(safe_path, file_bytes, corr_id),
                     timeout=_HANDLER_TIMEOUT,
                 )
+            elif fmt == FileFormat.TXT:
+                return await asyncio.wait_for(
+                    self._ingest_txt_async(safe_path, file_bytes, corr_id),
+                    timeout=_HANDLER_TIMEOUT,
+                )
             elif fmt in (FileFormat.PDF,) or detected.is_image:
                 return await asyncio.wait_for(
                     self._ingest_document_async(safe_path, corr_id),
@@ -211,6 +217,50 @@ class UniversalIngestionPipeline:
                 format="unknown",
                 documents=[],
                 error=f"Ingestion pipeline error: {type(e).__name__}",
+                correlation_id=corr_id,
+            )
+
+    async def _ingest_txt_async(self, file_path: Path, file_bytes: bytes, corr_id: str) -> IngestionResult:
+        """Ingest plain text file directly — no OCR needed."""
+        try:
+            from app.chunking.parent_child import ParentChildChunker
+            from langchain_core.documents import Document as LCDocument
+
+            text = file_bytes.decode("utf-8", errors="replace")
+            doc = LCDocument(
+                page_content=text,
+                metadata={
+                    "source_file": file_path.name,
+                    "document_type": "txt",
+                    "page_count": 1,
+                    "correlation_id": corr_id,
+                },
+            )
+            chunker = ParentChildChunker()
+            child_chunks, parent_chunks = chunker.chunk([doc], source_file=file_path.name)
+
+            if self.vector_store:
+                await self.vector_store.ingest_chunks_async(
+                    child_chunks=child_chunks,
+                    parent_chunks=parent_chunks,
+                    correlation_id=corr_id,
+                )
+
+            return IngestionResult(
+                source_file=file_path.name,
+                format="txt",
+                documents=child_chunks,
+                page_count=1,
+                chunk_count=len(child_chunks),
+                correlation_id=corr_id,
+            )
+        except Exception as e:
+            logger.error(f"[{corr_id}] TXT ingest failed: {e}")
+            return IngestionResult(
+                source_file=file_path.name,
+                format="txt",
+                documents=[],
+                error=f"TXT ingest failed: {type(e).__name__}: {e}",
                 correlation_id=corr_id,
             )
 

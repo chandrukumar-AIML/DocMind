@@ -27,6 +27,7 @@ class FileFormat(str, Enum):
     M4A = "m4a"
     OGG = "ogg"
     WEBM = "webm"
+    TXT = "txt"
     UNKNOWN = "unknown"
 
 
@@ -73,6 +74,7 @@ _EXTENSION_MAP: Final = {
     ".m4a": (FileFormat.M4A, "audio/mp4"),
     ".ogg": (FileFormat.OGG, "audio/ogg"),
     ".webm": (FileFormat.WEBM, "video/webm"),
+    ".txt": (FileFormat.TXT, "text/plain"),
 }
 
 _AUDIO_VIDEO_FORMATS: Final = {
