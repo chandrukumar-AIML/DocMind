@@ -50,8 +50,8 @@ openai>=1.30.0,<2.0.0
 tiktoken>=0.7.0,<1.0.0
 
 # ── ML & Embeddings ──────────────────────────────────────────
-sentence-transformers>=3.0.0,<4.0.0
-torch>=2.2.0,<2.5.0
+# sentence-transformers and torch excluded — too large for Render free (512MB RAM)
+# Embeddings use CachedOpenAIEmbeddings (hash fallback) or Voyage AI API instead
 # PaddlePaddle/PaddleOCR hard-pin: numpy<2.0
 numpy==1.26.4
 
@@ -60,12 +60,11 @@ rank-bm25>=0.2.2,<0.3.0
 nltk>=3.8.1,<4.0.0
 
 # ── MLflow & Cloud (protobuf 3.x compatible) ─────────────────
-mlflow==2.12.1
+# mlflow excluded — pulls protobuf+grpcio, too heavy for Render free
 boto3>=1.34.0,<2.0.0
 
 # ── Evaluation ───────────────────────────────────────────────
-ragas>=0.1.0,<1.0.0
-datasets>=2.19.0,<3.0.0
+# ragas/datasets excluded — heavy ML deps not needed in production
 rouge-score>=0.1.2,<0.2.0
 
 # ── Graph ────────────────────────────────────────────────────
