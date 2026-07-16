@@ -18,7 +18,7 @@ attempt=0
 while [ $attempt -lt 5 ]; do
     attempt=$((attempt + 1))
 
-    if "$ALEMBIC" upgrade head > /tmp/alembic_out.txt 2>&1; then
+    if timeout 30 "$ALEMBIC" upgrade head > /tmp/alembic_out.txt 2>&1; then
         MIGRATION_OK=1
         echo "[entrypoint] Migrations complete (attempt ${attempt})."
         break
@@ -27,7 +27,7 @@ while [ $attempt -lt 5 ]; do
     # Check if tables already exist without alembic history → stamp head
     if grep -q "already exists\|DuplicateTable" /tmp/alembic_out.txt 2>/dev/null; then
         echo "[entrypoint] Tables exist without alembic history — stamping head..."
-        if "$ALEMBIC" stamp head >> /tmp/alembic_out.txt 2>&1; then
+        if timeout 30 "$ALEMBIC" stamp head >> /tmp/alembic_out.txt 2>&1; then
             MIGRATION_OK=1
             echo "[entrypoint] Stamped head. Migrations will run incrementally from now on."
             break
