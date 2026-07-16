@@ -98,11 +98,15 @@ class VectorStoreManager:
                 collection_name=effective_collection_name,
                 persist_directory=self.persist_directory,
             )
-            self.faiss = FAISSVectorStore(
-                self.embeddings,
-                self.chroma,
-                index_path=effective_faiss_index_path,
-            )
+            try:
+                self.faiss = FAISSVectorStore(
+                    self.embeddings,
+                    self.chroma,
+                    index_path=effective_faiss_index_path,
+                )
+            except Exception as faiss_err:
+                logger.warning(f"[{corr_id}] FAISS unavailable (Chroma-only mode): {faiss_err}")
+                self.faiss = None
 
             # Validate FAISS index dimension matches expected
             if self.faiss._store is not None:

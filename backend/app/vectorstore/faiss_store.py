@@ -7,8 +7,12 @@ import logging
 from pathlib import Path
 from typing import Optional, List, TYPE_CHECKING, Any, Union
 
-from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
+
+try:
+    from langchain_community.vectorstores import FAISS
+except ImportError:
+    FAISS = None  # type: ignore[assignment,misc]
 
 if TYPE_CHECKING:
     from .embeddings import CachedOpenAIEmbeddings
@@ -42,6 +46,8 @@ class FAISSVectorStore:
         chroma_store: Optional["ChromaVectorStore"] = None,
         index_path: Optional[Union[str, Path]] = None,
     ):
+        if FAISS is None:
+            raise VectorStoreError("langchain-community not installed; FAISS unavailable. Chroma-only mode active.")
         settings = get_settings()
         self.index_path = Path(index_path) if index_path else Path(settings.faiss_index_path)
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
