@@ -24,7 +24,6 @@
       ]
     }
   ],
-  "regions": ["cdg1", "iad1", "sin1", "syd1", "bom1"],
-  "cleanUrls": true,
+"cleanUrls": true,
   "trailingSlash": false
 }
