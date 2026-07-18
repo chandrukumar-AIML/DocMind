@@ -39,6 +39,42 @@ function StatusStep({ step }) {
 }
 
 // ── Copy button ────────────────────────────────────────────
+function ExportPdfButton({ question, answer, citations }) {
+  const [loading, setLoading] = useState(false);
+  const handle = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await api.exportAnswerPdf(question, answer, citations);
+    } catch {
+      /* toast shown in api layer */
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <button
+      className="copy-answer-btn"
+      onClick={handle}
+      disabled={loading}
+      title="Export as PDF"
+      aria-label="Export answer as PDF"
+    >
+      {loading ? (
+        <span style={{ fontSize: 9, color: "var(--text-3)" }}>…</span>
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="18" x2="12" y2="12"/>
+          <line x1="9" y1="15" x2="15" y2="15"/>
+        </svg>
+      )}
+    </button>
+  );
+}
+
 function CopyButton({ text, className = "copy-answer-btn" }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -211,7 +247,7 @@ function cleanContent(text) {
   return s.replace(EXTRACTIVE_PREFIX, "").trimStart();
 }
 
-const AIMessage = memo(function AIMessage({ message, onSuggestion }) {
+const AIMessage = memo(function AIMessage({ message, onSuggestion, question }) {
   const rawContent = message.content || "";
   const content = cleanContent(rawContent);
   const isExtractive = EXTRACTIVE_PREFIX.test(rawContent);
@@ -281,6 +317,13 @@ const AIMessage = memo(function AIMessage({ message, onSuggestion }) {
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <CopyButton text={content} />
+              {question && (
+                <ExportPdfButton
+                  question={question}
+                  answer={content}
+                  citations={message.citations || []}
+                />
+              )}
               <FeedbackButtons message={message} />
             </div>
           </div>
@@ -360,11 +403,11 @@ export function ChatWindow({ messages, isStreaming, onSuggestion }) {
 
   return (
     <div className="chat-window" role="log" aria-live="polite" aria-label="Chat conversation">
-      {messages.map(msg =>
-        msg.role === "human"
-          ? <UserMessage key={msg.id} message={msg} />
-          : <AIMessage key={msg.id} message={msg} onSuggestion={onSuggestion} />
-      )}
+      {messages.map((msg, idx) => {
+        if (msg.role === "human") return <UserMessage key={msg.id} message={msg} />;
+        const prevQuestion = messages.slice(0, idx).reverse().find(m => m.role === "human")?.content || "";
+        return <AIMessage key={msg.id} message={msg} onSuggestion={onSuggestion} question={prevQuestion} />;
+      })}
       <div ref={bottomRef} aria-hidden="true" />
     </div>
   );

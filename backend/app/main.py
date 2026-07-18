@@ -112,7 +112,7 @@ async def lifespan(app: FastAPI):
                 from app.database.base import Base
                 from app.database.engine import async_engine
 
-                import app.auth.models  # noqa: F401
+                import app.auth.models  # noqa: F401 — also registers Client, DocumentClient
                 import app.provenance.models  # noqa: F401
 
                 async with async_engine.begin() as conn:
@@ -307,9 +307,16 @@ def create_app() -> FastAPI:
     )
 
     # -- Middleware Stack ---------------------
-    cors_origins = settings.cors_origins if settings.cors_origins else []
-    if not cors_origins and settings.api_reload:
-        cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    cors_origins = list(settings.cors_origins) if settings.cors_origins else []
+    _dev_origins = [
+        "http://localhost:3000", "http://127.0.0.1:3000",
+        "http://localhost:5173", "http://localhost:5174",
+        "http://localhost:5175", "http://localhost:5176",
+        "http://localhost:5177", "http://localhost:5178",
+    ]
+    for _o in _dev_origins:
+        if _o not in cors_origins:
+            cors_origins.append(_o)
 
     app.add_middleware(
         CORSMiddleware,
@@ -420,6 +427,16 @@ def create_app() -> FastAPI:
     )
     from app.api.routes import razorpay
     from app.api.routes import gst_invoice
+    from app.api.routes import clients
+    from app.api.routes import draft_reply
+    from app.api.routes import discrepancy
+    from app.api.routes import export_pdf
+    from app.api.routes import doc_status
+    from app.api.routes import whatsapp_ingest
+    from app.api.routes import regulatory
+    from app.api.routes import gstin_lookup
+    from app.api.routes import itr_comparison
+    from app.api.routes import audit_trail
 
     app.include_router(health.router, prefix="", tags=["health"])
 
@@ -457,6 +474,16 @@ def create_app() -> FastAPI:
     app.include_router(billing.router, prefix=api_prefix, tags=["billing"])
     app.include_router(razorpay.router, prefix=api_prefix, tags=["razorpay"])
     app.include_router(gst_invoice.router, prefix=api_prefix, tags=["gst-invoice"])
+    app.include_router(clients.router, prefix=api_prefix, tags=["clients"])
+    app.include_router(draft_reply.router, prefix=api_prefix, tags=["draft-reply"])
+    app.include_router(discrepancy.router, prefix=api_prefix, tags=["discrepancy"])
+    app.include_router(export_pdf.router, prefix=api_prefix, tags=["export"])
+    app.include_router(doc_status.router, prefix=api_prefix, tags=["doc-status"])
+    app.include_router(whatsapp_ingest.router, prefix=api_prefix, tags=["whatsapp"])
+    app.include_router(regulatory.router, prefix=api_prefix, tags=["regulatory"])
+    app.include_router(gstin_lookup.router, prefix=api_prefix, tags=["gstin"])
+    app.include_router(itr_comparison.router, prefix=api_prefix, tags=["itr"])
+    app.include_router(audit_trail.router, prefix=api_prefix, tags=["audit-trail"])
     app.include_router(sso.router, prefix=api_prefix, tags=["sso"])
     app.include_router(mfa.router, prefix=api_prefix, tags=["mfa"])
 

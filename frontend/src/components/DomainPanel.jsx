@@ -1,8 +1,25 @@
 // frontend/src/components/DomainPanel.jsx
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { api } from "../api/client";
 import toast from "react-hot-toast";
 import PropTypes from "prop-types";
+
+/**
+ * Detect the best analysis domain from a filename.
+ * Returns a domain id string or null if uncertain.
+ */
+export function detectDomain(filename) {
+  if (!filename) return null;
+  const f = filename.toLowerCase().replace(/[_\-]/g, " ");
+  if (/gst|gstin|tax notice|scn|drc|gstr/.test(f))                           return "gst";
+  if (/itr|income tax|balance sheet|profit|p l|financial|tds|form 16|26as/.test(f)) return "itr";
+  if (/legal|contract|agreement|nda|mou|deed|lease|license|terms|policy/.test(f))   return "legal";
+  if (/medical|icd|prescription|diagnosis|patient|clinical|drug/.test(f))           return "medical";
+  if (/invoice|logistics|supply|delivery|shipment|purchase order/.test(f))           return "logistics";
+  if (/form|application|kyc|registration/.test(f))                                  return "forms";
+  if (/sign|signature/.test(f))                                                      return "signature";
+  return null;
+}
 
 const DOMAIN_TYPES = [
   { id: "gst",        label: "GST",      icon: "🧾",  desc: "GSTIN, CGST/SGST/IGST splits, ITC eligibility, anomalies", group: "ca" },
@@ -320,6 +337,20 @@ function GSTResult({ data }) {
 
   return (
     <div className="domain-result">
+      {/* Action Required banner — reply due date for GST notices */}
+      {notice.reply_due_date && (
+        <div className="gst-deadline-banner">
+          <div className="gst-deadline-title">⚠ ACTION REQUIRED</div>
+          <div className="gst-deadline-body">
+            Reply due by <strong>{notice.reply_due_date}</strong>
+            {notice.notice_type && <> &nbsp;·&nbsp; {notice.notice_type}</>}
+            {notice.total_demand > 0 && (
+              <> &nbsp;·&nbsp; Demand: ₹{notice.total_demand.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="domain-result-section">
         <div className="domain-result-row">
@@ -800,8 +831,9 @@ function buildReportHtml(domain, data, sourceFile) {
 </html>`;
 }
 
-export function DomainPanel({ selectedFile, documents, workspaceId }) {
-  const [activeDomain, setActiveDomain] = useState("legal");
+export function DomainPanel({ selectedFile, documents, workspaceId, autoRun = false, compact = false }) {
+  const detected = detectDomain(selectedFile);
+  const [activeDomain, setActiveDomain] = useState(detected || "gst");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [resultDomain, setResultDomain] = useState(null);
@@ -809,6 +841,10 @@ export function DomainPanel({ selectedFile, documents, workspaceId }) {
   // Bills: multi-select
   const [billFiles, setBillFiles] = useState([]);
   const [billCurrency, setBillCurrency] = useState("INR");
+
+  // autoRun: detect domain from filename and run analysis automatically when file changes
+  const lastAutoRunFile = useRef(null);
+  const runRef = useRef(null);
 
   const run = useCallback(async () => {
     const needsDoc = !["bills"].includes(activeDomain);
@@ -864,6 +900,22 @@ export function DomainPanel({ selectedFile, documents, workspaceId }) {
     setTimeout(() => { try { win.print(); } catch { /* print dialog blocked — user can print manually */ } }, 400);
   }, [result, resultDomain, selectedFile]);
 
+  // Keep runRef current so the auto-run effect always calls the latest run
+  runRef.current = run;
+
+  useEffect(() => {
+    if (!autoRun || !selectedFile || selectedFile === lastAutoRunFile.current) return;
+    const domain = detectDomain(selectedFile);
+    if (!domain) return;
+    lastAutoRunFile.current = selectedFile;
+    setActiveDomain(domain);
+    setResult(null);
+    setError(null);
+    // Delay to let setActiveDomain re-render first so runRef.current has correct domain
+    const t = setTimeout(() => runRef.current?.(), 150);
+    return () => clearTimeout(t);
+  }, [selectedFile, autoRun]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const noDoc = !selectedFile;
   const shortName = selectedFile ? selectedFile.split("/").pop().split("\\").pop() : null;
 
@@ -874,21 +926,23 @@ export function DomainPanel({ selectedFile, documents, workspaceId }) {
   };
 
   return (
-    <div className="domain-panel">
-      {/* Domain type selector */}
-      <div className="domain-tabs" style={{ flexWrap: "wrap" }}>
-        {DOMAIN_TYPES.map(d => (
-          <button
-            key={d.id}
-            className={`domain-tab${activeDomain === d.id ? " active" : ""}`}
-            onClick={() => { setActiveDomain(d.id); setResult(null); setError(null); }}
-            title={d.desc}
-          >
-            <span>{d.icon}</span>
-            <span>{d.label}</span>
-          </button>
-        ))}
-      </div>
+    <div className={`domain-panel${compact ? " domain-panel--compact" : ""}`}>
+      {/* Domain type selector — hidden in compact mode (domain is auto-detected) */}
+      {!compact && (
+        <div className="domain-tabs" style={{ flexWrap: "wrap" }}>
+          {DOMAIN_TYPES.map(d => (
+            <button
+              key={d.id}
+              className={`domain-tab${activeDomain === d.id ? " active" : ""}`}
+              onClick={() => { setActiveDomain(d.id); setResult(null); setError(null); }}
+              title={d.desc}
+            >
+              <span>{d.icon}</span>
+              <span>{d.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Bills tab: multi-select */}
       {activeDomain === "bills" ? (
@@ -950,8 +1004,8 @@ export function DomainPanel({ selectedFile, documents, workspaceId }) {
         </div>
       )}
 
-      {/* Description */}
-      {!result && !error && (
+      {/* Description — hidden in compact mode */}
+      {!compact && !result && !error && (
         <div className="domain-desc">
           {DOMAIN_TYPES.find(d => d.id === activeDomain)?.desc}
         </div>
@@ -999,6 +1053,8 @@ export function DomainPanel({ selectedFile, documents, workspaceId }) {
 
 DomainPanel.propTypes = {
   selectedFile: PropTypes.string,
-  documents: PropTypes.array,
-  workspaceId: PropTypes.string,
+  documents:    PropTypes.array,
+  workspaceId:  PropTypes.string,
+  autoRun:      PropTypes.bool,
+  compact:      PropTypes.bool,
 };

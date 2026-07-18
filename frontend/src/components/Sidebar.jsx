@@ -6,7 +6,7 @@ import { toast } from "react-hot-toast";
 import { DropZone }             from "./DropZone";
 import { DocumentList }         from "./DocumentList";
 import { WorkspaceSwitcher }    from "./WorkspaceSwitcher";
-import { DomainPanel }          from "./DomainPanel";
+import { DomainPanel, detectDomain } from "./DomainPanel";
 import { ConversationHistory }  from "./ConversationHistory";
 import { VersionTimeline }      from "./VersionTimeline";
 import { FineTuningPanel }      from "./FineTuningPanel";
@@ -33,33 +33,33 @@ import { LlmSettingsPanel }     from "./LlmSettingsPanel";
 import { BillingPanel }         from "./BillingPanel";
 import { SsoSettingsPanel }     from "./SsoSettingsPanel";
 import { IconClose }            from "./Icons";
+import { ClientPanel }          from "./ClientPanel";
+import { DraftReplyPanel, isNoticeFile } from "./DraftReplyPanel";
+import { DeadlineDashboard }    from "./DeadlineDashboard";
+import { DiscrepancyPanel }     from "./DiscrepancyPanel";
+import { WhatsAppUploader }     from "./WhatsAppUploader";
+import { RegulatoryPanel }      from "./RegulatoryPanel";
+import { GstinLookupPanel }     from "./GstinLookupPanel";
+import { ItrComparisonPanel }   from "./ItrComparisonPanel";
+import { RegulatoryFeedPanel }  from "./RegulatoryFeedPanel";
+import { HindiDocPanel }        from "./HindiDocPanel";
+import { AuditTrailPanel }      from "./AuditTrailPanel";
 import { api }                  from "../api/client";
 
 // ── Static lookup tables ─────────────────────────────────────────────────────
 
 const NAV_TABS = [
   ["docs",     "Docs"],
-  ["analyze",  "Analyze"],
   ["history",  "History"],
-  ["finetune", "Train"],
-  ["stats",    "Stats"],
-  ["features", "Features"],
+  ["settings", "⚙ Settings"],
 ];
 
-const FEATURE_TABS = [
-  ["webhooks",   "Webhooks"],
-  ["compare",    "Compare"],
-  ["workflows",  "Workflows"],
-  ["annotate",   "Annotate"],
-  ["templates",  "Templates"],
-  ["esign",      "E-Sign"],
-  ["compliance", "Compliance"],
-  ["admin",      "Admin"],
-  ["onboard",    "Onboard"],
-  ["regional",   "Regional"],
-  ["llm",        "AI Model"],
-  ["billing",    "Billing"],
-  ["sso",        "SSO"],
+// Settings sub-tabs (power-user / admin features)
+const SETTINGS_TABS = [
+  ["analysis", "Analysis"],
+  ["train",    "Train & Eval"],
+  ["monitor",  "Monitor"],
+  ["advanced", "Advanced"],
 ];
 
 // ── UsageMeter ───────────────────────────────────────────────────────────────
@@ -114,9 +114,14 @@ export function Sidebar({
   history,
 }) {
   // ── Internal state (sidebar-only; no need to hoist to App) ───────────────
-  const [sidebarTab, setSidebarTab] = useState("docs");
-  const [featureTab, setFeatureTab] = useState(null);
-  const [stats,      setStats]      = useState(null);   // fetched lazily on Stats tab open
+  const [sidebarTab,       setSidebarTab]       = useState("docs");
+  const [featureTab,       setFeatureTab]       = useState(null);
+  const [stats,            setStats]            = useState(null);
+  const [settingsTab,      setSettingsTab]      = useState("analysis");
+  const [uploadOpen,       setUploadOpen]       = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState(null);
+  const [docMap,           setDocMap]           = useState({});
+  const [statusMap,        setStatusMap]        = useState({});
 
   // ── Destructure prop groups ──────────────────────────────────────────────
   const { user, workspaces, current: currentWorkspace, id: workspaceId, onSwitch } = workspace;
@@ -135,10 +140,12 @@ export function Sidebar({
   useEffect(() => {
     if (!workspaceId) return;
     api.getBillingUsage().then(setUsage).catch(() => {});
+    api.getDocStatusMap(workspaceId).then(setStatusMap).catch(() => {});
   }, [workspaceId]);
 
   const handleStatsTabClick = () => {
-    setSidebarTab("stats");
+    setSidebarTab("settings");
+    setSettingsTab("monitor");
     if (!stats) {
       api.getMonitoringStats(workspaceId).then(setStats).catch(() => setStats({}));
     }
@@ -207,7 +214,7 @@ export function Sidebar({
             className={`nav-tab${sidebarTab === id ? " active" : ""}`}
             role="tab"
             aria-selected={sidebarTab === id}
-            onClick={id === "stats" ? handleStatsTabClick : () => setSidebarTab(id)}
+            onClick={() => setSidebarTab(id)}
           >
             {label}
             {id === "history" && conversations.length > 0 && (
@@ -220,99 +227,129 @@ export function Sidebar({
       {/* ── Body ─────────────────────────────────────────────────────────── */}
       <div className="sidebar-body">
 
-        {/* ─ Features ─ */}
-        {sidebarTab === "features" && (
+        {/* ─ Settings ─ */}
+        {sidebarTab === "settings" && (
           <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
             <div className="sidebar-feature-tabs">
-              {FEATURE_TABS.map(([id, label]) => (
+              {SETTINGS_TABS.map(([id, label]) => (
                 <button
                   key={id}
-                  className={`sidebar-feature-tab${featureTab === id ? " active" : ""}`}
-                  onClick={() => setFeatureTab(f => f === id ? null : id)}
+                  className={`sidebar-feature-tab${settingsTab === id ? " active" : ""}`}
+                  onClick={() => setSettingsTab(id)}
                 >
                   {label}
                 </button>
               ))}
             </div>
-            <div style={{ flex: 1, overflow: "hidden" }}>
-              {featureTab === "webhooks"   && <WebhookPanel />}
-              {featureTab === "compare"    && <ComparisonPanel documents={documents} />}
-              {featureTab === "workflows"  && <WorkflowPanel />}
-              {featureTab === "annotate"   && <AnnotationPanel sourceFile={selectedFile} workspaceId={workspaceId} />}
-              {featureTab === "templates"  && <TemplatePanel selectedFile={selectedFile} />}
-              {featureTab === "esign"      && <ESignPanel selectedFile={selectedFile} />}
-              {featureTab === "compliance" && <CompliancePanel selectedFile={selectedFile} />}
-              {featureTab === "admin"      && <SuperAdminPanel user={user} />}
-              {featureTab === "onboard"    && <OnboardingPanel />}
-              {featureTab === "regional"   && <RegionalPanel />}
-              {featureTab === "llm"        && <LlmSettingsPanel />}
-              {featureTab === "billing"    && <BillingPanel />}
-              {featureTab === "sso"        && <SsoSettingsPanel />}
-              {!featureTab && (
-                <div className="panel-empty" style={{ padding: 20 }}>
-                  Select a feature above to get started
+            <div style={{ flex: 1, overflow: "auto", padding: "4px 0" }}>
+
+              {/* Analysis sub-tab */}
+              {settingsTab === "analysis" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                  <DomainPanel selectedFile={selectedFile} documents={documents} workspaceId={workspaceId} />
+                  <div className="section-header" style={{ marginTop: 12 }}>
+                    <span className="section-label">Discrepancy Scanner</span>
+                  </div>
+                  <DiscrepancyPanel documents={documents} workspaceId={workspaceId} />
+                  <div className="section-header" style={{ marginTop: 12 }}>
+                    <span className="section-label">GSTIN Lookup</span>
+                  </div>
+                  <GstinLookupPanel />
+                  <div className="section-header" style={{ marginTop: 12 }}>
+                    <span className="section-label">ITR Year-on-Year</span>
+                  </div>
+                  <ItrComparisonPanel documents={documents} workspaceId={workspaceId} />
+                  <div className="section-header" style={{ marginTop: 12 }}>
+                    <span className="section-label">Regulatory Reference</span>
+                  </div>
+                  <RegulatoryPanel />
+                  <div className="section-header" style={{ marginTop: 12 }}>
+                    <span className="section-label">Regulatory Updates Feed</span>
+                  </div>
+                  <RegulatoryFeedPanel />
+                  <div className="section-header" style={{ marginTop: 12 }}>
+                    <span className="section-label">Vernacular / Hindi</span>
+                  </div>
+                  <HindiDocPanel selectedFile={selectedFile} workspaceId={workspaceId} />
                 </div>
               )}
-            </div>
-          </div>
-        )}
 
-        {/* ─ Train / Fine-tune ─ */}
-        {sidebarTab === "finetune" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "100%", overflow: "auto" }}>
-            <FineTuningPanel workspaceId={workspaceId} />
-            <div style={{ padding: "8px 4px 4px" }}>
-              <div className="section-header"><span className="section-label">RAG Evaluation</span></div>
-              <RAGAsDashboard />
-            </div>
-          </div>
-        )}
-
-        {/* ─ Analyze ─ */}
-        {sidebarTab === "analyze" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "100%", overflow: "auto" }}>
-            <DomainPanel selectedFile={selectedFile} documents={documents} workspaceId={workspaceId} />
-
-            {selectedFile && (
-              <div style={{ padding: "8px 4px 4px" }}>
-                <div className="section-header" style={{ justifyContent: "space-between" }}>
-                  <span className="section-label">Tables & Charts</span>
-                  <button
-                    className="sidebar-link-btn"
-                    style={{ fontSize: 10, padding: "2px 8px" }}
-                    onClick={onExtract}
-                    disabled={extracting}
-                  >
-                    {extracting ? "Extracting…" : "⚡ Extract"}
-                  </button>
-                </div>
-                {extractionResults && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {extractionResults.tables?.length > 0 ? (
-                      extractionResults.tables.map((t, i) => (
-                        <TableViewer
-                          key={t.table_id || i}
-                          tableId={t.table_id}
-                          summary={t.summary}
-                          tableType={t.table_type}
-                          rowCount={t.row_count}
-                          colCount={t.col_count}
-                        />
-                      ))
-                    ) : (
-                      <div style={{ fontSize: 11, color: "var(--text-4)", padding: "4px 0" }}>No tables found</div>
-                    )}
-                    {extractionResults.charts?.map((c, i) => (
-                      <ChartViewer key={i} chart={c} />
-                    ))}
+              {/* Train & Eval sub-tab */}
+              {settingsTab === "train" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                  <FineTuningPanel workspaceId={workspaceId} />
+                  <div style={{ padding: "8px 4px 4px" }}>
+                    <div className="section-header"><span className="section-label">RAG Evaluation</span></div>
+                    <RAGAsDashboard />
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
 
-            <div style={{ padding: "4px 0" }}>
-              <div className="section-header"><span className="section-label">Graph Query</span></div>
-              <GraphQueryPanel />
+              {/* Monitor sub-tab */}
+              {settingsTab === "monitor" && (
+                <div>
+                  <div className="section-header"><span className="section-label">Monitoring</span></div>
+                  <MonitoringDashboard />
+                  <div className="stats-grid" style={{ marginTop: 8 }}>
+                    <div className="stat-card">
+                      <div className="stat-value">{documents.length}</div>
+                      <div className="stat-label">Documents</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-value">{documents.reduce((s, d) => s + (d.chunk_count || 0), 0)}</div>
+                      <div className="stat-label">Chunks</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-value">{messages.length}</div>
+                      <div className="stat-label">Messages</div>
+                    </div>
+                  </div>
+                  <div className="section-header" style={{ marginTop: 12 }}><span className="section-label">Document Health</span></div>
+                  <button className="sidebar-link-btn" style={{ marginBottom: 4 }} onClick={handleFindDuplicates}>
+                    Find Duplicates
+                  </button>
+                  <div className="section-header" style={{ marginTop: 12 }}><span className="section-label">Audit Trail</span></div>
+                  <AuditTrailPanel workspaceId={workspaceId} selectedFile={selectedFile} />
+                </div>
+              )}
+
+              {/* Advanced sub-tab */}
+              {settingsTab === "advanced" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                  <div className="section-header"><span className="section-label">User</span></div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", padding: "6px 4px", lineHeight: 1.8 }}>
+                    <div>{user?.email}</div>
+                    <div style={{ color: "var(--text-4)" }}>
+                      {currentWorkspace?.name || currentWorkspace?.workspace_id?.slice(0, 8) || "Default"}
+                    </div>
+                  </div>
+
+                  <div className="section-header" style={{ marginTop: 8 }}><span className="section-label">API Keys</span></div>
+                  <ApiKeyPanel />
+
+                  <div className="section-header" style={{ marginTop: 8 }}><span className="section-label">LLM Settings</span></div>
+                  <LlmSettingsPanel />
+
+                  <div className="section-header" style={{ marginTop: 8 }}><span className="section-label">Billing</span></div>
+                  <BillingPanel />
+
+                  <div className="section-header" style={{ marginTop: 8 }}><span className="section-label">Web URL Watcher</span></div>
+                  <UrlWatcher workspaceId={workspaceId} onRefreshed={onRefreshDocuments} />
+
+                  <div className="section-header" style={{ marginTop: 8 }}><span className="section-label">Webhooks</span></div>
+                  <WebhookPanel />
+
+                  <div className="section-header" style={{ marginTop: 8 }}><span className="section-label">Links</span></div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "4px 0" }}>
+                    <button className="sidebar-link-btn" onClick={() => window.open(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/docs`, "_blank")}>
+                      API Docs ↗
+                    </button>
+                    <button className="sidebar-link-btn" onClick={() => window.open(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/health`, "_blank")}>
+                      Health ↗
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -329,63 +366,27 @@ export function Sidebar({
           />
         )}
 
-        {/* ─ Stats / Monitoring ─ */}
-        {sidebarTab === "stats" && (
-          <div style={{ padding: "4px 0", height: "100%", overflow: "auto" }}>
-            <div className="section-header"><span className="section-label">Monitoring</span></div>
-            <MonitoringDashboard />
 
-            <div className="stats-grid" style={{ marginTop: 8 }}>
-              <div className="stat-card">
-                <div className="stat-value">{documents.length}</div>
-                <div className="stat-label">Documents</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-value">{documents.reduce((s, d) => s + (d.chunk_count || 0), 0)}</div>
-                <div className="stat-label">Chunks</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-value">{messages.length}</div>
-                <div className="stat-label">Messages</div>
-              </div>
-            </div>
-
-            <div className="section-header" style={{ marginTop: 12 }}><span className="section-label">User</span></div>
-            <div style={{ fontSize: 11, color: "var(--text-3)", padding: "6px 4px", lineHeight: 1.8 }}>
-              <div>{user?.email}</div>
-              <div style={{ color: "var(--text-4)" }}>
-                {currentWorkspace?.name || currentWorkspace?.workspace_id?.slice(0, 8) || "Default"}
-              </div>
-            </div>
-
-            <div className="section-header" style={{ marginTop: 12 }}><span className="section-label">Document Health</span></div>
-            <button className="sidebar-link-btn" style={{ marginBottom: 4 }} onClick={handleFindDuplicates}>
-              Find Duplicates
-            </button>
-
-            <div className="section-header" style={{ marginTop: 12 }}><span className="section-label">Audit Trail</span></div>
-            <button className="sidebar-link-btn" style={{ marginBottom: 4 }} onClick={handleDownloadAudit}>
-              ↓ Download Audit CSV
-            </button>
-
-            <div className="section-header" style={{ marginTop: 12 }}><span className="section-label">API Keys</span></div>
-            <ApiKeyPanel />
-
-            <div className="section-header" style={{ marginTop: 8 }}><span className="section-label">Links</span></div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "4px 0" }}>
-              <button className="sidebar-link-btn" onClick={() => window.open(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/docs`, "_blank")}>
-                API Docs ↗
-              </button>
-              <button className="sidebar-link-btn" onClick={() => window.open(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/health`, "_blank")}>
-                Health ↗
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* ─ Docs (default) ─ */}
         {sidebarTab === "docs" && (
           <>
+            {/* CA Deadline Dashboard */}
+            <div>
+              <div className="section-header">
+                <span className="section-label">Upcoming Deadlines</span>
+              </div>
+              <DeadlineDashboard />
+            </div>
+
+            {/* Client / Matter folder navigation */}
+            <ClientPanel
+              workspaceId={workspaceId}
+              selectedClientId={selectedClientId}
+              onSelectClient={setSelectedClientId}
+              onDocumentMapChange={setDocMap}
+            />
+
             {user && workspaces?.length > 1 && (
               <div>
                 <div className="section-header" style={{ marginBottom: 6 }}>
@@ -395,28 +396,33 @@ export function Sidebar({
               </div>
             )}
 
+            {/* Compact upload row — expands on click */}
             <div>
-              <div className="section-header"><span className="section-label">Upload</span></div>
-              <DropZone
-                onDrop={onUpload}
-                uploading={uploading}
-                progress={progress}
-                visionEnabled={visionEnabled}
-                onVisionChange={onVisionChange}
-                batchQueue={batchQueue}
-              />
-            </div>
-
-            <div>
-              <div className="section-header"><span className="section-label">Audio & Office Files</span></div>
-              <AudioUploader onSuccess={onRefreshDocuments} />
-            </div>
-
-            <IngestProgressPanel />
-
-            <div>
-              <div className="section-header"><span className="section-label">Web URLs</span></div>
-              <UrlWatcher workspaceId={workspaceId} onRefreshed={onRefreshDocuments} />
+              <div className="section-header" style={{ justifyContent: "space-between" }}>
+                <span className="section-label">Upload</span>
+                <button
+                  className="sidebar-link-btn"
+                  style={{ fontSize: 10, padding: "2px 8px" }}
+                  onClick={() => setUploadOpen(o => !o)}
+                >
+                  {uploadOpen ? "✕ Close" : "+ Add files"}
+                </button>
+              </div>
+              {uploadOpen && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <DropZone
+                    onDrop={onUpload}
+                    uploading={uploading}
+                    progress={progress}
+                    visionEnabled={visionEnabled}
+                    onVisionChange={onVisionChange}
+                    batchQueue={batchQueue}
+                  />
+                  <AudioUploader onSuccess={onRefreshDocuments} />
+                  <WhatsAppUploader workspaceId={workspaceId} onIngested={onRefreshDocuments} />
+                </div>
+              )}
+              {(uploading || batchQueue?.length > 0) && <IngestProgressPanel />}
             </div>
 
             {selectedFile && (
@@ -450,39 +456,116 @@ export function Sidebar({
               </div>
             )}
 
-            <div style={{ flex: 1, minHeight: 0 }}>
-              <div className="section-header">
-                <span className="section-label">Library</span>
-                {documents.length > 0 && (
-                  <span className="section-count">{documents.length}</span>
-                )}
-              </div>
-
-              {loadingDocs ? (
-                <div style={{ padding: "20px 0", display: "flex", flexDirection: "column", gap: 6 }}>
-                  {[1, 2, 3].map(i => (
-                    <div key={i} style={{
-                      height: 48, borderRadius: "var(--r)",
-                      background: "var(--bg-3)",
-                      animation: "pulse 1.5s ease infinite",
-                      animationDelay: `${i * 0.15}s`,
-                    }} />
-                  ))}
+            {/* Draft Reply card — auto-appears for GST/tax notice files */}
+            {selectedFile && isNoticeFile(selectedFile) && (
+              <div className="smart-analysis-card">
+                <div className="section-header">
+                  <span className="section-label">Draft Reply Letter</span>
+                  <span style={{ fontSize: 10, color: "var(--teal, #0d9488)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    AI Draft
+                  </span>
                 </div>
-              ) : loadError ? (
-                <div style={{ padding: "16px 8px", textAlign: "center", color: "var(--red)", fontSize: 12 }} role="alert">
-                  {loadError}
-                </div>
-              ) : (
-                <DocumentList
+                <DraftReplyPanel
+                  noticeFile={selectedFile}
                   documents={documents}
-                  selectedFile={selectedFile}
-                  onSelect={onSelectFile}
-                  onDeleted={onDocumentDeleted}
                   workspaceId={workspaceId}
                 />
-              )}
-            </div>
+              </div>
+            )}
+
+            {/* Smart Analysis card — auto-runs when a recognized document is selected */}
+            {selectedFile && detectDomain(selectedFile) && (
+              <div className="smart-analysis-card">
+                <div className="section-header">
+                  <span className="section-label">Smart Analysis</span>
+                  <span style={{ fontSize: 10, color: "var(--teal, #0d9488)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    {detectDomain(selectedFile)}
+                  </span>
+                </div>
+                <DomainPanel
+                  selectedFile={selectedFile}
+                  documents={documents}
+                  workspaceId={workspaceId}
+                  autoRun
+                  compact
+                />
+              </div>
+            )}
+
+            {(() => {
+              const filteredDocs = selectedClientId
+                ? documents.filter(d => docMap[d.source_file || d.filename] === selectedClientId)
+                : documents;
+              return (
+                <div style={{ flex: 1, minHeight: 0 }}>
+                  <div className="section-header">
+                    <span className="section-label">Library</span>
+                    {filteredDocs.length > 0 && (
+                      <span className="section-count">{filteredDocs.length}</span>
+                    )}
+                  </div>
+
+                  {loadingDocs ? (
+                    <div style={{ padding: "20px 0", display: "flex", flexDirection: "column", gap: 6 }}>
+                      {[1, 2, 3].map(i => (
+                        <div key={i} style={{
+                          height: 48, borderRadius: "var(--r)",
+                          background: "var(--bg-3)",
+                          animation: "pulse 1.5s ease infinite",
+                          animationDelay: `${i * 0.15}s`,
+                        }} />
+                      ))}
+                    </div>
+                  ) : loadError ? (
+                    <div style={{ padding: "16px 8px", textAlign: "center", color: "var(--red)", fontSize: 12 }} role="alert">
+                      {loadError}
+                    </div>
+                  ) : filteredDocs.length === 0 ? (
+                    <div style={{
+                      padding: "28px 12px",
+                      textAlign: "center",
+                      color: "var(--text-4)",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 8,
+                    }}>
+                      <div style={{ fontSize: 32 }}>{selectedClientId ? "📂" : "📄"}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)" }}>
+                        {selectedClientId ? "No documents in this client folder" : "No documents yet"}
+                      </div>
+                      <div style={{ fontSize: 11, lineHeight: 1.6 }}>
+                        {selectedClientId
+                          ? "Upload a document above and assign it to this client."
+                          : "Upload your first document above to get started. GST notices, ITR, contracts — any PDF or text file works."}
+                      </div>
+                    </div>
+                  ) : (
+                    <DocumentList
+                      documents={filteredDocs}
+                      selectedFile={selectedFile}
+                      onSelect={onSelectFile}
+                      onDeleted={onDocumentDeleted}
+                      workspaceId={workspaceId}
+                      clients={Object.entries(docMap).reduce((acc, [docId, cid]) => {
+                        acc[docId] = cid; return acc;
+                      }, {})}
+                      onAssignClient={async (docId, clientId) => {
+                        await api.assignDocument(docId, clientId, workspaceId);
+                        const newMap = { ...docMap };
+                        if (clientId) newMap[docId] = clientId;
+                        else delete newMap[docId];
+                        setDocMap(newMap);
+                      }}
+                      statusMap={statusMap}
+                      onStatusUpdated={(docId, updated) =>
+                        setStatusMap(prev => ({ ...prev, [docId]: updated }))
+                      }
+                    />
+                  )}
+                </div>
+              );
+            })()}
           </>
         )}
 

@@ -172,7 +172,7 @@ export function VersionTimeline({ sourceFile, API_URL = import.meta.env?.VITE_AP
       { headers: token ? { Authorization: `Bearer ${token}` } : {} }
     )
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then(setVersions)
+      .then(data => setVersions(Array.isArray(data) ? data : (data?.versions ?? data?.items ?? [])))
       .catch(() => setVersions([]))
       .finally(() => setLoading(false));
   }, [sourceFile, API_URL]);

@@ -1,8 +1,9 @@
 // frontend/src/components/DocumentList.jsx — Nebula Dark
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import { api } from "../api/client";
 import PropTypes from "prop-types";
+import { DocStatusBadge } from "./DocStatusBadge";
 
 function TrashIcon() {
   return (
@@ -144,7 +145,57 @@ function ChunkViewer({ sourceFile, onClose }) {
   );
 }
 
-export function DocumentList({ documents, onDeleted, selectedFile, onSelect, workspaceId }) {
+function AssignClientBtn({ docId, currentClientId, workspaceId, onAssign }) {
+  const [open, setOpen] = useState(false);
+  const [clients, setClients] = useState(null);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open || clients !== null) return;
+    api.listClients(workspaceId).then(setClients).catch(() => setClients([]));
+  }, [open, workspaceId, clients]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div className="doc-assign-wrap" ref={ref}>
+      <button
+        className={`doc-action-btn${currentClientId ? " active" : ""}`}
+        style={currentClientId ? { color: "var(--violet-3)" } : {}}
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        title="Assign to client folder"
+        aria-label="Assign to client folder"
+      >
+        🗂
+      </button>
+      {open && (
+        <div className="doc-assign-dropdown" onClick={e => e.stopPropagation()}>
+          <button className={`doc-assign-item${!currentClientId ? " active" : ""}`}
+            onClick={() => { onAssign(docId, null); setOpen(false); }}>
+            — Unassigned
+          </button>
+          {clients === null && <div className="doc-assign-item" style={{ color: "var(--tx-3)" }}>Loading…</div>}
+          {clients?.map(c => (
+            <button
+              key={c.id}
+              className={`doc-assign-item${currentClientId === c.id ? " active" : ""}`}
+              onClick={() => { onAssign(docId, c.id); setOpen(false); }}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function DocumentList({ documents, onDeleted, selectedFile, onSelect, workspaceId, clients, onAssignClient, statusMap, onStatusUpdated }) {
   const [deletingId, setDeletingId] = useState(null);
   const [confirmingDelete, setConfirmingDelete] = useState(null);
   const [reindexingId, setReindexingId] = useState(null);
@@ -344,6 +395,20 @@ export function DocumentList({ documents, onDeleted, selectedFile, onSelect, wor
                       ? <span style={{ animation: "spin 0.7s linear infinite", display: "inline-block" }}>↻</span>
                       : <ReindexIcon />}
                   </button>
+                  {onAssignClient && (
+                    <AssignClientBtn
+                      docId={doc.source_file}
+                      currentClientId={clients?.[doc.source_file]}
+                      workspaceId={workspaceId}
+                      onAssign={onAssignClient}
+                    />
+                  )}
+                  <DocStatusBadge
+                    documentId={doc.source_file}
+                    statusData={statusMap?.[doc.source_file]}
+                    workspaceId={workspaceId}
+                    onUpdated={onStatusUpdated}
+                  />
                   <button
                     className="doc-action-btn"
                     onClick={() => setConfirmingDelete(doc.source_file)}
@@ -372,9 +437,11 @@ export function DocumentList({ documents, onDeleted, selectedFile, onSelect, wor
 }
 
 DocumentList.propTypes = {
-  documents:    PropTypes.array.isRequired,
-  selectedFile: PropTypes.string,
-  onSelect:     PropTypes.func,
-  onDeleted:    PropTypes.func,
-  workspaceId:  PropTypes.string,
+  documents:      PropTypes.array.isRequired,
+  selectedFile:   PropTypes.string,
+  onSelect:       PropTypes.func,
+  onDeleted:      PropTypes.func,
+  workspaceId:    PropTypes.string,
+  clients:        PropTypes.object,
+  onAssignClient: PropTypes.func,
 };

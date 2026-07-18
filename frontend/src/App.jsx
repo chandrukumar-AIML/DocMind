@@ -20,6 +20,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { useConversationHistory } from "./hooks/useConversationHistory";
 import { isDemoMode } from "./api/demo";
+import { api } from "./api/client";
 import { downloadConversationMarkdown, printConversationPdf } from "./utils/conversationExport";
 import "./App.css";
 
@@ -106,18 +107,27 @@ export default function App() {
       const src = result?.source_file || (fileOrFiles instanceof File ? fileOrFiles.name : null);
       if (src) triggerDocBrief(src, wsId);
     };
-    if (fileOrFiles instanceof File) return upload(fileOrFiles, options).then(afterUpload).catch(() => {});
+    if (fileOrFiles instanceof File) return upload(fileOrFiles, options)
+      .then(result => {
+        afterUpload(result);
+        const src = result?.source_file || fileOrFiles.name;
+        api.logAudit("upload", src, `Vision: ${visionEnabled}`, wsId);
+        return result;
+      }).catch(() => {});
     return uploadBatch(fileOrFiles, options);
   }, [upload, uploadBatch, visionEnabled, getCurrentWorkspace, triggerDocBrief]);
 
   const handleSubmit = useCallback((question) => {
+    const wsId = getCurrentWorkspace()?.workspace_id;
     submit({
       question,
       filterSourceFile: selectedFile,
-      workspaceId: getCurrentWorkspace()?.workspace_id,
+      workspaceId: wsId,
       correlation_id: `app_${Date.now()}`,
       mode: queryMode,
     });
+    api.logAudit("query", selectedFile || null,
+      question.slice(0, 120), wsId);
   }, [submit, selectedFile, getCurrentWorkspace, queryMode]);
 
   const handleDocumentDeleted = useCallback((file) => {

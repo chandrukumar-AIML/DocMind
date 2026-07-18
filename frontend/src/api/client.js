@@ -278,17 +278,39 @@ const apiImpl = {
     }
 
     const isAgentMode = request.mode === "agent";
-    const url = isAgentMode ? `${BASE_URL}/api/v1/agent/query` : `${BASE_URL}/api/v1/query`;
 
-    // `mode` here is the top-level RAG/Agent/Graph chat mode used to pick the endpoint
-    // above — it must NOT be forwarded as-is into AgentQueryRequest.mode, which is a
-    // different enum (the agent's internal retrieval strategy: rag/crag/self_rag/graph/
-    // hybrid) and rejects "agent" with a 422. Drop it for the agent endpoint and let the
-    // backend use its own default.
-    const { mode: _uiMode, ...requestWithoutMode } = request;
-    const body = isAgentMode
-      ? { ...requestWithoutMode, stream: true, correlation_id: correlationId, workspace_id: request.workspace_id }
-      : { ...request, stream: true, correlation_id: correlationId, workspace_id: request.workspace_id };
+    // Agent endpoint returns plain JSON (not SSE) — handle it like graph mode.
+    if (isAgentMode) {
+      const { mode: _uiMode, ...requestWithoutMode } = request;
+      const agentResponse = await fetch(`${BASE_URL}/api/v1/agent/query`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem(ACCESS_TOKEN_KEY) || localStorage.getItem(LEGACY_ACCESS_TOKEN_KEY) || ""}`,
+          "X-Correlation-ID": correlationId,
+        },
+        body: JSON.stringify({ ...requestWithoutMode, correlation_id: correlationId, workspace_id: request.workspace_id }),
+        signal,
+      });
+      if (!agentResponse.ok) {
+        const err = await agentResponse.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${agentResponse.status}`);
+      }
+      const data = await agentResponse.json();
+      yield { type: "citations", content: data.citations || [] };
+      yield { type: "token", content: data.answer || "" };
+      yield {
+        type: "done",
+        latency_seconds: data.latency_seconds,
+        retrieved_count: data.retrieved_count ?? 0,
+        reranked_count: data.reranked_count ?? (data.citations || []).length,
+        correlation_id: data.correlation_id,
+      };
+      return;
+    }
+
+    const url = `${BASE_URL}/api/v1/query`;
+    const body = { ...request, stream: true, correlation_id: correlationId, workspace_id: request.workspace_id };
 
     const response = await fetch(url, {
       method: "POST",
@@ -690,6 +712,83 @@ const apiImpl = {
     apiClient.post("/api/v1/regional/validate", { value, type }).then(r => r.data),
   parseIndianNumber: (text) =>
     apiClient.post("/api/v1/regional/parse-number", { text }).then(r => r.data),
+
+  // ── Client / Matter Folders ──────────────────────────────────────────
+  listClients: (workspaceId) =>
+    apiClient.get("/api/v1/clients", { params: { workspace_id: workspaceId } }).then(r => r.data),
+
+  createClient: (data) =>
+    apiClient.post("/api/v1/clients", data).then(r => r.data),
+
+  updateClient: (clientId, data) =>
+    apiClient.patch(`/api/v1/clients/${clientId}`, data).then(r => r.data),
+
+  deleteClient: (clientId) =>
+    apiClient.delete(`/api/v1/clients/${clientId}`).then(r => r.data),
+
+  assignDocument: (documentId, clientId, workspaceId) =>
+    apiClient.post("/api/v1/clients/assign-document", {
+      document_id: documentId,
+      client_id: clientId || null,
+      workspace_id: workspaceId,
+    }).then(r => r.data),
+
+  getDocumentClientMap: (workspaceId) =>
+    apiClient.get("/api/v1/clients/document-map", { params: { workspace_id: workspaceId } }).then(r => r.data),
+
+  // ── Cross-Doc Synthesis ──────────────────────────────────────────────
+  // ── Draft Reply ─────────────────────────────────────────────────────────
+  draftReply: (noticeFile, supportingFiles, replyContext, workspaceId) =>
+    apiClient.post("/api/v1/domains/draft-reply", {
+      notice_file: noticeFile,
+      supporting_files: supportingFiles || [],
+      reply_context: replyContext || "",
+      workspace_id: workspaceId,
+    }, { timeout: 150000 }).then(r => r.data),
+
+  crossDocSynthesize: (docA, docB, question, workspaceId, caMode = true) =>
+    apiClient.post("/api/v1/comparison/synthesize", {
+      doc_a: docA,
+      doc_b: docB,
+      question,
+      workspace_id: workspaceId,
+      ca_mode: caMode,
+    }, { timeout: 120000 }).then(r => r.data),
+
+  detectDiscrepancies: (docA, docB, workspaceId) =>
+    apiClient.post("/api/v1/discrepancy/detect", {
+      doc_a: docA,
+      doc_b: docB,
+      workspace_id: workspaceId,
+    }, { timeout: 120000 }).then(r => r.data),
+
+  getDocStatusMap: (workspaceId) =>
+    apiClient.get("/api/v1/doc-status/map", { params: { workspace_id: workspaceId } }).then(r => r.data.statuses),
+
+  updateDocStatus: (documentId, status, assignee, note, workspaceId) =>
+    apiClient.post("/api/v1/doc-status/update", {
+      document_id: documentId, status, assignee, note, workspace_id: workspaceId,
+    }).then(r => r.data),
+
+  logAudit: (action, documentId, detail, workspaceId) =>
+    apiClient.post("/api/v1/audit/log", {
+      action, document_id: documentId || null, detail: detail || null, workspace_id: workspaceId || null,
+    }).catch(() => {}),  // fire-and-forget; never block the main action
+
+  exportAnswerPdf: async (question, answer, citations, workspaceName) => {
+    const res = await apiClient.post("/api/v1/export/pdf", {
+      question,
+      answer,
+      citations: citations || [],
+      workspace_name: workspaceName || "",
+    }, { responseType: "blob", timeout: 30000 });
+    const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `documind-answer-${Date.now()}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };
 
 // ════════════════════════════════════════════════════════════════════════

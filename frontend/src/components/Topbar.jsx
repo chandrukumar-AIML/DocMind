@@ -1,12 +1,13 @@
 // Chat topbar — sidebar toggle, query context, mode switcher, and actions.
 // Extracted from App.jsx to keep the app shell focused.
+import { useState } from "react";
 import PropTypes from "prop-types";
 import { IconMenu, IconClear, IconSpark } from "./Icons";
 
 const MODES = [
-  { id: "rag", label: "RAG" },
-  { id: "agent", label: "Agent" },
-  { id: "graph", label: "Graph" },
+  { id: "rag",   label: "RAG",   tip: "Cited answers — fastest, most accurate" },
+  { id: "agent", label: "Agent", tip: "Multi-step reasoning over documents" },
+  { id: "graph", label: "Graph", tip: "Entity relationship graph queries (Neo4j)" },
 ];
 
 export function Topbar({
@@ -17,6 +18,9 @@ export function Topbar({
   onCompare, onExportMarkdown, onExportPdf, onClear,
   theme, onToggleTheme,
 }) {
+  const [modeOpen, setModeOpen] = useState(false);
+  const activeMode = MODES.find(m => m.id === queryMode) || MODES[0];
+
   return (
     <div className="topbar">
       <button
@@ -33,7 +37,7 @@ export function Topbar({
       <div className="topbar-context">
         <div className="topbar-dot" aria-hidden="true" />
         <span className="topbar-text">
-          {selectedFile ? `Querying: ${shortFileName}` : "All documents"}
+          {selectedFile ? shortFileName : "All documents"}
         </span>
         {currentWorkspace && (
           <span className="topbar-workspace" aria-hidden="true">
@@ -47,18 +51,35 @@ export function Topbar({
         )}
       </div>
 
-      {/* Mode switcher */}
-      <div className="topbar-mode-switcher" role="group" aria-label="Query mode">
-        {MODES.map(m => (
-          <button
-            key={m.id}
-            className={`mode-btn${queryMode === m.id ? " active" : ""}`}
-            onClick={() => onModeChange(m.id)}
-            aria-pressed={queryMode === m.id}
-          >
-            {m.label}
-          </button>
-        ))}
+      {/* Mode pill — compact dropdown */}
+      <div style={{ position: "relative", flexShrink: 0 }}>
+        <button
+          className="mode-pill"
+          onClick={() => setModeOpen(o => !o)}
+          title={activeMode.tip}
+          aria-haspopup="listbox"
+          aria-expanded={modeOpen}
+        >
+          <IconSpark />
+          <span>{activeMode.label}</span>
+          <span style={{ opacity: 0.5, fontSize: 9 }}>▾</span>
+        </button>
+        {modeOpen && (
+          <div className="mode-dropdown" role="listbox">
+            {MODES.map(m => (
+              <button
+                key={m.id}
+                className={`mode-dropdown-item${queryMode === m.id ? " active" : ""}`}
+                role="option"
+                aria-selected={queryMode === m.id}
+                onClick={() => { onModeChange(m.id); setModeOpen(false); }}
+              >
+                <span className="mode-dropdown-label">{m.label}</span>
+                <span className="mode-dropdown-tip">{m.tip}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Actions */}
@@ -105,9 +126,6 @@ export function Topbar({
         >
           {theme === "dark" ? "☀️" : "🌙"}
         </button>
-        <span className="badge badge-violet" style={{ fontSize: 10, padding: "3px 8px" }}>
-          <IconSpark /> {queryMode.toUpperCase()}
-        </span>
       </div>
     </div>
   );
